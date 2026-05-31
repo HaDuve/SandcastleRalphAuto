@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {
+      "id": "portfolio",
+      "path": "/absolute/path/to/Portfolio",
+      "remote": "HaDuve/Portfolio",
+      "defaultBase": "main",
+      "afkLabel": "ready-for-agent",
+      "blockedLabels": [
+        "needs-info",
+        "ready-for-human",
+        "HITL",
+        "wontfix",
+        "needs-triage"
+      ]
+    }
+  ]
+}
