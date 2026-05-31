@@ -16,4 +16,4 @@ Pick `ready-for-agent` issue → `/tdd` → `/create-pr` → `/review-pr` → (`
 
 ## Status
 
-Pre-implementation. Work tracked in [issues](https://github.com/HaDuve/SandcastleRalphAuto/issues): **M1** = CLI engine, **M2** = dashboard.
+**M1 scaffold** (TypeScript layout, handoff schema, module stubs). Work tracked in [issues](https://github.com/HaDuve/SandcastleRalphAuto/issues): **M1** = CLI engine, **M2** = dashboard.
