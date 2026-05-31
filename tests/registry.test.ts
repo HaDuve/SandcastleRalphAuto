@@ -1,15 +1,16 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadRegistry, RegistryError, checkGhAuth } from "../src/registry/index.js";
+import { describe, expect, it } from "vitest";
+import {
+  loadRegistry,
+  loadRegistryFromRoot,
+  RegistryError,
+  checkGhAuth,
+} from "../src/registry/index.js";
 
 describe("loadRegistry", () => {
   let tempDir: string;
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-  });
 
   async function writeConfig(body: unknown): Promise<string> {
     tempDir = await mkdtemp(join(tmpdir(), "registry-test-"));
@@ -56,23 +57,11 @@ describe("loadRegistry", () => {
 
     await expect(
       loadRegistry({ configPath, ...defaultDeps }),
-    ).rejects.toThrow(RegistryError);
-
-    await expect(
-      loadRegistry({ configPath, ...defaultDeps }),
     ).rejects.toThrow(/remote must be owner\/repo/);
   });
 
   it("rejects when a project path does not exist", async () => {
     const configPath = await writeConfig({ projects: [validProject] });
-
-    await expect(
-      loadRegistry({
-        configPath,
-        pathExists: (path) => path !== validProject.path,
-        checkGhAuth: defaultDeps.checkGhAuth,
-      }),
-    ).rejects.toThrow(RegistryError);
 
     await expect(
       loadRegistry({
@@ -148,5 +137,45 @@ describe("loadRegistry", () => {
     await expect(
       loadRegistry({ configPath, ...defaultDeps }),
     ).rejects.toThrow(/Invalid JSON/);
+  });
+
+  it("rejects missing config file with RegistryError", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "registry-test-"));
+    const configPath = join(tempDir, "missing-projects.json");
+
+    await expect(
+      loadRegistry({ configPath, ...defaultDeps }),
+    ).rejects.toThrow(/not found/);
+  });
+
+  it("rejects when a project path is not a directory", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "registry-test-"));
+    const filePath = join(tempDir, "not-a-directory");
+    await writeFile(filePath, "x");
+    const configPath = join(tempDir, "projects.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({ projects: [{ ...validProject, path: filePath }] }),
+    );
+
+    await expect(
+      loadRegistry({ configPath, checkGhAuth: defaultDeps.checkGhAuth }),
+    ).rejects.toThrow(/not a directory/);
+  });
+
+  it("loads projects.json from repo root by default", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "registry-test-"));
+    await writeFile(
+      join(tempDir, "projects.json"),
+      JSON.stringify({ projects: [validProject] }),
+    );
+
+    const projects = await loadRegistryFromRoot(tempDir, {
+      pathExists: () => true,
+      checkGhAuth: defaultDeps.checkGhAuth,
+    });
+
+    expect(projects).toHaveLength(1);
+    expect(projects[0]?.id).toBe("portfolio");
   });
 });
