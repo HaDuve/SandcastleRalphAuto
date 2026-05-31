@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -39,6 +39,25 @@ describe("writeHandoff / readHandoff", () => {
     expect(JSON.parse(raw)).toEqual(sampleHandoff);
   });
 
+  it("writes atomically without leaving temp files", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
+    const handoffDir = join(rootDir, ".sandcastle-ralph/handoff");
+
+    await writeHandoff(sampleHandoff, rootDir);
+
+    const files = await readdir(handoffDir);
+    expect(files).toEqual(["current.json"]);
+    await expect(readHandoff(rootDir)).resolves.toEqual(sampleHandoff);
+  });
+
+  it("rejects read when current.json is missing", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
+
+    const error = await readHandoff(rootDir).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(HandoffError);
+    expect((error as HandoffError).message).toMatch(/Handoff not found/);
+  });
+
   it("rejects malformed handoff on read with a clear error", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
     const handoffPath = join(
@@ -51,8 +70,9 @@ describe("writeHandoff / readHandoff", () => {
       JSON.stringify({ project: "HaDuve/SandcastleRalphAuto", issue: "3" }),
     );
 
-    await expect(readHandoff(rootDir)).rejects.toThrow(HandoffError);
-    await expect(readHandoff(rootDir)).rejects.toThrow(/Invalid handoff schema/);
+    const error = await readHandoff(rootDir).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(HandoffError);
+    expect((error as HandoffError).message).toMatch(/Invalid handoff schema/);
   });
 
   it("rejects invalid JSON on read with a clear error", async () => {
@@ -64,19 +84,20 @@ describe("writeHandoff / readHandoff", () => {
     await mkdir(join(handoffPath, ".."), { recursive: true });
     await writeFile(handoffPath, "{ not json");
 
-    await expect(readHandoff(rootDir)).rejects.toThrow(HandoffError);
-    await expect(readHandoff(rootDir)).rejects.toThrow(/Invalid JSON/);
+    const error = await readHandoff(rootDir).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(HandoffError);
+    expect((error as HandoffError).message).toMatch(/Invalid JSON/);
   });
 
   it("rejects invalid handoff on write with a clear error", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
 
-    await expect(
-      writeHandoff({ ...sampleHandoff, issue: "3" } as unknown as Handoff, rootDir),
-    ).rejects.toThrow(HandoffError);
-    await expect(
-      writeHandoff({ ...sampleHandoff, issue: "3" } as unknown as Handoff, rootDir),
-    ).rejects.toThrow(/Invalid handoff/);
+    const error = await writeHandoff(
+      { ...sampleHandoff, issue: "3" } as unknown as Handoff,
+      rootDir,
+    ).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(HandoffError);
+    expect((error as HandoffError).message).toMatch(/Invalid handoff/);
   });
 });
 
@@ -114,7 +135,8 @@ describe("archiveHandoff", () => {
     const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
     await writeHandoff(sampleHandoff, rootDir);
 
-    await expect(archiveHandoff(rootDir)).rejects.toThrow(HandoffError);
-    await expect(archiveHandoff(rootDir)).rejects.toThrow(/pr number/);
+    const error = await archiveHandoff(rootDir).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(HandoffError);
+    expect((error as HandoffError).message).toMatch(/pr number/);
   });
 });

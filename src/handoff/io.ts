@@ -42,8 +42,13 @@ export async function writeHandoff(
   }
 
   const path = resolveCurrentHandoffPath(rootDir);
-  await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, JSON.stringify(validated.data, null, 2) + "\n");
+  const handoffDir = join(path, "..");
+  await mkdir(handoffDir, { recursive: true });
+
+  const content = JSON.stringify(validated.data, null, 2) + "\n";
+  const tempPath = join(handoffDir, ".current.json.tmp");
+  await writeFile(tempPath, content);
+  await rename(tempPath, path);
 }
 
 export async function readHandoff(
