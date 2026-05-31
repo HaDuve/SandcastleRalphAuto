@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HandoffSchema } from "../src/handoff/schema.js";
+import { HandoffSchema } from "../src/handoff/index.js";
 
 describe("project smoke", () => {
   it("parses a minimal valid handoff", () => {
