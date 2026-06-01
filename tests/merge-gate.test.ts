@@ -25,6 +25,11 @@ const project: Pick<Project, "autoMerge"> = {
   autoMerge: true,
 };
 
+const mergeablePrView = JSON.stringify({
+  mergeable: "MERGEABLE",
+  mergeStateStatus: "CLEAN",
+});
+
 describe("runMergeGate", () => {
   it("merges via gh when Approve, no blockers, green required checks, and autoMerge", async () => {
     const ghCalls: string[][] = [];
@@ -33,6 +38,12 @@ describe("runMergeGate", () => {
       {
         gh: async (args) => {
           ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return JSON.stringify({
+              mergeable: "MERGEABLE",
+              mergeStateStatus: "CLEAN",
+            });
+          }
           if (args[0] === "pr" && args[1] === "checks") {
             return JSON.stringify([
               { name: "ci", state: "SUCCESS", bucket: "pass", link: "" },
@@ -94,6 +105,9 @@ describe("runMergeGate", () => {
       {
         gh: async (args) => {
           ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return mergeablePrView;
+          }
           if (args[0] === "pr" && args[1] === "checks") {
             return JSON.stringify([
               { name: "ci", state: "FAILURE", bucket: "fail", link: "" },
@@ -106,7 +120,41 @@ describe("runMergeGate", () => {
 
     expect(result).toEqual({
       status: "blocked",
+      kind: "required-checks-failed",
       reason: "Required checks not green: ci",
+      resumeSkill: "/merge",
+    });
+    expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
+  });
+
+  it("blocks with a distinct reason when the PR is not mergeable", async () => {
+    const ghCalls: string[][] = [];
+
+    const result = await runMergeGate(
+      { handoff: mergeHandoff(), project, pr: 42 },
+      {
+        gh: async (args) => {
+          ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return JSON.stringify({
+              mergeable: "CONFLICTING",
+              mergeStateStatus: "DIRTY",
+            });
+          }
+          if (args[0] === "pr" && args[1] === "checks") {
+            return JSON.stringify([
+              { name: "ci", state: "SUCCESS", bucket: "pass", link: "" },
+            ]);
+          }
+          return "";
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      kind: "pr-not-mergeable",
+      reason: "PR is not mergeable (CONFLICTING, DIRTY)",
       resumeSkill: "/merge",
     });
     expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
@@ -131,6 +179,7 @@ describe("runMergeGate", () => {
 
     expect(result).toEqual({
       status: "blocked",
+      kind: "open-blockers",
       reason: "Open blockers: missing tests",
       resumeSkill: "/merge",
     });
@@ -156,6 +205,7 @@ describe("runMergeGate", () => {
 
     expect(result).toEqual({
       status: "blocked",
+      kind: "no-approve-verdict",
       reason: "Merge gate requires a clean Approve verdict",
       resumeSkill: "/merge",
     });
@@ -170,6 +220,9 @@ describe("runMergeGate", () => {
       {
         gh: async (args) => {
           ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return mergeablePrView;
+          }
           if (args[0] === "pr" && args[1] === "checks") {
             return JSON.stringify([
               { name: "ci", state: "PENDING", bucket: "pending", link: "" },
@@ -182,6 +235,7 @@ describe("runMergeGate", () => {
 
     expect(result).toEqual({
       status: "blocked",
+      kind: "required-checks-failed",
       reason: "Required checks not green: ci",
       resumeSkill: "/merge",
     });
@@ -196,6 +250,9 @@ describe("runMergeGate", () => {
       {
         gh: async (args) => {
           ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return mergeablePrView;
+          }
           if (args[0] === "pr" && args[1] === "checks") {
             return "not json";
           }
@@ -206,6 +263,7 @@ describe("runMergeGate", () => {
 
     expect(result).toEqual({
       status: "blocked",
+      kind: "checks-parse-error",
       reason: "Could not parse required checks from gh",
       resumeSkill: "/merge",
     });
@@ -246,6 +304,7 @@ describe("activeStateFromMergeGate", () => {
     expect(
       activeStateFromMergeGate(context, {
         status: "blocked",
+        kind: "required-checks-failed",
         reason: "Required checks not green: ci",
         resumeSkill: "/merge",
       }),
