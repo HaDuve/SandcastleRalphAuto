@@ -9,8 +9,12 @@ One unit of work: a single GitHub issue taken from `ready-for-agent` through to 
 _Avoid_: task, ticket, story
 
 **Phase**:
-One step of the canonical pipeline — `tdd`, `create-pr`, `review-pr`, `review-tdd`, `merge` — run linearly, every phase every slice. Each phase is one cold agent invocation; no transcript carries between phases. `next` is host orchestration (no agent), not a skill phase.
+One step of the canonical pipeline — `tdd`, `create-pr`, `review-pr`, `review-tdd`, `merge` — run linearly, every phase every slice. Each phase is one cold agent invocation; no transcript carries between phases. `next` is host orchestration (no agent), not a skill phase. `babysit` is a **conditional recovery phase** — an agent invocation run only when the merge gate blocks on a fixable reason (CI/conflicts/comments), never on the happy path (ADR 0006).
 _Avoid_: step, stage
+
+**Merge gate**:
+The host-side check that runs after the `merge` phase — verifies a clean `Approve` verdict, no open blockers, and green required checks, then `gh pr merge --squash --auto`. A `blocked` merge gate is **babysit-able** (CI red / not-mergeable / unresolved comments → run `/babysit`, retry once) or **human** (no Approve, review findings, logical blockers → stop for operator).
+_Avoid_: merge phase (the agent `/merge` run is distinct from the host gate)
 
 **Skill**:
 The Cursor skill definition (`~/.cursor/skills/<name>/SKILL.md`) that specifies a phase's behavior. Skills are the **specification**; Sandcastle prompt files are the **runtime** that mirror them.

@@ -33,15 +33,15 @@ A **local control plane** = a long-lived Node/TS orchestrator process + a local 
 
 ## 4. Pipeline (canonical)
 
-`/tdd #<issue>` → `/create-pr` → `/review-pr` → `/review-tdd` → `/merge`, then `/next`
+`/tdd #<issue>` → `/create-pr` → `/review-pr` → `/review-tdd` → `/merge` → _(`/babysit` → `/merge`, if needed)_ → `/next`
 
-This is the exact, **linear** skill-flow proven in practice — every phase runs every slice, in order. No conditional branches, no request-changes loop, no `/babysit`.
+This is the exact, **linear** skill-flow proven in practice — every canonical phase runs every slice, in order. No request-changes loop. The only conditional branch is the **merge-tail recovery** below.
 
 - Each phase = one **cold** `cursor("auto")` run. Inputs = the JSON handoff + GitHub only; no transcript carry-over. Target ≤100k tokens/invocation.
 - Completion signal: `<promise>PHASE_COMPLETE</promise>`.
 - `tdd` uses `maxIterations: N`; the rest are single-shot. Phases emit/validate the handoff host-side.
 - `/next` is **host orchestration, not a skill phase** (no agent): verify merge → archive handoff → select next eligible issue (lowest #, minus skips/blocked) → start `/tdd`, or emit `QUEUE_EMPTY`.
-- If `/merge` can't proceed (red required checks / open blockers) the slice is marked `blocked` for the operator — there is no automated CI-repair phase in v0.
+- **Merge-tail recovery (ADR 0006):** if the merge gate `blocked`s on a **babysit-able** reason (required CI red / not-mergeable conflicts / unresolved review comments), run the conditional `/babysit` agent phase (cold `cursor("auto")`, can push commits, `maxIterations > 1`) then re-run the merge gate **once**. Cap = 1 attempt; still blocked → mark `blocked` for the operator. **Human** reasons (no clean `Approve`, review findings needing re-implementation → `/review-tdd`, logical blockers) skip babysit and block immediately. `/babysit` is not in the linear loop and never runs on the happy path.
 - Required check is **`ci`** (D14). `gh pr merge --squash --auto` queues the PR and GitHub merges it once `ci` is green; with branch protection (D15) nothing merges un-checked, including direct human pushes.
 
 ## 5. Handoff schema (v0 draft)
@@ -52,7 +52,7 @@ const Handoff = z.object({
   issue: z.number(),
   branch: z.string(),
   pr: z.number().optional(),
-  phase: z.enum(["tdd","create-pr","review-pr","review-tdd","merge"]),
+  phase: z.enum(["tdd","create-pr","review-pr","review-tdd","merge","babysit"]),
   acceptanceState: z.enum(["in-progress","done","blocked"]),
   verdict: z.enum(["approve","request-changes","n/a"]).optional(),
   blockers: z.array(z.string()),
