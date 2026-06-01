@@ -1,6 +1,11 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Project } from "../src/registry/index.js";
+import { readRunOutcome } from "../src/state/index.js";
 import {
+  persistRunOutcomeFromLoopResult,
   runOutcomeFromLoopResult,
   runOutcomeFromWorkerError,
 } from "../src/state/runOutcomeFromWorker.js";
@@ -87,6 +92,44 @@ describe("runOutcomeFromLoopResult", () => {
       phase: "review-tdd",
       stoppedAt,
       logRef: "/tmp/portfolio/.sandcastle/logs/issue-7-review-tdd.log",
+    });
+  });
+
+  it("maps host-level blocked without active slice (no phase or logRef)", async () => {
+    await expect(
+      runOutcomeFromLoopResult(
+        { status: "blocked", reason: "Could not parse issues from gh" },
+        {
+          project,
+          stateRoot: "/tmp/state",
+          stoppedAt,
+          readActiveFn: async () => null,
+        },
+      ),
+    ).resolves.toEqual({
+      outcome: "blocked",
+      reason: "Could not parse issues from gh",
+      stoppedAt,
+    });
+  });
+
+  it("persists host-level blocked to run.json", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "run-outcome-worker-"));
+
+    await persistRunOutcomeFromLoopResult(
+      { status: "blocked", reason: "Could not parse issues from gh" },
+      {
+        project,
+        stateRoot,
+        stoppedAt,
+        readActiveFn: async () => null,
+      },
+    );
+
+    await expect(readRunOutcome(project.remote, stateRoot)).resolves.toEqual({
+      outcome: "blocked",
+      reason: "Could not parse issues from gh",
+      stoppedAt,
     });
   });
 });

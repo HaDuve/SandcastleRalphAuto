@@ -221,6 +221,28 @@ describe("createWorkerManager", () => {
     });
   });
 
+  it("persists host-level blocked run outcome when there is no active slice", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async () => ({
+        status: "blocked",
+        reason: "Could not parse issues from gh",
+      }),
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, { rootDir: "/tmp", stateRoot });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
+      outcome: "blocked",
+      reason: "Could not parse issues from gh",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    });
+  });
+
   it("persists awaiting-human run outcome with reason, phase, and logRef", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
     const eventBus = createEventBus();

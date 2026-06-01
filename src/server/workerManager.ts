@@ -9,6 +9,7 @@ import { type Project } from "../registry/index.js";
 import {
   persistRunOutcomeFromLoopResult,
   persistRunOutcomeFromWorkerError,
+  workerStopReason,
 } from "../state/runOutcomeFromWorker.js";
 import { type EventBus } from "./eventBus.js";
 
@@ -50,10 +51,6 @@ function createWorkerControl(entry: WorkerEntry): WorkerControl {
       }
     },
   };
-}
-
-function workerStopReason(error: unknown): string {
-  return error instanceof Error ? error.message : "worker error";
 }
 
 export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {

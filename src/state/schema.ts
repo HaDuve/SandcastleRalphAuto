@@ -62,16 +62,6 @@ export const RunOutcomeSchema = z
         path: ["reason"],
       });
     }
-    if (
-      (data.outcome === "blocked" || data.outcome === "awaiting-human") &&
-      data.phase === undefined
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: `${data.outcome} outcome requires phase`,
-        path: ["phase"],
-      });
-    }
   });
 
 export type ActiveState = z.infer<typeof ActiveStateSchema>;

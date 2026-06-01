@@ -7,7 +7,7 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-function workerStopReason(error: unknown): string {
+export function workerStopReason(error: unknown): string {
   return error instanceof Error ? error.message : "worker error";
 }
 
