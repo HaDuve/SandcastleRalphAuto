@@ -18,7 +18,12 @@ import {
   loadRegistryFromRoot,
   type Project,
 } from "../registry/index.js";
-import { CANONICAL_PHASES, type CanonicalPhase } from "../prompts/phases.js";
+import {
+  CANONICAL_PHASES,
+  isRunnablePhase,
+  type CanonicalPhase,
+  type RunnablePhase,
+} from "../prompts/phases.js";
 import {
   runLinearSlice,
   type RunLinearSliceResult,
@@ -83,7 +88,7 @@ export type BootstrapFirstIssueResult =
 
 export type AgentStreamEnvelope = {
   issue: number;
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
   event: AgentStreamEvent;
 };
 
@@ -426,9 +431,20 @@ export async function runProjectSlice(
       return sliceBlockedResult(slice);
     }
 
+    const sliceForMerge =
+      slice.status === "recovery-complete"
+        ? {
+            status: "ready-for-next" as const,
+            issue: slice.issue,
+            branch: slice.branch,
+            pr: slice.pr,
+            phasesCompleted: [],
+          }
+        : slice;
+
     const mergeResult = await applyMergeGate(
       project,
-      slice,
+      sliceForMerge,
       sliceRunner.getReviewHandoff(),
       stateRoot,
       deps,
@@ -449,20 +465,20 @@ export async function runProjectSlice(
         reason: mergeResult.reason,
       };
     }
-    if (slice.pr === undefined) {
+    if (sliceForMerge.pr === undefined) {
       return {
         status: "blocked",
-        issue: slice.issue,
+        issue: sliceForMerge.issue,
         reason: "Slice completed without a PR number",
       };
     }
 
-    await waitForMergedPr({ project, pr: slice.pr });
+    await waitForMergedPr({ project, pr: sliceForMerge.pr });
     await mutex.release(project.remote);
     return {
       status: "completed",
-      issue: slice.issue,
-      pr: slice.pr,
+      issue: sliceForMerge.issue,
+      pr: sliceForMerge.pr,
     };
   } catch (error) {
     if (error instanceof CliError) {
@@ -532,16 +548,16 @@ async function resolveLoopStart(
     };
   }
   if (active?.status === "active") {
-    if (!(CANONICAL_PHASES as readonly string[]).includes(active.phase)) {
+    if (!isRunnablePhase(active.phase)) {
       return {
         status: "blocked",
-        reason: `Cannot resume non-canonical phase: ${active.phase}`,
+        reason: `Cannot resume unknown phase: ${active.phase}`,
       };
     }
     return {
       kind: "ready",
       issue: active.issue,
-      fromPhase: active.phase as RunPhaseOptions["phase"],
+      fromPhase: active.phase,
     };
   }
 
@@ -633,11 +649,30 @@ export async function loopProject(
         };
       }
 
-      slicesCompleted += 1;
+      const sliceForMerge =
+        slice.status === "recovery-complete"
+          ? {
+              status: "ready-for-next" as const,
+              issue: slice.issue,
+              branch: slice.branch,
+              pr: slice.pr,
+              phasesCompleted: [],
+            }
+          : slice.status === "ready-for-next"
+            ? slice
+            : null;
+
+      if (sliceForMerge === null) {
+        throw new Error(`Unexpected slice status: ${slice.status}`);
+      }
+
+      if (slice.status === "ready-for-next") {
+        slicesCompleted += 1;
+      }
 
       const mergeResult = await applyMergeGate(
         project,
-        slice,
+        sliceForMerge,
         sliceRunner.getReviewHandoff(),
         stateRoot,
         deps,
@@ -650,21 +685,21 @@ export async function loopProject(
       if (mergeResult.status === "awaiting-human") {
         return mergeBlocked(mergeResult);
       }
-      if (slice.pr === undefined) {
+      if (sliceForMerge.pr === undefined) {
         return {
           status: "blocked",
           reason: "Slice completed without a PR number",
         };
       }
 
-      await waitForMergedPr({ project, pr: slice.pr });
+      await waitForMergedPr({ project, pr: sliceForMerge.pr });
 
       const nextResult = await runNextFn(
         {
           project,
           projectPath: project.path,
           stateRoot,
-          pr: slice.pr,
+          pr: sliceForMerge.pr,
         },
         {
           gh: deps.gh ?? resolved.gh,

@@ -19,6 +19,7 @@ export {
   type RunLinearSliceBlocked,
   type RunLinearSliceDeps,
   type RunLinearSliceOptions,
+  type RunLinearSliceRecoveryComplete,
   type RunLinearSliceResult,
   type RunLinearSliceSuccess,
 } from "./runSlice.js";

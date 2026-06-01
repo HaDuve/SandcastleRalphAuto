@@ -1,5 +1,5 @@
 import { type Handoff } from "../handoff/index.js";
-import { type CanonicalPhase } from "../prompts/phases.js";
+import { type CanonicalPhase, type RunnablePhase } from "../prompts/phases.js";
 import {
   PHASE_COMPLETE_SIGNAL,
   type RunPhaseResult,
@@ -11,7 +11,7 @@ export type AdvanceSliceInput = {
   issue: number;
   branch: string;
   pr?: number;
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
   result: RunPhaseResult;
 };
 
@@ -29,11 +29,14 @@ export type AdvanceSliceBlocked = {
 
 export type AdvanceSliceOutcome = AdvanceSliceSuccess | AdvanceSliceBlocked;
 
-export function skillForPhase(phase: CanonicalPhase): string {
+export function skillForPhase(phase: RunnablePhase): string {
   return `/${phase}`;
 }
 
-export function expectedNextSkill(phase: CanonicalPhase): string {
+export function expectedNextSkill(phase: RunnablePhase): string {
+  if (phase === "babysit") {
+    return "/merge";
+  }
   const next = getNextOrchestratorPhase(phase);
   if (next === "next") {
     return "/next";
@@ -61,7 +64,7 @@ function blockedActive(
 }
 
 function advanceFailureReason(
-  phase: CanonicalPhase,
+  phase: RunnablePhase,
   handoff: Handoff,
   completionSignal: string | undefined,
 ): string | null {
@@ -79,7 +82,9 @@ function advanceFailureReason(
   }
   const expected = expectedNextSkill(phase);
   if (handoff.nextSkill !== expected) {
-    return `Handoff nextSkill ${handoff.nextSkill} does not match linear pipeline (expected ${expected})`;
+    const pipelineLabel =
+      phase === "babysit" ? "babysit recovery" : "linear pipeline";
+    return `Handoff nextSkill ${handoff.nextSkill} does not match ${pipelineLabel} (expected ${expected})`;
   }
   return null;
 }
@@ -101,6 +106,20 @@ export function advanceSlice(input: AdvanceSliceInput): AdvanceSliceOutcome {
         skillForPhase(input.phase),
       ),
       reason: failure,
+    };
+  }
+
+  if (input.phase === "babysit") {
+    return {
+      ok: true,
+      handoffToNext: false,
+      active: {
+        issue: input.issue,
+        phase: "merge",
+        branch: input.branch,
+        pr: handoff.pr ?? input.pr,
+        status: "active",
+      },
     };
   }
 

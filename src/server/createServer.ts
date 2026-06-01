@@ -6,7 +6,7 @@ import { listHandoffHistory } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
 import { listPhaseLogs, readPhaseLog } from "../phaseLogs/index.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
-import { parseCanonicalPhase } from "../prompts/phases.js";
+import { parseRunnablePhase } from "../prompts/phases.js";
 import { readActive, readRunOutcome, readSkips, writeSkips } from "../state/index.js";
 import { toActiveSummary, workerStatusFor } from "./projectSnapshot.js";
 import { createEventBus, type EventBus } from "./eventBus.js";
@@ -205,7 +205,7 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
           }
 
           const phaseParam = requestSearchParams(req).get("phase");
-          const phase = parseCanonicalPhase(phaseParam ?? active.phase);
+          const phase = parseRunnablePhase(phaseParam ?? active.phase);
           if (!phase) {
             sendJson(res, 400, { error: "Invalid phase" });
             return;

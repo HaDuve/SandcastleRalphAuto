@@ -1,6 +1,7 @@
 /** Sandcastle run invoker — one cold agent per phase. */
 export {
   CURSOR_TRUST_SETUP,
+  DEFAULT_BABYSIT_MAX_ITERATIONS,
   DEFAULT_TDD_MAX_ITERATIONS,
   PHASE_COMPLETE_SIGNAL,
   resolveOrchestratorRoot,

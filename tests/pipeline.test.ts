@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Handoff } from "../src/handoff/index.js";
-import { CANONICAL_PHASES } from "../src/prompts/phases.js";
+import {
+  CANONICAL_PHASES,
+  RECOVERY_PHASES,
+  type CanonicalPhase,
+} from "../src/prompts/phases.js";
 import {
   advanceSlice,
   getNextOrchestratorPhase,
@@ -146,6 +150,42 @@ describe("advanceSlice", () => {
       expect(outcome.active.resumeSkill).toBe("/merge");
     }
   });
+
+  it("advances babysit to merge when handoff routes to /merge", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "babysit",
+      pr: 99,
+      result: phaseResult("babysit", "/merge", { pr: 99 }),
+    });
+
+    expect(outcome).toEqual({
+      ok: true,
+      handoffToNext: false,
+      active: {
+        issue: 7,
+        phase: "merge",
+        branch: "issue-7-pipeline",
+        pr: 99,
+        status: "active",
+      },
+    });
+  });
+
+  it("blocks babysit when handoff nextSkill is not /merge", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "babysit",
+      pr: 99,
+      result: phaseResult("babysit", "/review-tdd", { pr: 99 }),
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.reason).toMatch(/expected \/merge/);
+      expect(outcome.active.resumeSkill).toBe("/babysit");
+    }
+  });
 });
 
 const NEXT_SKILL_BY_PHASE: Record<(typeof CANONICAL_PHASES)[number], string> =
@@ -156,6 +196,53 @@ const NEXT_SKILL_BY_PHASE: Record<(typeof CANONICAL_PHASES)[number], string> =
     "review-tdd": "/merge",
     merge: "/next",
   };
+
+describe("runLinearSlice recovery resume", () => {
+  it("runs babysit from fromPhase and returns recovery-complete", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-recovery-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    let runPhasePhase: string | undefined;
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath: "/tmp/project",
+        stateRoot,
+        fromPhase: "babysit",
+      },
+      {
+        runPhase: async (options) => {
+          runPhasePhase = options.phase;
+          return phaseResult("babysit", "/merge", { pr: 99 });
+        },
+      },
+    );
+
+    expect(runPhasePhase).toBe("babysit");
+    expect(result).toEqual({
+      status: "recovery-complete",
+      issue: 7,
+      branch: "issue-7-pipeline",
+      pr: 99,
+    });
+
+    const active = await readActive(projectId, stateRoot);
+    expect(active).toMatchObject({
+      phase: "merge",
+      status: "active",
+      pr: 99,
+    });
+  });
+});
+
+describe("recovery phases", () => {
+  it("keeps babysit out of the canonical linear loop", () => {
+    expect(RECOVERY_PHASES).toEqual(["babysit"]);
+    expect(CANONICAL_PHASES).not.toContain("babysit");
+  });
+});
 
 describe("runLinearSlice", () => {
   it("runs the full linear sequence with a stubbed runner and hands off to /next", async () => {
@@ -175,9 +262,10 @@ describe("runLinearSlice", () => {
       {
         runPhase: async (options) => {
           phaseCalls.push(options.phase);
+          const phase = options.phase as CanonicalPhase;
           return phaseResult(
-            options.phase,
-            NEXT_SKILL_BY_PHASE[options.phase],
+            phase,
+            NEXT_SKILL_BY_PHASE[phase],
             {
               pr: options.phase === "create-pr" ? 42 : 42,
             },
@@ -220,10 +308,8 @@ describe("runLinearSlice", () => {
           if (options.phase === "create-pr") {
             return phaseResult("create-pr", "/babysit");
           }
-          return phaseResult(
-            options.phase,
-            NEXT_SKILL_BY_PHASE[options.phase],
-          );
+          const phase = options.phase as CanonicalPhase;
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase]);
         },
       },
     );
@@ -263,11 +349,8 @@ describe("runLinearSlice", () => {
           if (options.phase === "review-tdd") {
             throw new Error("sandbox run failed");
           }
-          return phaseResult(
-            options.phase,
-            NEXT_SKILL_BY_PHASE[options.phase],
-            { pr: 42 },
-          );
+          const phase = options.phase as CanonicalPhase;
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase], { pr: 42 });
         },
       },
     );
@@ -337,9 +420,10 @@ describe("runLinearSlice", () => {
       {
         runPhase: async (options) => {
           phaseCalls.push(options.phase);
+          const phase = options.phase as CanonicalPhase;
           return phaseResult(
-            options.phase,
-            NEXT_SKILL_BY_PHASE[options.phase],
+            phase,
+            NEXT_SKILL_BY_PHASE[phase],
             { pr: 42 },
           );
         },

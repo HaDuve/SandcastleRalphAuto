@@ -1,6 +1,6 @@
-import type { CanonicalPhase } from "./phases.js";
+import type { RunnablePhase } from "./phases.js";
 
-function renderBranchPin(phase: CanonicalPhase): string {
+function renderBranchPin(phase: RunnablePhase): string {
   const lines = [
     "## Git branch",
     "",
@@ -28,7 +28,7 @@ function renderOutputs(): string {
   ].join("\n");
 }
 
-export function renderHarness(phase: CanonicalPhase): string {
+export function renderHarness(phase: RunnablePhase): string {
   return [
     "# Headless harness (SandcastleRalphAuto)",
     "",

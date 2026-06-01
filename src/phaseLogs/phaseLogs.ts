@@ -1,7 +1,11 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { branchForIssue } from "../next/index.js";
-import { CANONICAL_PHASES, type CanonicalPhase } from "../prompts/phases.js";
+import {
+  CANONICAL_PHASES,
+  type CanonicalPhase,
+  type RunnablePhase,
+} from "../prompts/phases.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
 
 export function sanitizeBranchForFilename(branch: string): string {
@@ -11,7 +15,7 @@ export function sanitizeBranchForFilename(branch: string): string {
 export function resolvePhaseLogPath(input: {
   projectPath: string;
   branch: string;
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
 }): string {
   const sanitizedBranch = sanitizeBranchForFilename(input.branch);
   return join(
@@ -76,7 +80,7 @@ export async function listPhaseLogs(
 export async function readPhaseLog(
   projectId: string,
   issue: number,
-  phase: CanonicalPhase,
+  phase: RunnablePhase,
   options: {
     rootDir?: string;
     readTextFile?: (path: string) => Promise<string>;

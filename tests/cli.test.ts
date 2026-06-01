@@ -455,6 +455,48 @@ describe("loopProject", () => {
     });
   });
 
+  it("resumes an active babysit recovery phase instead of rejecting it", async () => {
+    const sliceOptions: RunLinearSliceOptions[] = [];
+
+    await loopProject(
+      { projectId: "portfolio" },
+      {
+        loadRegistry: async () => [portfolio],
+        readActive: async () => ({
+          issue: 10,
+          phase: "babysit",
+          branch: "issue-10",
+          pr: 41,
+          status: "active",
+        }),
+        runLinearSlice: async (options) => {
+          sliceOptions.push(options);
+          return {
+            status: "recovery-complete",
+            issue: options.issue,
+            branch: options.branch,
+            pr: 41,
+          };
+        },
+        runPhase: async () => {
+          throw new Error("runPhase should not run in this stub");
+        },
+        runMergeGate: async () => ({ status: "auto-merge-queued" as const }),
+        waitForMergedPr: async () => {},
+        runNext: async () => ({ status: QUEUE_EMPTY }),
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(sliceOptions[0]).toMatchObject({
+      issue: 10,
+      fromPhase: "babysit",
+    });
+  });
+
   it("cold-starts the lowest eligible issue when loop has no seed issue", async () => {
     let bootstrapCalled = false;
 

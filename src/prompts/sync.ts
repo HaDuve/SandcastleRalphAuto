@@ -2,10 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { buildPrompt } from "./build.js";
-import { CANONICAL_PHASES, type CanonicalPhase } from "./phases.js";
+import { RUNNABLE_PHASES, type RunnablePhase } from "./phases.js";
 
 export type PhaseSyncResult = {
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
   changed: boolean;
   diff: string | null;
 };
@@ -62,7 +62,7 @@ export async function syncSkills(
 
   const phases: PhaseSyncResult[] = [];
 
-  for (const phase of CANONICAL_PHASES) {
+  for (const phase of RUNNABLE_PHASES) {
     const skillPath = join(skillsRoot, phase, "SKILL.md");
     const skillMarkdown = await readFile(skillPath, "utf8");
     const next = buildPrompt(phase, skillMarkdown);
