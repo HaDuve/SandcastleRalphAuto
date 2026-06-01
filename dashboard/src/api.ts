@@ -10,14 +10,16 @@ export type ProjectEvent = {
   projectId?: string;
   workerStatus?: WorkerStatus;
   reason?: string;
+  chunk?: string;
 };
 
-const WORKER_EVENT_TYPES = [
+const PROJECT_EVENT_TYPES = [
   "connected",
   "worker-started",
   "worker-stopped",
   "worker-paused",
   "worker-resumed",
+  "phase-log",
 ] as const;
 
 function controlErrorMessage(body: ControlStatusBody, status: number): string {
@@ -101,6 +103,27 @@ export async function fetchHistory(projectId: string): Promise<HistoryEntry[]> {
   return body.history;
 }
 
+export type ProjectLog = {
+  issue: number;
+  phase: string;
+  log: string | null;
+  phases: string[];
+};
+
+export async function fetchProjectLog(
+  projectId: string,
+  phase?: string,
+): Promise<ProjectLog | null> {
+  const params = phase ? `?phase=${encodeURIComponent(phase)}` : "";
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/log${params}`,
+  );
+  if (response.status === 404) {
+    return null;
+  }
+  return parseJson(response);
+}
+
 export async function setIssueSkip(
   projectId: string,
   issue: number,
@@ -128,12 +151,12 @@ export function subscribeProjectEvents(
     }
   };
 
-  for (const type of WORKER_EVENT_TYPES) {
+  for (const type of PROJECT_EVENT_TYPES) {
     source.addEventListener(type, handler);
   }
 
   return () => {
-    for (const type of WORKER_EVENT_TYPES) {
+    for (const type of PROJECT_EVENT_TYPES) {
       source.removeEventListener(type, handler);
     }
     source.close();

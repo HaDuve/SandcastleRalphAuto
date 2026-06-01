@@ -16,6 +16,7 @@ import {
 import { ActivePanel } from "./ActivePanel.js";
 import { DashboardLayout } from "./DashboardLayout.js";
 import { HistoryPanel } from "./HistoryPanel.js";
+import { LogPanel } from "./LogPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
 import { RunOutcomePanel } from "./RunOutcomePanel.js";
@@ -352,7 +353,7 @@ export function App() {
         }
         phaseStepper={<PanelPlaceholder title="Phase stepper" projectId={focusedProjectId} />}
         active={<ActivePanel project={focusedProject} active={active} />}
-        log={<PanelPlaceholder title="Log" projectId={focusedProjectId} />}
+        log={<LogPanel project={focusedProject} />}
         queue={
           <QueuePanel
             project={focusedProject}

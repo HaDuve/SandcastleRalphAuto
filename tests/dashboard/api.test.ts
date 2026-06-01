@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchActive,
   fetchHistory,
+  fetchProjectLog,
   fetchProjects,
   fetchQueue,
   killProject,
@@ -131,6 +132,7 @@ describe("dashboard API client", () => {
     const unsubscribe = subscribeProjectEvents("portfolio", onEvent);
 
     expect(listeners.has("worker-started")).toBe(true);
+    expect(listeners.has("phase-log")).toBe(true);
 
     listeners.get("worker-started")!.forEach((handler) =>
       handler({
@@ -144,6 +146,40 @@ describe("dashboard API client", () => {
 
     unsubscribe();
     expect(listeners.get("worker-started")!.size).toBe(0);
+  });
+
+  it("fetches the active issue phase log for a project", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        expect(url).toBe("/api/projects/portfolio/log");
+        return new Response(
+          JSON.stringify({
+            issue: 7,
+            phase: "review-pr",
+            log: "review output\n",
+            phases: ["tdd", "review-pr"],
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    await expect(fetchProjectLog("portfolio")).resolves.toEqual({
+      issue: 7,
+      phase: "review-pr",
+      log: "review output\n",
+      phases: ["tdd", "review-pr"],
+    });
+  });
+
+  it("returns null when the project has no active slice log", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "No active slice" }), { status: 404 })),
+    );
+
+    await expect(fetchProjectLog("portfolio")).resolves.toBeNull();
   });
 
   it("fetches queue issues for a project", async () => {

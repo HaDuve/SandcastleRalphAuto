@@ -62,6 +62,17 @@ function stubProjectsFetch(projects: typeof portfolio[]) {
         { status: 200 },
       );
     }
+    if (url.endsWith("/log")) {
+      return new Response(
+        JSON.stringify({
+          issue: 11,
+          phase: "tdd",
+          log: "agent log line\n",
+          phases: ["tdd"],
+        }),
+        { status: 200 },
+      );
+    }
     if (url.endsWith("/history")) {
       return new Response(
         JSON.stringify({
