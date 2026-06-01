@@ -9,7 +9,6 @@ import { type Project } from "../registry/index.js";
 import {
   persistRunOutcomeFromLoopResult,
   persistRunOutcomeFromWorkerError,
-  workerStopReason,
 } from "../state/runOutcomeFromWorker.js";
 import { type EventBus } from "./eventBus.js";
 
@@ -106,7 +105,7 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
         runDeps,
       )
         .then(async (result) => {
-          await persistRunOutcomeFromLoopResult(result, {
+          const lastRunOutcome = await persistRunOutcomeFromLoopResult(result, {
             project,
             stateRoot: input.stateRoot,
             stoppedAt: now().toISOString(),
@@ -114,12 +113,12 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
           deps.eventBus.emit({
             type: "worker-stopped",
             projectId: project.id,
-            reason: result.status,
+            lastRunOutcome,
           });
           return result;
         })
         .catch(async (error: unknown) => {
-          await persistRunOutcomeFromWorkerError(error, {
+          const lastRunOutcome = await persistRunOutcomeFromWorkerError(error, {
             project,
             stateRoot: input.stateRoot,
             stoppedAt: now().toISOString(),
@@ -127,7 +126,7 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
           deps.eventBus.emit({
             type: "worker-stopped",
             projectId: project.id,
-            reason: workerStopReason(error),
+            lastRunOutcome,
           });
           return undefined;
         })

@@ -53,7 +53,11 @@ describe("createWorkerManager", () => {
     expect(events).toContainEqual({
       type: "worker-stopped",
       projectId: "portfolio",
-      reason: "Project HaDuve/Portfolio is already running",
+      lastRunOutcome: {
+        outcome: "error",
+        reason: "Project HaDuve/Portfolio is already running",
+        stoppedAt: expect.any(String),
+      },
     });
     expect(manager.isRunning("portfolio")).toBe(false);
   });
@@ -178,6 +182,54 @@ describe("createWorkerManager", () => {
     await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
       outcome: "queue-empty",
       stoppedAt: "2026-06-01T12:00:00.000Z",
+    });
+  });
+
+  it("emits worker-stopped with lastRunOutcome matching run.json when blocked", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const events: DashboardEvent[] = [];
+    eventBus.subscribe("portfolio", (event) => events.push(event));
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async () => {
+        await writeActive(
+          portfolio.remote,
+          {
+            issue: 7,
+            phase: "review-tdd",
+            branch: "issue-7",
+            status: "blocked",
+            reason: "Required check ci failed",
+            resumeSkill: "/review-tdd",
+          },
+          stateRoot,
+        );
+        return { status: "blocked", reason: "Required check ci failed" };
+      },
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, { rootDir: "/tmp", stateRoot });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    const persisted = await readRunOutcome(portfolio.remote, stateRoot);
+    expect(events).toContainEqual({
+      type: "worker-stopped",
+      projectId: "portfolio",
+      lastRunOutcome: persisted,
+    });
+    expect(persisted).toEqual({
+      outcome: "blocked",
+      reason: "Required check ci failed",
+      phase: "review-tdd",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+      logRef: join(
+        portfolio.path,
+        ".sandcastle",
+        "logs",
+        "issue-7-review-tdd.log",
+      ),
     });
   });
 

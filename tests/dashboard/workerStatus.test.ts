@@ -35,16 +35,37 @@ describe("applyWorkerEvent", () => {
     );
   });
 
-  it("carries lastOutcome from worker-stopped reason", () => {
+  it("carries lastOutcome from worker-stopped lastRunOutcome", () => {
+    const lastRunOutcome = {
+      outcome: "blocked" as const,
+      reason: "Required check ci failed",
+      phase: "merge",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    };
     const next = applyWorkerEvent({ status: "running", lastOutcome: null }, {
       type: "worker-stopped",
-      reason: "queue-empty",
+      lastRunOutcome,
     });
 
-    expect(next.status).toBe("idle");
-    expect(next.lastOutcome).toEqual({
-      outcome: "queue-empty",
-      stoppedAt: expect.any(String),
+    expect(next).toEqual({
+      status: "idle",
+      lastOutcome: lastRunOutcome,
+    });
+  });
+
+  it("keeps prior lastOutcome when worker-stopped omits lastRunOutcome", () => {
+    const prior = {
+      outcome: "blocked" as const,
+      reason: "CI failed",
+      stoppedAt: "2026-06-01T11:00:00.000Z",
+    };
+    const next = applyWorkerEvent({ status: "running", lastOutcome: prior }, {
+      type: "worker-stopped",
+    });
+
+    expect(next).toEqual({
+      status: "idle",
+      lastOutcome: prior,
     });
   });
 

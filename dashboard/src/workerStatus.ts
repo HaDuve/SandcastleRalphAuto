@@ -10,17 +10,8 @@ export type WorkerState = {
 type WorkerStatusEvent = {
   type: string;
   workerStatus?: WorkerStatus;
-  reason?: string;
+  lastRunOutcome?: RunOutcome;
 };
-
-function isTerminalOutcome(reason: string): reason is Exclude<RunOutcome["outcome"], "error"> {
-  return (
-    reason === "queue-empty" ||
-    reason === "blocked" ||
-    reason === "awaiting-human" ||
-    reason === "killed"
-  );
-}
 
 function defaultWorkerState(): WorkerState {
   return { status: "unknown", lastOutcome: null };
@@ -34,27 +25,6 @@ function normalizeCurrent(current: WorkerState | WorkerStatus | undefined): Work
     return { status: current, lastOutcome: null };
   }
   return current;
-}
-
-function runOutcomeFromWorkerStopped(reason: string | undefined): RunOutcome {
-  if (!reason) {
-    return {
-      outcome: "error",
-      reason: "Worker stopped without a reason",
-      stoppedAt: new Date().toISOString(),
-    };
-  }
-  if (isTerminalOutcome(reason)) {
-    return {
-      outcome: reason,
-      stoppedAt: new Date().toISOString(),
-    };
-  }
-  return {
-    outcome: "error",
-    reason,
-    stoppedAt: new Date().toISOString(),
-  };
 }
 
 export function applyWorkerEvent(
@@ -78,7 +48,7 @@ export function applyWorkerEvent(
     case "worker-stopped":
       return {
         status: "idle",
-        lastOutcome: runOutcomeFromWorkerStopped(event.reason),
+        lastOutcome: event.lastRunOutcome ?? state.lastOutcome,
       };
     default:
       return state.status === "unknown" ? defaultWorkerState() : state;
