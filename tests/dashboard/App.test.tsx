@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../dashboard/src/App.js";
+import { HIDDEN_IDS_STORAGE_KEY } from "../../dashboard/src/hiddenProjects.js";
 
 const portfolio = {
   id: "portfolio",
@@ -102,6 +103,7 @@ function stubProjectsFetch(projects: typeof portfolio[]) {
 describe("App", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it("renders every project in the sidebar when many are configured", async () => {
@@ -518,6 +520,67 @@ describe("App", () => {
         expect.objectContaining({ method: "POST" }),
       );
       expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    });
+  });
+
+  it("hides a project client-side without mutating the projects API", async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubProjectsFetch([portfolio, other]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await screen.findByRole("checkbox", { name: /portfolio/i });
+
+    await user.click(screen.getByRole("button", { name: /hide portfolio/i }));
+
+    expect(screen.queryByRole("checkbox", { name: /portfolio/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /other/i })).toBeInTheDocument();
+    expect(localStorage.getItem(HIDDEN_IDS_STORAGE_KEY)).toBe(JSON.stringify(["portfolio"]));
+    expect(
+      fetchMock.mock.calls.every(([url, init]) => {
+        if (url !== "/api/projects") {
+          return true;
+        }
+        return !init?.method || init.method === "GET";
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps hidden projects out of the sidebar after reload", async () => {
+    localStorage.setItem(HIDDEN_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
+
+    render(<App />);
+
+    await screen.findByRole("checkbox", { name: /other/i });
+    expect(screen.queryByRole("checkbox", { name: /portfolio/i })).not.toBeInTheDocument();
+  });
+
+  it("restores hidden projects when Show all is clicked", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(HIDDEN_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
+
+    render(<App />);
+    await screen.findByRole("button", { name: /show all/i });
+
+    await user.click(screen.getByRole("button", { name: /show all/i }));
+
+    expect(await screen.findByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
+    expect(localStorage.getItem(HIDDEN_IDS_STORAGE_KEY)).toBe(JSON.stringify([]));
+  });
+
+  it("blocks Hide while the project worker is running", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
+
+    render(<App />);
+    await screen.findByRole("checkbox", { name: /portfolio/i });
+    await user.click(screen.getByRole("checkbox", { name: /portfolio/i }));
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /hide portfolio/i })).toBeDisabled();
     });
   });
 });

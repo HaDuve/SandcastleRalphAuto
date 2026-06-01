@@ -17,26 +17,40 @@ const portfolio: Project = {
   sandbox: "none",
 };
 
+const other: Project = {
+  ...portfolio,
+  id: "other",
+  path: "/tmp/other",
+  remote: "HaDuve/Other",
+};
+
 function renderPicker(
   overrides: Partial<{
+    projects: Project[];
     selectedIds: Set<string>;
     workerStatuses: Record<string, WorkerStatus>;
     onStart: (projectId: string) => void;
     onPause: (projectId: string) => void;
     onResume: (projectId: string) => void;
     onKill: (projectId: string) => void;
+    onHide: (projectId: string) => void;
+    onShowAll: () => void;
+    hasHiddenProjects: boolean;
   }> = {},
 ) {
   return render(
     <ProjectPicker
-      projects={[portfolio]}
+      projects={overrides.projects ?? [portfolio]}
       selectedIds={overrides.selectedIds ?? new Set()}
       workerStatuses={overrides.workerStatuses ?? {}}
+      hasHiddenProjects={overrides.hasHiddenProjects ?? false}
       onSelectedChange={() => {}}
       onStart={overrides.onStart ?? (() => {})}
       onPause={overrides.onPause ?? (() => {})}
       onResume={overrides.onResume ?? (() => {})}
       onKill={overrides.onKill ?? (() => {})}
+      onHide={overrides.onHide ?? (() => {})}
+      onShowAll={overrides.onShowAll ?? (() => {})}
     />,
   );
 }
@@ -125,5 +139,56 @@ describe("ProjectPicker", () => {
     expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeDisabled();
+  });
+
+  it("removes a project from the list when Hide is clicked", async () => {
+    const user = userEvent.setup();
+    const onHide = vi.fn();
+    const { rerender } = renderPicker({
+      projects: [portfolio, other],
+      onHide,
+    });
+
+    expect(screen.getByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /hide portfolio/i }));
+
+    expect(onHide).toHaveBeenCalledWith("portfolio");
+    rerender(
+      <ProjectPicker
+        projects={[other]}
+        selectedIds={new Set()}
+        workerStatuses={{}}
+        hasHiddenProjects
+        onSelectedChange={() => {}}
+        onStart={() => {}}
+        onPause={() => {}}
+        onResume={() => {}}
+        onKill={() => {}}
+        onHide={onHide}
+        onShowAll={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole("checkbox", { name: /portfolio/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /other/i })).toBeInTheDocument();
+  });
+
+  it("disables Hide while the project worker is running", () => {
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "running" },
+    });
+
+    expect(screen.getByRole("button", { name: /hide portfolio/i })).toBeDisabled();
+  });
+
+  it("restores hidden projects when Show all is clicked", async () => {
+    const user = userEvent.setup();
+    const onShowAll = vi.fn();
+    renderPicker({ hasHiddenProjects: true, onShowAll });
+
+    await user.click(screen.getByRole("button", { name: /show all/i }));
+
+    expect(onShowAll).toHaveBeenCalled();
   });
 });
