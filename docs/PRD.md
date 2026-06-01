@@ -28,6 +28,8 @@ A **local control plane** = a long-lived Node/TS orchestrator process + a local 
 | D11 | Phase prompts = **pinned snapshot** of skill + minimal headless harness; `sync-skills` to refresh | Reproducible AFK runs | [0004](./adr/0004-snapshot-skills-into-prompts.md) |
 | D12 | Dashboard = **localhost** only, **Node + SSE** API, **Vite + React** frontend | Single-operator local tool; SSE is one-way server→client | — |
 | D13 | Concurrency = one mutex per project (`owner/repo`), independent across projects; worktree-parallelism deferred | Stated safety guarantee | — |
+| D14 | CI = GH Actions workflow (`.github/workflows/ci.yml`, job **`ci`**) running `typecheck` + `test` on every PR; `ci` is the required status check | The merge gate is meaningless without a real green check to gate on | — |
+| D15 | `main` is protected: require the `ci` check, **enforce for admins** (no bypass); all changes land via PR (incl. human + AFK) | Makes auto-merge safe and uniform; nothing merges un-checked | — |
 
 ## 4. Pipeline (canonical)
 
@@ -40,6 +42,7 @@ This is the exact, **linear** skill-flow proven in practice — every phase runs
 - `tdd` uses `maxIterations: N`; the rest are single-shot. Phases emit/validate the handoff host-side.
 - `/next` is **host orchestration, not a skill phase** (no agent): verify merge → archive handoff → select next eligible issue (lowest #, minus skips/blocked) → start `/tdd`, or emit `QUEUE_EMPTY`.
 - If `/merge` can't proceed (red required checks / open blockers) the slice is marked `blocked` for the operator — there is no automated CI-repair phase in v0.
+- Required check is **`ci`** (D14). `gh pr merge --squash --auto` queues the PR and GitHub merges it once `ci` is green; with branch protection (D15) nothing merges un-checked, including direct human pushes.
 
 ## 5. Handoff schema (v0 draft)
 
