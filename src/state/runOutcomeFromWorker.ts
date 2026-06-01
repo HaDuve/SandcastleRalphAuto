@@ -94,10 +94,11 @@ export async function persistRunOutcomeFromLoopResult(
     readActiveFn?: typeof readActive;
     writeRunOutcomeFn?: typeof writeRunOutcome;
   },
-): Promise<void> {
+): Promise<RunOutcome> {
   const writeRunOutcomeFn = input.writeRunOutcomeFn ?? writeRunOutcome;
   const outcome = await runOutcomeFromLoopResult(result, input);
   await writeRunOutcomeFn(input.project.remote, outcome, input.stateRoot);
+  return outcome;
 }
 
 export async function persistRunOutcomeFromWorkerError(
@@ -109,8 +110,9 @@ export async function persistRunOutcomeFromWorkerError(
     readActiveFn?: typeof readActive;
     writeRunOutcomeFn?: typeof writeRunOutcome;
   },
-): Promise<void> {
+): Promise<RunOutcome> {
   const writeRunOutcomeFn = input.writeRunOutcomeFn ?? writeRunOutcome;
   const outcome = await runOutcomeFromWorkerError(error, input);
   await writeRunOutcomeFn(input.project.remote, outcome, input.stateRoot);
+  return outcome;
 }

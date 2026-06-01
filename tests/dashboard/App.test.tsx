@@ -7,6 +7,7 @@ import {
   FOCUSED_PROJECT_ID_STORAGE_KEY,
   SELECTED_IDS_STORAGE_KEY,
 } from "../../dashboard/src/selectedProjects.js";
+import { installStoppableEventSource } from "./stoppableEventSource.js";
 
 const portfolio = {
   id: "portfolio",
@@ -847,50 +848,9 @@ describe("App", () => {
   });
 
   it("shows blocked in the sidebar after worker-stopped refreshes the active slice", async () => {
-    const sources: Array<{
-      emit: (type: string, data: unknown) => void;
-    }> = [];
-    class StoppableEventSource {
-      private listeners = new Map<string, Set<(event: Event) => void>>();
-
-      constructor(url: string) {
-        void url;
-        sources.push(this);
-        queueMicrotask(() => {
-          this.emit("connected", {
-            type: "connected",
-            projectId: "portfolio",
-            workerStatus: "running",
-          });
-        });
-      }
-
-      addEventListener(type: string, handler: (event: Event) => void) {
-        let typeListeners = this.listeners.get(type);
-        if (!typeListeners) {
-          typeListeners = new Set();
-          this.listeners.set(type, typeListeners);
-        }
-        typeListeners.add(handler);
-      }
-
-      removeEventListener(type: string, handler: (event: Event) => void) {
-        this.listeners.get(type)?.delete(handler);
-      }
-
-      close() {}
-
-      emit(type: string, data: unknown) {
-        const handlers = this.listeners.get(type);
-        if (!handlers) {
-          return;
-        }
-        for (const handler of handlers) {
-          handler({ data: JSON.stringify(data) } as unknown as Event);
-        }
-      }
-    }
-    vi.stubGlobal("EventSource", StoppableEventSource as unknown as typeof EventSource);
+    const { sources } = installStoppableEventSource({
+      connected: { projectId: "portfolio", workerStatus: "running" },
+    });
 
     localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
     let activeFetches = 0;
@@ -946,7 +906,12 @@ describe("App", () => {
         source.emit("worker-stopped", {
           type: "worker-stopped",
           projectId: "portfolio",
-          reason: "blocked",
+          lastRunOutcome: {
+            outcome: "blocked",
+            reason: "Required check ci failed",
+            phase: "merge",
+            stoppedAt: "2026-06-01T12:00:00.000Z",
+          },
         });
       }
     });
@@ -955,6 +920,210 @@ describe("App", () => {
       expect(within(sidebar).getByText("blocked")).toBeInTheDocument();
     });
     expect(within(sidebar).queryByText(/running · merge/i)).not.toBeInTheDocument();
+  });
+
+  it("defers EventSource subscription until fetchProjects completes", async () => {
+    const eventSourceUrls: string[] = [];
+    class TrackingEventSource {
+      url: string;
+      constructor(url: string) {
+        this.url = url;
+        eventSourceUrls.push(url);
+      }
+      addEventListener() {}
+      removeEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal("EventSource", TrackingEventSource as unknown as typeof EventSource);
+
+    let resolveProjects!: (response: Response) => void;
+    const projectsResponse = new Promise<Response>((resolve) => {
+      resolveProjects = resolve;
+    });
+
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return projectsResponse;
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(eventSourceUrls).toHaveLength(0);
+
+    await act(async () => {
+      resolveProjects(
+        new Response(
+          JSON.stringify({
+            projects: [
+              {
+                ...portfolio,
+                workerStatus: "idle",
+                active: null,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+      await projectsResponse;
+    });
+
+    await waitFor(() => {
+      expect(eventSourceUrls).toContain("/api/projects/portfolio/events");
+    });
+  });
+
+  it("shows rich run outcome from worker-stopped without reload", async () => {
+    const { sources } = installStoppableEventSource({
+      connected: { projectId: "portfolio", workerStatus: "running" },
+    });
+
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "merge", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByText(/running · merge/i);
+
+    await act(async () => {
+      for (const source of sources) {
+        source.emit("worker-stopped", {
+          type: "worker-stopped",
+          projectId: "portfolio",
+          lastRunOutcome: {
+            outcome: "blocked",
+            reason: "Required check ci failed",
+            phase: "merge",
+            stoppedAt: "2026-06-01T12:00:00.000Z",
+          },
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Required check ci failed")).toBeInTheDocument();
+    });
+    expect(screen.getByText("merge", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
+  });
+
+  it("restores rich run outcome when re-selecting after worker-stopped", async () => {
+    const user = userEvent.setup();
+    const { sources } = installStoppableEventSource({
+      connected: { projectId: "portfolio", workerStatus: "running" },
+    });
+    const stoppedOutcome = {
+      outcome: "blocked" as const,
+      reason: "Required check ci failed",
+      phase: "merge",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    };
+
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "merge", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByText(/running · merge/i);
+
+    await act(async () => {
+      for (const source of sources) {
+        source.emit("worker-stopped", {
+          type: "worker-stopped",
+          projectId: "portfolio",
+          lastRunOutcome: stoppedOutcome,
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Required check ci failed")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("checkbox", { name: /portfolio/i }));
+    expect(screen.queryByText("Required check ci failed")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Required check ci failed")).toBeInTheDocument();
+    });
+    expect(screen.getByText("merge", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
   });
 
   it("blocks Hide while the project worker is running", async () => {

@@ -1,9 +1,10 @@
 import { type RunnablePhase } from "../prompts/phases.js";
 import { type AgentStreamEvent } from "../runner/index.js";
+import { type RunOutcome } from "../state/index.js";
 
 export type DashboardEvent =
   | { type: "worker-started"; projectId: string }
-  | { type: "worker-stopped"; projectId: string; reason: string }
+  | { type: "worker-stopped"; projectId: string; lastRunOutcome: RunOutcome }
   | { type: "worker-paused"; projectId: string }
   | { type: "worker-resumed"; projectId: string }
   | { type: "phase-log"; projectId: string; chunk: string }

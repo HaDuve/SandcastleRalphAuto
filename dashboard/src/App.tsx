@@ -52,6 +52,7 @@ export function App() {
   const [queue, setQueue] = useState<QueueIssue[]>([]);
   const [active, setActive] = useState<ActiveSlice | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [catalogReady, setCatalogReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -73,6 +74,7 @@ export function App() {
       .then((loaded) => {
         if (!cancelled) {
           setProjects(loaded);
+          setCatalogReady(true);
           setLoadError(null);
           const knownProjectIds = new Set(loaded.map((project) => project.id));
           setHiddenIds((current) => {
@@ -126,6 +128,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!catalogReady) {
+      return;
+    }
     const unsubscribes: Array<() => void> = [];
     for (const projectId of selectedIds) {
       unsubscribes.push(
@@ -134,6 +139,16 @@ export function App() {
             ...current,
             [projectId]: applyWorkerEvent(current[projectId], event),
           }));
+          if (event.type === "worker-stopped" && event.lastRunOutcome) {
+            const lastRunOutcome = event.lastRunOutcome;
+            setProjects((current) =>
+              current.map((project) =>
+                project.id === projectId
+                  ? { ...project, workerStatus: "idle", lastRunOutcome }
+                  : project,
+              ),
+            );
+          }
           if (event.type === "stream" && event.phase) {
             const nextPhase = event.phase;
             setActiveSummaries((current) => ({
@@ -165,7 +180,7 @@ export function App() {
         unsubscribe();
       }
     };
-  }, [selectedIds, syncActiveSummary]);
+  }, [catalogReady, selectedIds, syncActiveSummary]);
 
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
@@ -274,10 +289,17 @@ export function App() {
     if (selected) {
       const project = projects.find((entry) => entry.id === projectId);
       if (project) {
-        setWorkerStates((current) => ({
-          ...current,
-          [projectId]: workerStatesFromProjects([project], new Set([projectId]))[projectId]!,
-        }));
+        setWorkerStates((current) => {
+          const fromCatalog = workerStatesFromProjects([project], new Set([projectId]))[projectId]!;
+          const existing = current[projectId];
+          const nextState =
+            fromCatalog.lastOutcome === null &&
+            existing?.status === "idle" &&
+            existing.lastOutcome !== null
+              ? existing
+              : fromCatalog;
+          return { ...current, [projectId]: nextState };
+        });
         setActiveSummaries((current) => ({
           ...current,
           [projectId]: project.active ?? null,

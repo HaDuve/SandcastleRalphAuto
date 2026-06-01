@@ -10,17 +10,8 @@ export type WorkerState = {
 type WorkerStatusEvent = {
   type: string;
   workerStatus?: WorkerStatus;
-  reason?: string;
+  lastRunOutcome?: RunOutcome;
 };
-
-function isTerminalOutcome(reason: string): reason is Exclude<RunOutcome["outcome"], "error"> {
-  return (
-    reason === "queue-empty" ||
-    reason === "blocked" ||
-    reason === "awaiting-human" ||
-    reason === "killed"
-  );
-}
 
 function defaultWorkerState(): WorkerState {
   return { status: "unknown", lastOutcome: null };
@@ -36,27 +27,6 @@ function normalizeCurrent(current: WorkerState | WorkerStatus | undefined): Work
   return current;
 }
 
-function runOutcomeFromWorkerStopped(reason: string | undefined): RunOutcome {
-  if (!reason) {
-    return {
-      outcome: "error",
-      reason: "Worker stopped without a reason",
-      stoppedAt: new Date().toISOString(),
-    };
-  }
-  if (isTerminalOutcome(reason)) {
-    return {
-      outcome: reason,
-      stoppedAt: new Date().toISOString(),
-    };
-  }
-  return {
-    outcome: "error",
-    reason,
-    stoppedAt: new Date().toISOString(),
-  };
-}
-
 export function applyWorkerEvent(
   current: WorkerState | WorkerStatus | undefined,
   event: WorkerStatusEvent,
@@ -64,11 +34,17 @@ export function applyWorkerEvent(
   const state = normalizeCurrent(current);
 
   switch (event.type) {
-    case "connected":
+    case "connected": {
+      const nextStatus = event.workerStatus ?? state.status ?? "unknown";
+      if (state.status === "idle" && state.lastOutcome !== null && nextStatus === "running") {
+        return state;
+      }
       return {
         ...state,
-        status: event.workerStatus ?? state.status ?? "unknown",
+        status: nextStatus,
+        lastOutcome: nextStatus === "running" ? null : state.lastOutcome,
       };
+    }
     case "worker-started":
       return { status: "running", lastOutcome: null };
     case "worker-paused":
@@ -78,7 +54,7 @@ export function applyWorkerEvent(
     case "worker-stopped":
       return {
         status: "idle",
-        lastOutcome: runOutcomeFromWorkerStopped(event.reason),
+        lastOutcome: event.lastRunOutcome ?? state.lastOutcome,
       };
     default:
       return state.status === "unknown" ? defaultWorkerState() : state;

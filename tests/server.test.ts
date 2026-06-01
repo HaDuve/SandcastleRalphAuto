@@ -747,7 +747,10 @@ describe("dashboard server", () => {
     expect(events).toContainEqual({
       type: "worker-stopped",
       projectId: "portfolio",
-      reason: "queue-empty",
+      lastRunOutcome: {
+        outcome: "queue-empty",
+        stoppedAt: expect.any(String),
+      },
     });
     expect(events.some((event) => event.type === "stream")).toBe(true);
   });

@@ -1,4 +1,4 @@
-import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
+import type { ActiveSlice, HistoryEntry, Project, QueueIssue, RunOutcome } from "./types.js";
 import type { WorkerStatus } from "./workerStatus.js";
 
 type ControlStatusBody = { status?: string; error?: string };
@@ -9,7 +9,7 @@ export type ProjectEvent = {
   type: string;
   projectId?: string;
   workerStatus?: WorkerStatus;
-  reason?: string;
+  lastRunOutcome?: RunOutcome;
   chunk?: string;
   phase?: string;
   issue?: number;
