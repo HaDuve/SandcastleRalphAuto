@@ -8,3 +8,9 @@ export const CANONICAL_PHASES = [
 ] as const;
 
 export type CanonicalPhase = (typeof CANONICAL_PHASES)[number];
+
+export function parseCanonicalPhase(value: string): CanonicalPhase | null {
+  return (CANONICAL_PHASES as readonly string[]).includes(value)
+    ? (value as CanonicalPhase)
+    : null;
+}
