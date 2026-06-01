@@ -1,4 +1,4 @@
-import { type CanonicalPhase } from "../prompts/phases.js";
+import { type RunnablePhase } from "../prompts/phases.js";
 import { type AgentStreamEvent } from "../runner/index.js";
 
 export type DashboardEvent =
@@ -11,7 +11,7 @@ export type DashboardEvent =
       type: "stream";
       projectId: string;
       issue: number;
-      phase: CanonicalPhase;
+      phase: RunnablePhase;
       event: AgentStreamEvent;
     };
 

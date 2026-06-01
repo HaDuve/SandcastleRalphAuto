@@ -6,6 +6,7 @@ import { branchForIssue } from "../src/next/index.js";
 import {
   buildPrompt,
   CANONICAL_PHASES,
+  RECOVERY_PHASES,
   formatSyncReport,
   parsePrompt,
   renderHarness,
@@ -94,7 +95,7 @@ describe("buildPrompt", () => {
 });
 
 describe("committed prompts/*.md", () => {
-  it.each(CANONICAL_PHASES.map((phase) => [phase]))(
+  it.each([...CANONICAL_PHASES, ...RECOVERY_PHASES].map((phase) => [phase]))(
     "%s exists with harness, skill snapshot, and completion signal",
     async (phase) => {
       const path = resolve(PROMPTS_DIR, `${phase}.md`);
@@ -124,7 +125,7 @@ describe("syncSkills", () => {
     const skillsRoot = join(base, "skills");
     const promptsDir = join(base, "prompts");
 
-    for (const phase of CANONICAL_PHASES) {
+    for (const phase of [...CANONICAL_PHASES, ...RECOVERY_PHASES]) {
       const dir = join(skillsRoot, phase);
       await mkdir(dir, { recursive: true });
       await writeFile(
@@ -144,7 +145,7 @@ describe("syncSkills", () => {
     expect(first.phases.every((p) => p.changed)).toBe(true);
     expect(first.phases.every((p) => p.diff)).toBe(true);
 
-    for (const phase of CANONICAL_PHASES) {
+    for (const phase of [...CANONICAL_PHASES, ...RECOVERY_PHASES]) {
       const content = await readFile(join(promptsDir, `${phase}.md`), "utf8");
       expect(parsePrompt(content).skillSnapshot).toContain(`name: ${phase}`);
     }

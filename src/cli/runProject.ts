@@ -1,5 +1,9 @@
 import { join } from "node:path";
-import { type Handoff } from "../handoff/index.js";
+import {
+  HandoffError,
+  readHostHandoff,
+  type Handoff,
+} from "../handoff/index.js";
 import {
   activeStateFromMergeGate,
   runMergeGate,
@@ -18,9 +22,10 @@ import {
   loadRegistryFromRoot,
   type Project,
 } from "../registry/index.js";
-import { CANONICAL_PHASES, type CanonicalPhase } from "../prompts/phases.js";
+import { isRunnablePhase, type RunnablePhase } from "../prompts/phases.js";
 import {
   runLinearSlice,
+  toSliceReadyForMerge,
   type RunLinearSliceResult,
 } from "../pipeline/index.js";
 import {
@@ -83,7 +88,7 @@ export type BootstrapFirstIssueResult =
 
 export type AgentStreamEnvelope = {
   issue: number;
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
   event: AgentStreamEvent;
 };
 
@@ -105,6 +110,7 @@ export type RunProjectDeps = {
   onAgentStream?: (envelope: AgentStreamEnvelope) => void;
   mutex?: ProjectMutex;
   readActive?: (projectId: string, stateRoot: string) => Promise<ActiveState | null>;
+  readHostHandoff?: typeof readHostHandoff;
   bootstrapFirstIssue?: (
     input: {
       project: Project;
@@ -327,6 +333,31 @@ function createSliceRunner(
   };
 }
 
+export async function resolveHandoffForMergeGate(
+  project: Project,
+  stateRoot: string,
+  reviewHandoff: Handoff | undefined,
+  readHostHandoffFn: typeof readHostHandoff = readHostHandoff,
+): Promise<Handoff | undefined> {
+  if (reviewHandoff !== undefined) {
+    return reviewHandoff;
+  }
+  try {
+    return await readHostHandoffFn({
+      stateRoot,
+      projectId: project.remote,
+    });
+  } catch (error) {
+    if (
+      error instanceof HandoffError &&
+      error.message.startsWith("Handoff not found:")
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 async function applyMergeGate(
   project: Project,
   slice: Extract<RunLinearSliceResult, { status: "ready-for-next" }>,
@@ -426,10 +457,22 @@ export async function runProjectSlice(
       return sliceBlockedResult(slice);
     }
 
+    const sliceForMerge = toSliceReadyForMerge(slice);
+    if (sliceForMerge === null) {
+      throw new Error(`Unexpected slice status: ${slice.status}`);
+    }
+
+    const mergeHandoff = await resolveHandoffForMergeGate(
+      project,
+      stateRoot,
+      sliceRunner.getReviewHandoff(),
+      deps.readHostHandoff,
+    );
+
     const mergeResult = await applyMergeGate(
       project,
-      slice,
-      sliceRunner.getReviewHandoff(),
+      sliceForMerge,
+      mergeHandoff,
       stateRoot,
       deps,
       deps.gh ?? resolved.gh,
@@ -449,20 +492,20 @@ export async function runProjectSlice(
         reason: mergeResult.reason,
       };
     }
-    if (slice.pr === undefined) {
+    if (sliceForMerge.pr === undefined) {
       return {
         status: "blocked",
-        issue: slice.issue,
+        issue: sliceForMerge.issue,
         reason: "Slice completed without a PR number",
       };
     }
 
-    await waitForMergedPr({ project, pr: slice.pr });
+    await waitForMergedPr({ project, pr: sliceForMerge.pr });
     await mutex.release(project.remote);
     return {
       status: "completed",
-      issue: slice.issue,
-      pr: slice.pr,
+      issue: sliceForMerge.issue,
+      pr: sliceForMerge.pr,
     };
   } catch (error) {
     if (error instanceof CliError) {
@@ -532,16 +575,16 @@ async function resolveLoopStart(
     };
   }
   if (active?.status === "active") {
-    if (!(CANONICAL_PHASES as readonly string[]).includes(active.phase)) {
+    if (!isRunnablePhase(active.phase)) {
       return {
         status: "blocked",
-        reason: `Cannot resume non-canonical phase: ${active.phase}`,
+        reason: `Cannot resume unknown phase: ${active.phase}`,
       };
     }
     return {
       kind: "ready",
       issue: active.issue,
-      fromPhase: active.phase as RunPhaseOptions["phase"],
+      fromPhase: active.phase,
     };
   }
 
@@ -633,12 +676,26 @@ export async function loopProject(
         };
       }
 
-      slicesCompleted += 1;
+      const sliceForMerge = toSliceReadyForMerge(slice);
+      if (sliceForMerge === null) {
+        throw new Error(`Unexpected slice status: ${slice.status}`);
+      }
+
+      if (slice.status === "ready-for-next") {
+        slicesCompleted += 1;
+      }
+
+      const mergeHandoff = await resolveHandoffForMergeGate(
+        project,
+        stateRoot,
+        sliceRunner.getReviewHandoff(),
+        deps.readHostHandoff,
+      );
 
       const mergeResult = await applyMergeGate(
         project,
-        slice,
-        sliceRunner.getReviewHandoff(),
+        sliceForMerge,
+        mergeHandoff,
         stateRoot,
         deps,
         deps.gh ?? resolved.gh,
@@ -650,21 +707,21 @@ export async function loopProject(
       if (mergeResult.status === "awaiting-human") {
         return mergeBlocked(mergeResult);
       }
-      if (slice.pr === undefined) {
+      if (sliceForMerge.pr === undefined) {
         return {
           status: "blocked",
           reason: "Slice completed without a PR number",
         };
       }
 
-      await waitForMergedPr({ project, pr: slice.pr });
+      await waitForMergedPr({ project, pr: sliceForMerge.pr });
 
       const nextResult = await runNextFn(
         {
           project,
           projectPath: project.path,
           stateRoot,
-          pr: slice.pr,
+          pr: sliceForMerge.pr,
         },
         {
           gh: deps.gh ?? resolved.gh,

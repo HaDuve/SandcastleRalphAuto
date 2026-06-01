@@ -1,18 +1,18 @@
 import { renderHarness } from "./harness.js";
-import { CANONICAL_PHASES, type CanonicalPhase } from "./phases.js";
+import { RUNNABLE_PHASES, type RunnablePhase } from "./phases.js";
 
-const CANONICAL_PHASE_SET = new Set<string>(CANONICAL_PHASES);
+const RUNNABLE_PHASE_SET = new Set<string>(RUNNABLE_PHASES);
 
 const HARNESS_START = "<!-- sandcastle-ralph:harness -->";
 const HARNESS_END = "<!-- /sandcastle-ralph:harness -->";
 
-export function skillSnapshotStart(phase: CanonicalPhase): string {
+export function skillSnapshotStart(phase: RunnablePhase): string {
   return `<!-- sandcastle-ralph:skill-snapshot source=~/.cursor/skills/${phase}/SKILL.md -->`;
 }
 
 const SKILL_SNAPSHOT_END = "<!-- /sandcastle-ralph:skill-snapshot -->";
 
-export function buildPrompt(phase: CanonicalPhase, skillMarkdown: string): string {
+export function buildPrompt(phase: RunnablePhase, skillMarkdown: string): string {
   const harness = renderHarness(phase);
   const skill = skillMarkdown.trimEnd();
 
@@ -29,7 +29,7 @@ export function buildPrompt(phase: CanonicalPhase, skillMarkdown: string): strin
 }
 
 export type ParsedPrompt = {
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
   harness: string;
   skillSnapshot: string;
 };
@@ -42,7 +42,7 @@ export function parsePrompt(content: string): ParsedPrompt {
     throw new Error("missing skill-snapshot marker");
   }
   const phase = phaseMatch[1];
-  if (!CANONICAL_PHASE_SET.has(phase)) {
+  if (!RUNNABLE_PHASE_SET.has(phase)) {
     throw new Error(`unknown phase: ${phase}`);
   }
 
@@ -61,7 +61,7 @@ export function parsePrompt(content: string): ParsedPrompt {
   }
 
   return {
-    phase: phase as CanonicalPhase,
+    phase: phase as RunnablePhase,
     harness: harnessMatch[1].trimEnd(),
     skillSnapshot: skillMatch[1].trimEnd(),
   };

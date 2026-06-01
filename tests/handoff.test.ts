@@ -99,6 +99,22 @@ describe("host handoff store", () => {
     expect((error as HandoffError).message).toMatch(/Invalid JSON/);
   });
 
+  it("accepts babysit phase in handoff schema", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
+    const stateRoot = join(rootDir, "state");
+    const babysitHandoff: Handoff = {
+      ...sampleHandoff,
+      pr: 88,
+      phase: "babysit",
+      nextSkill: "/merge",
+    };
+
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: babysitHandoff });
+    await expect(readHostHandoff({ stateRoot, projectId: PROJECT_ID })).resolves.toEqual(
+      babysitHandoff,
+    );
+  });
+
   it("rejects invalid handoff on write with a clear error", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
     const stateRoot = join(rootDir, "state");

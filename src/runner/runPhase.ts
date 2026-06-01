@@ -19,12 +19,15 @@ import {
   HandoffError,
 } from "../handoff/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
-import { type CanonicalPhase } from "../prompts/phases.js";
+import { type RunnablePhase } from "../prompts/phases.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
 
 /** Default Ralph loop cap for `/tdd` until registry config exists (PRD §4). */
 export const DEFAULT_TDD_MAX_ITERATIONS = 10;
+
+/** Default loop cap for `/babysit` CI/comment recovery (ADR 0006). */
+export const DEFAULT_BABYSIT_MAX_ITERATIONS = 10;
 
 /**
  * Sandcastle 0.7.0 cursor provider emits `--print --force` via `Sandbox.run()`
@@ -38,7 +41,7 @@ export type SandcastleSandboxRunOptions = SandboxRunOptions;
 export type SandcastleSandboxRunResult = SandboxRunResult;
 
 export type RunPhaseOptions = {
-  phase: CanonicalPhase;
+  phase: RunnablePhase;
   branch: string;
   projectPath: string;
   projectId: string;
@@ -46,6 +49,7 @@ export type RunPhaseOptions = {
   promptFile?: string;
   orchestratorRoot?: string;
   tddMaxIterations?: number;
+  babysitMaxIterations?: number;
   signal?: AbortSignal;
   sandbox?: CreateSandboxOptions["sandbox"];
   name?: string;
@@ -82,7 +86,7 @@ export function resolveOrchestratorRoot(fromModule = import.meta.url): string {
 }
 
 function resolvePromptFile(
-  phase: CanonicalPhase,
+  phase: RunnablePhase,
   orchestratorRoot: string,
   promptFile?: string,
 ): string {
@@ -90,16 +94,23 @@ function resolvePromptFile(
 }
 
 function resolveMaxIterations(
-  phase: CanonicalPhase,
+  phase: RunnablePhase,
   tddMaxIterations: number,
+  babysitMaxIterations: number,
 ): number {
-  return phase === "tdd" ? tddMaxIterations : 1;
+  if (phase === "tdd") {
+    return tddMaxIterations;
+  }
+  if (phase === "babysit") {
+    return babysitMaxIterations;
+  }
+  return 1;
 }
 
 function resolveLogPath(
   projectPath: string,
   branch: string,
-  phase: CanonicalPhase,
+  phase: RunnablePhase,
 ): string {
   return resolvePhaseLogPath({ projectPath, branch, phase });
 }
@@ -159,6 +170,7 @@ export async function runPhase(
       maxIterations: resolveMaxIterations(
         options.phase,
         options.tddMaxIterations ?? DEFAULT_TDD_MAX_ITERATIONS,
+        options.babysitMaxIterations ?? DEFAULT_BABYSIT_MAX_ITERATIONS,
       ),
       completionSignal: PHASE_COMPLETE_SIGNAL,
       signal: options.signal,

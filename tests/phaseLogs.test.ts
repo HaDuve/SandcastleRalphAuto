@@ -75,6 +75,19 @@ describe("phase logs service", () => {
     );
   });
 
+  it("includes recovery phase logs in runnable pipeline order", async () => {
+    const { rootDir, projectPath, projectId } = await setupProject();
+    const logsDir = join(projectPath, ".sandcastle", "logs");
+    await mkdir(logsDir, { recursive: true });
+    await writeFile(join(logsDir, "issue-7-babysit.log"), "babysit\n");
+    await writeFile(join(logsDir, "issue-7-merge.log"), "merge\n");
+
+    await expect(listPhaseLogs(projectId, 7, { rootDir })).resolves.toEqual([
+      "merge",
+      "babysit",
+    ]);
+  });
+
   it("treats ENOENT during read as a missing log (no crash)", async () => {
     const { rootDir, projectId } = await setupProject();
 

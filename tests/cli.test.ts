@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Handoff } from "../src/handoff/index.js";
+import { type Handoff, writeHostHandoff } from "../src/handoff/index.js";
 import {
   CliError,
   loopProject,
@@ -453,6 +453,105 @@ describe("loopProject", () => {
       issue: 11,
       fromPhase: "create-pr",
     });
+  });
+
+  it("resumes an active babysit recovery phase instead of rejecting it", async () => {
+    const sliceOptions: RunLinearSliceOptions[] = [];
+
+    await loopProject(
+      { projectId: "portfolio" },
+      {
+        loadRegistry: async () => [portfolio],
+        readActive: async () => ({
+          issue: 10,
+          phase: "babysit",
+          branch: "issue-10",
+          pr: 41,
+          status: "active",
+        }),
+        runLinearSlice: async (options) => {
+          sliceOptions.push(options);
+          return {
+            status: "recovery-complete",
+            issue: options.issue,
+            branch: options.branch,
+            pr: 41,
+          };
+        },
+        runPhase: async () => {
+          throw new Error("runPhase should not run in this stub");
+        },
+        runMergeGate: async () => ({ status: "auto-merge-queued" as const }),
+        waitForMergedPr: async () => {},
+        runNext: async () => ({ status: QUEUE_EMPTY }),
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(sliceOptions[0]).toMatchObject({
+      issue: 10,
+      fromPhase: "babysit",
+    });
+  });
+
+  it("passes host handoff to merge gate after babysit resume when review handoff is not in memory", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "cli-babysit-resume-"));
+    const hostHandoff: Handoff = {
+      project: "HaDuve/Portfolio",
+      issue: 10,
+      branch: "issue-10",
+      pr: 41,
+      phase: "babysit",
+      acceptanceState: "done",
+      verdict: "approve",
+      blockers: [],
+      mergeReady: false,
+      nextSkill: "/merge",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    };
+    await writeHostHandoff({
+      stateRoot,
+      projectId: "HaDuve/Portfolio",
+      handoff: hostHandoff,
+    });
+
+    let mergeGateHandoff: Handoff | undefined;
+
+    await loopProject(
+      { projectId: "portfolio", rootDir: "/tmp/root", stateRoot },
+      {
+        loadRegistry: async () => [portfolio],
+        readActive: async () => ({
+          issue: 10,
+          phase: "babysit",
+          branch: "issue-10",
+          pr: 41,
+          status: "active",
+        }),
+        runLinearSlice: async (options) => ({
+          status: "recovery-complete",
+          issue: options.issue,
+          branch: options.branch,
+          pr: 41,
+        }),
+        runMergeGate: async ({ handoff }) => {
+          mergeGateHandoff = handoff;
+          return { status: "auto-merge-queued" as const };
+        },
+        waitForMergedPr: async () => {},
+        runNext: async () => ({ status: QUEUE_EMPTY }),
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(mergeGateHandoff).toEqual(hostHandoff);
   });
 
   it("cold-starts the lowest eligible issue when loop has no seed issue", async () => {

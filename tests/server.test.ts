@@ -47,7 +47,13 @@ async function setupProjectRoot(): Promise<{
 async function seedActiveSliceWithLogs(
   stateRoot: string,
   project: Project,
-  active: { issue: number; phase: string; branch: string; status: string },
+  active: {
+    issue: number;
+    phase: string;
+    branch: string;
+    status: string;
+    pr?: number;
+  },
   logFiles: Record<string, string>,
 ): Promise<void> {
   const activeDir = join(stateRoot, project.remote);
@@ -235,7 +241,7 @@ describe("dashboard server", () => {
     expect(await response.json()).toEqual({ error: "No active slice" });
   });
 
-  it("rejects non-canonical phase query on log endpoint", async () => {
+  it("rejects unknown phase query on log endpoint", async () => {
     const { rootDir, project, stateRoot } = await setupProjectRoot();
     await seedActiveSliceWithLogs(
       stateRoot,
@@ -248,11 +254,35 @@ describe("dashboard server", () => {
     server = started.server;
 
     const response = await fetch(
-      `${started.baseUrl}/api/projects/portfolio/log?phase=babysit`,
+      `${started.baseUrl}/api/projects/portfolio/log?phase=evil`,
     );
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Invalid phase" });
+  });
+
+  it("returns babysit phase log when recovery phase is active", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    await seedActiveSliceWithLogs(
+      stateRoot,
+      project,
+      { issue: 7, phase: "babysit", branch: "issue-7", status: "active", pr: 42 },
+      { "issue-7-babysit.log": "babysit output\n" },
+    );
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(
+      `${started.baseUrl}/api/projects/portfolio/log?phase=babysit`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      issue: 7,
+      phase: "babysit",
+      log: "babysit output\n",
+    });
   });
 
   it("returns a specific phase log when phase query is set", async () => {

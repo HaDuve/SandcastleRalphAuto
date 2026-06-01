@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { type Handoff, writeHandoff, writeHostHandoff } from "../src/handoff/index.js";
 import {
   CURSOR_TRUST_SETUP,
+  DEFAULT_BABYSIT_MAX_ITERATIONS,
   DEFAULT_TDD_MAX_ITERATIONS,
   PHASE_COMPLETE_SIGNAL,
   resolveOrchestratorRoot,
@@ -318,6 +319,67 @@ describe("runPhase", () => {
     );
 
     expect(runCalls[0]?.maxIterations).toBe(1);
+  });
+
+  it("uses babysitMaxIterations for babysit and single-shot for other non-tdd phases", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
+    const promptFile = join(projectPath, "prompts", "babysit.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# babysit\n");
+    await writeHostHandoff({
+      stateRoot,
+      projectId: PROJECT_ID,
+      handoff: { ...sampleHandoff, phase: "babysit", nextSkill: "/merge" },
+    });
+
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [],
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      [],
+      runCalls,
+    );
+
+    await runPhase(
+      {
+        phase: "babysit",
+        branch: "issue-6-runner",
+        projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
+        promptFile,
+        babysitMaxIterations: 4,
+        signal: new AbortController().signal,
+      },
+      deps,
+    );
+
+    expect(runCalls[0]?.maxIterations).toBe(4);
+    expect(runCalls[0]?.signal).toBeInstanceOf(AbortSignal);
+
+    runCalls.length = 0;
+
+    await runPhase(
+      {
+        phase: "babysit",
+        branch: "issue-6-runner",
+        projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
+        promptFile,
+      },
+      deps,
+    );
+
+    expect(runCalls[0]?.maxIterations).toBe(DEFAULT_BABYSIT_MAX_ITERATIONS);
   });
 
   it("threads AbortSignal to sandbox.run for the kill switch", async () => {
