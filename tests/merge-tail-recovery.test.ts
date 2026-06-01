@@ -1,5 +1,9 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Handoff } from "../src/handoff/index.js";
+import { type Handoff, writeHostHandoff } from "../src/handoff/index.js";
+import { readActive } from "../src/state/index.js";
 import {
   loopProject,
   runProjectSlice,
@@ -192,6 +196,79 @@ describe("merge-tail recovery", () => {
     expect(result).toEqual({ status: "completed", issue: 10, pr: 42 });
   });
 
+  it("uses real runLinearSlice for babysit when merge gate is babysit-able", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "merge-tail-real-slice-"));
+    let babysitPhaseRan = false;
+    let activeDuringBabysit: Awaited<ReturnType<typeof readActive>> = null;
+
+    await writeHostHandoff({
+      stateRoot,
+      projectId: portfolio.remote,
+      handoff: mergeReadyHandoff(),
+    });
+
+    const result = await runProjectSlice(
+      { projectId: "portfolio", issue: 10, stateRoot },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (options, sliceDeps) => {
+          if (options.fromPhase === "babysit") {
+            return runLinearSlice(options, sliceDeps!);
+          }
+          await sliceDeps!.runPhase({
+            phase: "review-pr",
+            branch: options.branch,
+            projectPath: options.projectPath,
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
+          });
+          return sliceSuccess();
+        },
+        runPhase: async (options) => {
+          if (options.phase === "babysit") {
+            babysitPhaseRan = true;
+            activeDuringBabysit = await readActive(
+              portfolio.remote,
+              stateRoot,
+            );
+          }
+          return {
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: {
+              ...mergeReadyHandoff(),
+              phase: options.phase,
+              nextSkill: "/merge",
+            },
+          };
+        },
+        runMergeGate: async () => ({
+          status: "blocked",
+          kind: "required-checks-failed",
+          reason: "Required checks not green: ci",
+          resumeSkill: "/merge",
+        }),
+        waitForMergedPr: async () => {},
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(babysitPhaseRan).toBe(true);
+    expect(activeDuringBabysit).toMatchObject({
+      phase: "babysit",
+      status: "active",
+    });
+    expect(result).toEqual({
+      status: "blocked",
+      issue: 10,
+      reason: "Required checks not green: ci",
+    });
+  });
+
   it("proceeds to /next when the merge gate passes after babysit", async () => {
     let nextCalled = false;
 
@@ -229,6 +306,7 @@ describe("merge-tail recovery", () => {
   });
 
   it("blocks with merge-gate reason when still blocked after babysit retry", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "merge-tail-blocked-retry-"));
     const { deps } = mergeTailDeps({
       runMergeGate: async () => ({
         status: "blocked",
@@ -239,15 +317,119 @@ describe("merge-tail recovery", () => {
     });
 
     const result = await runProjectSlice(
-      { projectId: "portfolio", issue: 10 },
+      { projectId: "portfolio", issue: 10, stateRoot },
       deps,
     );
+
+    const active = await readActive(portfolio.remote, stateRoot);
 
     expect(result).toEqual({
       status: "blocked",
       issue: 10,
       reason: "Required checks not green: ci",
     });
+    expect(active).toMatchObject({
+      phase: "merge",
+      status: "blocked",
+      resumeSkill: "/merge",
+      reason: "Required checks not green: ci",
+    });
+  });
+
+  it("returns recovery-slice blocked when babysit phase fails", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "merge-tail-babysit-fail-"));
+
+    const result = await runProjectSlice(
+      { projectId: "portfolio", issue: 10, stateRoot },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (options, sliceDeps) => {
+          if (options.fromPhase === "babysit") {
+            return runLinearSlice(options, sliceDeps!);
+          }
+          await sliceDeps!.runPhase({
+            phase: "review-pr",
+            branch: options.branch,
+            projectPath: options.projectPath,
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
+          });
+          return sliceSuccess();
+        },
+        runPhase: async (options) => {
+          if (options.phase === "babysit") {
+            throw new Error("babysit agent failed");
+          }
+          return {
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: mergeReadyHandoff(),
+          };
+        },
+        runMergeGate: async () => ({
+          status: "blocked",
+          kind: "required-checks-failed",
+          reason: "Required checks not green: ci",
+          resumeSkill: "/merge",
+        }),
+        waitForMergedPr: async () => {},
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    const active = await readActive(portfolio.remote, stateRoot);
+
+    expect(result).toEqual({
+      status: "blocked",
+      issue: 10,
+      reason: "babysit agent failed",
+    });
+    expect(active).toMatchObject({
+      phase: "babysit",
+      status: "blocked",
+      resumeSkill: "/babysit",
+    });
+  });
+
+  it("does not run babysit when merge gate blocks with a human kind", async () => {
+    const linearCalls: RunLinearSliceOptions[] = [];
+    const { deps } = mergeTailDeps({
+      runLinearSlice: async (options, sliceDeps) => {
+        linearCalls.push(options);
+        await sliceDeps!.runPhase({
+          phase: "review-pr",
+          branch: options.branch,
+          projectPath: options.projectPath,
+          projectId: options.projectId,
+          stateRoot: options.stateRoot,
+        });
+        return sliceSuccess();
+      },
+      runPhase: async () => ({
+        commits: [],
+        branch: "issue-10",
+        completionSignal: PHASE_COMPLETE_SIGNAL,
+        handoff: mergeReadyHandoff(),
+      }),
+      runMergeGate: async () => ({
+        status: "blocked",
+        kind: "no-approve-verdict",
+        reason: "Merge gate requires a clean Approve verdict",
+        resumeSkill: "/merge",
+      }),
+    });
+
+    const result = await runProjectSlice(
+      { projectId: "portfolio", issue: 10 },
+      deps,
+    );
+
+    expect(linearCalls.some((o) => o.fromPhase === "babysit")).toBe(false);
+    expect(result.status).toBe("blocked");
   });
 
   it("does not run babysit for human merge-tail blocks", async () => {

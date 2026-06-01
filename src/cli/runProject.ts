@@ -359,7 +359,7 @@ export async function resolveHandoffForMergeGate(
   }
 }
 
-export type ApplyMergeGateResult =
+type ApplyMergeGateResult =
   | { source: "merge-gate"; result: RunMergeGateResult }
   | {
       source: "recovery-slice";
@@ -430,15 +430,17 @@ async function applyMergeGate(
     },
     mergeResult,
   );
-  if (active) {
+
+  const shouldAttemptBabysit =
+    mergeResult.status === "blocked" &&
+    !ctx.babysitAttempted &&
+    classifyMergeTailBlock(mergeResult, reviewHandoff) === "babysit-able";
+
+  if (active && !shouldAttemptBabysit) {
     await writeActive(project.remote, active, stateRoot);
   }
 
-  if (
-    mergeResult.status === "blocked" &&
-    !ctx.babysitAttempted &&
-    classifyMergeTailBlock(mergeResult, reviewHandoff) === "babysit-able"
-  ) {
+  if (shouldAttemptBabysit) {
     const recovery = await ctx.runLinearSliceFn(
       {
         projectId: project.remote,
@@ -538,7 +540,7 @@ export async function runProjectSlice(
       stateRoot,
       deps,
       gh: deps.gh ?? resolved.gh,
-      runLinearSliceFn: runLinearSliceFn,
+      runLinearSliceFn,
       sliceRunner,
       babysitAttempted: false,
     });
