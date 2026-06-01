@@ -28,3 +28,7 @@ export function applyWorkerEvent(
 export function isControlReady(status: WorkerStatus): boolean {
   return status !== "unknown";
 }
+
+export function canHideProject(status: WorkerStatus): boolean {
+  return status !== "running";
+}
