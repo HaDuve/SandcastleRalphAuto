@@ -115,6 +115,32 @@ describe("host handoff store", () => {
     );
   });
 
+  it("persists acceptanceState done when write receives complete synonym", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
+    const stateRoot = join(rootDir, "state");
+    const withSynonym = {
+      ...sampleHandoff,
+      acceptanceState: "complete",
+    } as unknown as Handoff;
+
+    await writeHostHandoff({
+      stateRoot,
+      projectId: PROJECT_ID,
+      handoff: withSynonym,
+    });
+
+    const read = await readHostHandoff({ stateRoot, projectId: PROJECT_ID });
+    expect(read.acceptanceState).toBe("done");
+
+    const raw = JSON.parse(
+      await readFile(
+        join(stateRoot, PROJECT_ID, "handoff/current.json"),
+        "utf8",
+      ),
+    ) as Handoff;
+    expect(raw.acceptanceState).toBe("done");
+  });
+
   it("rejects invalid handoff on write with a clear error", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
     const stateRoot = join(rootDir, "state");

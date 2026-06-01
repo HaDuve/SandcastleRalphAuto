@@ -21,26 +21,26 @@ Required JSON (host validates with Zod after this phase):
 - `issue` — number
 - `branch` — `issue-<issue>` for this pipeline
 - `pr` — optional PR number (set once a PR exists)
-- `phase` — one of: "tdd", "create-pr", "review-pr", "review-tdd", "babysit", "merge", "next"
+- `phase` — must be `"review-pr"` for this run (allowed values: "tdd", "create-pr", "review-pr", "review-tdd", "babysit", "merge", "next")
 - `acceptanceState` — one of: "in-progress" | "done" | "blocked". When this phase **finishes successfully**, use `"done"` — **not** `"complete"`, `"finished"`, or other words.
 - `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
 - `blockers` — string array (empty when unblocked)
 - `mergeReady` — boolean
-- `nextSkill` — next phase skill, e.g. `"/create-pr"`
+- `nextSkill` — for this phase when done: `"/review-tdd"`
 - `startedAt` / `endedAt` — ISO-8601 timestamps
 
-Example when the phase is complete:
+Example when this phase is complete:
 
 ```json
 {
   "project": "owner/repo",
   "issue": 29,
   "branch": "issue-29",
-  "phase": "tdd",
+  "phase": "review-pr",
   "acceptanceState": "done",
   "blockers": [],
   "mergeReady": false,
-  "nextSkill": "/create-pr",
+  "nextSkill": "/review-tdd",
   "startedAt": "2026-06-01T00:00:00.000Z",
   "endedAt": "2026-06-01T01:00:00.000Z"
 }

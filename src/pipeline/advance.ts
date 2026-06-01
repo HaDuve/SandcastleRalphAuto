@@ -1,5 +1,6 @@
 import { type Handoff } from "../handoff/index.js";
-import { type CanonicalPhase, type RunnablePhase } from "../prompts/phases.js";
+import { nextSkillAfterPhase } from "../handoff/phaseNextSkill.js";
+import { type RunnablePhase } from "../prompts/phases.js";
 import {
   PHASE_COMPLETE_SIGNAL,
   type RunPhaseResult,
@@ -34,17 +35,7 @@ export function skillForPhase(phase: RunnablePhase): string {
 }
 
 export function expectedNextSkill(phase: RunnablePhase): string {
-  if (phase === "babysit") {
-    return "/merge";
-  }
-  const next = getNextOrchestratorPhase(phase);
-  if (next === "next") {
-    return "/next";
-  }
-  if (next && isCanonicalPhase(next)) {
-    return skillForPhase(next);
-  }
-  throw new Error(`No successor skill for phase: ${phase}`);
+  return nextSkillAfterPhase(phase);
 }
 
 function blockedActive(

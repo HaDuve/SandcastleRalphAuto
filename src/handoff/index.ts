@@ -7,6 +7,7 @@ export {
   type Handoff,
 } from "./schema.js";
 export { renderHandoffContract } from "./contract.js";
+export { nextSkillAfterPhase } from "./phaseNextSkill.js";
 export { listHandoffHistory, type HistoryEntry } from "./history.js";
 export {
   HandoffError,

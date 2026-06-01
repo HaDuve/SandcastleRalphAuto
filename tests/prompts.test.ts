@@ -39,6 +39,18 @@ describe("renderHarness", () => {
     expect(harness).toContain('"acceptanceState": "done"');
   });
 
+  it("uses phase-specific phase and nextSkill in the handoff example JSON", () => {
+    const mergeHarness = renderHarness("merge");
+    const exampleStart = mergeHarness.indexOf("```json");
+    const exampleEnd = mergeHarness.indexOf("```", exampleStart + 7);
+    const example = JSON.parse(
+      mergeHarness.slice(exampleStart + 7, exampleEnd).trim(),
+    ) as { phase: string; nextSkill: string };
+
+    expect(example.phase).toBe("merge");
+    expect(example.nextSkill).toBe("/next");
+  });
+
   it("lists commit, handoff, and completion signal in order under Outputs", () => {
     const harness = renderHarness("tdd");
     const outputsStart = harness.indexOf("## Outputs (in order)");

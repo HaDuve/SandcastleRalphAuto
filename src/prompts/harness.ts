@@ -42,7 +42,7 @@ export function renderHarness(phase: RunnablePhase): string {
     "",
     renderBranchPin(phase),
     "",
-    renderHandoffContract(),
+    renderHandoffContract(phase),
     "",
     renderOutputs(),
     "",
