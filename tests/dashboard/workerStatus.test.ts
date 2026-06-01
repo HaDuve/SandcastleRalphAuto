@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyWorkerEvent,
   canHideProject,
+  stoppedRunOutcome,
   workerStateFromSnapshot,
 } from "../../dashboard/src/workerStatus.js";
 
@@ -73,7 +74,27 @@ describe("applyWorkerEvent", () => {
 });
 
 describe("workerStateFromSnapshot", () => {
-  it("maps enriched project fields into worker state", () => {
+  it("maps enriched project fields into worker state when idle", () => {
+    expect(
+      workerStateFromSnapshot({
+        workerStatus: "idle",
+        lastRunOutcome: {
+          outcome: "blocked",
+          reason: "CI failed",
+          stoppedAt: "2026-06-01T12:00:00.000Z",
+        },
+      }),
+    ).toEqual({
+      status: "idle",
+      lastOutcome: {
+        outcome: "blocked",
+        reason: "CI failed",
+        stoppedAt: "2026-06-01T12:00:00.000Z",
+      },
+    });
+  });
+
+  it("drops stale lastRunOutcome while the worker is running", () => {
     expect(
       workerStateFromSnapshot({
         workerStatus: "running",
@@ -85,11 +106,39 @@ describe("workerStateFromSnapshot", () => {
       }),
     ).toEqual({
       status: "running",
-      lastOutcome: {
-        outcome: "blocked",
-        reason: "CI failed",
-        stoppedAt: "2026-06-01T12:00:00.000Z",
-      },
+      lastOutcome: null,
+    });
+  });
+});
+
+describe("stoppedRunOutcome", () => {
+  it("returns null while the worker is running", () => {
+    expect(
+      stoppedRunOutcome({
+        status: "running",
+        lastOutcome: {
+          outcome: "blocked",
+          reason: "CI failed",
+          stoppedAt: "2026-06-01T12:00:00.000Z",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the last outcome when the worker is idle", () => {
+    expect(
+      stoppedRunOutcome({
+        status: "idle",
+        lastOutcome: {
+          outcome: "blocked",
+          reason: "CI failed",
+          stoppedAt: "2026-06-01T12:00:00.000Z",
+        },
+      }),
+    ).toEqual({
+      outcome: "blocked",
+      reason: "CI failed",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
     });
   });
 });

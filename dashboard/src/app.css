@@ -113,11 +113,30 @@ body {
   color: #9aa7b5;
 }
 
-.active-details,
 .run-outcome-banner {
   border-radius: 6px;
   padding: 0.75rem 1rem;
   border: 1px solid #2a3441;
+}
+
+.active-details {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.active-details div {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  gap: 0.5rem;
+}
+
+.active-details dt {
+  color: #9aa7b5;
+  font-size: 0.875rem;
+}
+
+.active-details dd {
+  margin: 0;
 }
 
 .run-outcome-banner-summary {

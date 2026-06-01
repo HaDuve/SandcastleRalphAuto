@@ -1,7 +1,7 @@
 import { projectCardClass } from "./runOutcomeUi.js";
 import type { Project } from "./types.js";
 import type { WorkerState, WorkerStatus } from "./workerStatus.js";
-import { canHideProject, isControlReady } from "./workerStatus.js";
+import { canHideProject, isControlReady, stoppedRunOutcome } from "./workerStatus.js";
 
 export type ProjectPickerProps = {
   projects: Project[];
@@ -51,7 +51,7 @@ export function ProjectPicker({
           const resumeDisabled = !controlsReady || status !== "paused";
           const killDisabled = !controlsReady || status === "idle";
           const hideDisabled = !canHideProject(status);
-          const cardClass = projectCardClass(workerStates[project.id]?.lastOutcome);
+          const cardClass = projectCardClass(stoppedRunOutcome(workerStates[project.id]));
 
           return (
             <li key={project.id} className={cardClass}>
