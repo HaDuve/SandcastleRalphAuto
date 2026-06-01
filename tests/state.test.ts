@@ -1,8 +1,13 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readFile, readdir } from "node:fs/promises";
 import {
   readActive,
   readSkips,
@@ -75,6 +80,20 @@ describe("writeActive / readActive", () => {
       readActive("HaDuve/SandcastleRalphAuto", stateRoot),
     ).resolves.toEqual(blocked);
   });
+
+  it("writes atomically without leaving temp files", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const stateDir = join(stateRoot, projectId);
+
+    await writeActive(projectId, sampleActive, stateRoot);
+
+    const files = await readdir(stateDir);
+    expect(files).toEqual(["active.json"]);
+    await expect(readActive(projectId, stateRoot)).resolves.toEqual(
+      sampleActive,
+    );
+  });
 });
 
 describe("writeSkips / readSkips", () => {
@@ -135,6 +154,24 @@ describe("writeSkips / readSkips", () => {
     expect(error).toBeInstanceOf(StateError);
     expect((error as StateError).message).toMatch(/Invalid skips schema/);
   });
+
+  it("rejects invalid JSON on read with a clear error", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
+    const skipsPath = join(
+      stateRoot,
+      "HaDuve/SandcastleRalphAuto",
+      "skips.json",
+    );
+    await mkdir(join(skipsPath, ".."), { recursive: true });
+    await writeFile(skipsPath, "{ not json");
+
+    const error = await readSkips(
+      "HaDuve/SandcastleRalphAuto",
+      stateRoot,
+    ).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(StateError);
+    expect((error as StateError).message).toMatch(/Invalid JSON/);
+  });
 });
 
 describe("active state validation", () => {
@@ -144,6 +181,47 @@ describe("active state validation", () => {
     branch: "issue-4-state-store",
     status: "active",
   };
+
+  it("rejects blocked state without reason and resume skill on write", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
+
+    const error = await writeActive(
+      "HaDuve/SandcastleRalphAuto",
+      {
+        ...sampleActive,
+        status: "blocked",
+      },
+      stateRoot,
+    ).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(StateError);
+    expect((error as StateError).message).toMatch(/Invalid active state/);
+  });
+
+  it("rejects blocked state without reason and resume skill on read", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
+    const activePath = join(
+      stateRoot,
+      "HaDuve/SandcastleRalphAuto",
+      "active.json",
+    );
+    await mkdir(join(activePath, ".."), { recursive: true });
+    await writeFile(
+      activePath,
+      JSON.stringify({
+        issue: 4,
+        phase: "merge",
+        branch: "issue-4-state-store",
+        status: "blocked",
+      }),
+    );
+
+    const error = await readActive(
+      "HaDuve/SandcastleRalphAuto",
+      stateRoot,
+    ).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(StateError);
+    expect((error as StateError).message).toMatch(/Invalid active state schema/);
+  });
 
   it("rejects invalid active state on write with a clear error", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
