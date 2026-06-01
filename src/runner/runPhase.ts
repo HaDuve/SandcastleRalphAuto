@@ -9,7 +9,7 @@ import {
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readHandoff, type Handoff } from "../handoff/index.js";
+import { readHandoff, writeHandoff, type Handoff } from "../handoff/index.js";
 import { type CanonicalPhase } from "../prompts/phases.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
@@ -38,6 +38,8 @@ export type RunPhaseOptions = {
   signal?: AbortSignal;
   sandbox?: CreateSandboxOptions["sandbox"];
   name?: string;
+  /** Written to `sandbox.worktreePath` before the agent runs (e.g. `/next` tdd seed). */
+  seedHandoff?: Handoff;
 };
 
 export type RunPhaseResult = {
@@ -108,6 +110,10 @@ export async function runPhase(
   });
 
   try {
+    if (options.seedHandoff !== undefined) {
+      await writeHandoff(options.seedHandoff, sandbox.worktreePath);
+    }
+
     const runResult = await sandbox.run({
       agent: deps.cursor("auto"),
       promptFile,

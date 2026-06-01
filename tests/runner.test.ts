@@ -127,6 +127,72 @@ describe("runPhase", () => {
     expect(runCalls[0]?.maxIterations).toBe(1);
   });
 
+  it("writes seedHandoff to the sandbox worktree before the agent runs", async () => {
+    const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const promptFile = join(projectPath, "prompts", "tdd.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# tdd\n");
+
+    const seedHandoff: Handoff = {
+      project: "HaDuve/SandcastleRalphAuto",
+      issue: 9,
+      branch: "issue-9",
+      phase: "tdd",
+      acceptanceState: "in-progress",
+      blockers: [],
+      mergeReady: false,
+      nextSkill: "/create-pr",
+      startedAt: "2026-06-01T12:00:00.000Z",
+      endedAt: "2026-06-01T12:00:00.000Z",
+    };
+
+    let handoffWhenAgentRuns: Handoff | undefined;
+
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => {
+          const { readHandoff } = await import("../src/handoff/index.js");
+          handoffWhenAgentRuns = await readHandoff(worktreePath);
+          await writeHandoff(
+            {
+              ...seedHandoff,
+              acceptanceState: "done",
+              endedAt: "2026-06-01T13:00:00.000Z",
+            },
+            worktreePath,
+          );
+          return {
+            commits: [],
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            iterations: [],
+            stdout: "",
+          };
+        },
+      },
+      createSandboxCalls,
+    );
+
+    await runPhase(
+      {
+        phase: "tdd",
+        branch: "issue-9",
+        projectPath,
+        promptFile,
+        seedHandoff,
+      },
+      deps,
+    );
+
+    expect(createSandboxCalls[0]?.cwd).toBe(projectPath);
+    expect(handoffWhenAgentRuns).toEqual(seedHandoff);
+    await expect(
+      access(join(worktreePath, ".sandcastle-ralph/handoff/current.json")),
+    ).resolves.toBeUndefined();
+  });
+
   it("resolves promptFile from orchestrator prompts when not overridden", async () => {
     const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
