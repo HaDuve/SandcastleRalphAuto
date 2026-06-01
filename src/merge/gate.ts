@@ -2,9 +2,15 @@ import { type Handoff } from "../handoff/index.js";
 import { type Project } from "../registry/index.js";
 import { type ActiveState } from "../state/index.js";
 
+/** Pre-flight input for the host merge gate (D3/D4). */
 export type RunMergeGateInput = {
+  /**
+   * Handoff snapshot for pre-flight. Per D3, `verdict` must be `approve` from
+   * `/review-pr`. Callers should pass the review handoff or preserve that
+   * verdict through the slice — a merge-phase handoff with `n/a` will block.
+   */
   handoff: Handoff;
-  project: Pick<Project, "autoMerge" | "remote">;
+  project: Pick<Project, "autoMerge">;
   pr: number;
 };
 
@@ -51,6 +57,18 @@ function allRequiredChecksGreen(checks: PrCheck[]): boolean {
   );
 }
 
+function parseRequiredChecks(raw: string): PrCheck[] | RunMergeGateBlocked {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return blocked("Could not parse required checks from gh");
+    }
+    return parsed as PrCheck[];
+  } catch {
+    return blocked("Could not parse required checks from gh");
+  }
+}
+
 export async function runMergeGate(
   input: RunMergeGateInput,
   deps: RunMergeGateDeps,
@@ -80,10 +98,13 @@ export async function runMergeGate(
     "--json",
     "name,state,bucket,link",
   ]);
-  const checks = JSON.parse(checksRaw) as PrCheck[];
+  const parsedChecks = parseRequiredChecks(checksRaw);
+  if ("status" in parsedChecks) {
+    return parsedChecks;
+  }
 
-  if (!allRequiredChecksGreen(checks)) {
-    const failing = checks
+  if (!allRequiredChecksGreen(parsedChecks)) {
+    const failing = parsedChecks
       .filter((check) => check.bucket !== "pass" && check.bucket !== "skipping")
       .map((check) => check.name)
       .join(", ");

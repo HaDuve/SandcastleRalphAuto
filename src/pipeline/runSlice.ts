@@ -39,9 +39,16 @@ export type RunLinearSliceBlocked = {
   phasesCompleted: CanonicalPhase[];
 };
 
+export type RunLinearSliceAwaitingHuman = {
+  status: "awaiting-human";
+  active: ActiveState;
+  phasesCompleted: CanonicalPhase[];
+};
+
 export type RunLinearSliceResult =
   | RunLinearSliceSuccess
-  | RunLinearSliceBlocked;
+  | RunLinearSliceBlocked
+  | RunLinearSliceAwaitingHuman;
 
 export type RunLinearSliceDeps = {
   runPhase: (
@@ -81,6 +88,9 @@ export async function runLinearSlice(
   const existing = await readActive(projectId, stateRoot);
   if (existing?.status === "blocked") {
     return { status: "blocked", active: existing, phasesCompleted };
+  }
+  if (existing?.status === "awaiting-human") {
+    return { status: "awaiting-human", active: existing, phasesCompleted };
   }
 
   for (const phase of CANONICAL_PHASES) {

@@ -21,8 +21,7 @@ function mergeHandoff(overrides: Partial<Handoff> = {}): Handoff {
   };
 }
 
-const project: Pick<Project, "autoMerge" | "remote"> = {
-  remote: "HaDuve/SandcastleRalphAuto",
+const project: Pick<Project, "autoMerge"> = {
   autoMerge: true,
 };
 
@@ -161,6 +160,56 @@ describe("runMergeGate", () => {
       resumeSkill: "/merge",
     });
     expect(ghCalls).toHaveLength(0);
+  });
+
+  it("blocks when a required check is still pending", async () => {
+    const ghCalls: string[][] = [];
+
+    const result = await runMergeGate(
+      { handoff: mergeHandoff(), project, pr: 42 },
+      {
+        gh: async (args) => {
+          ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "checks") {
+            return JSON.stringify([
+              { name: "ci", state: "PENDING", bucket: "pending", link: "" },
+            ]);
+          }
+          return "";
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      reason: "Required checks not green: ci",
+      resumeSkill: "/merge",
+    });
+    expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
+  });
+
+  it("blocks when gh returns malformed checks JSON", async () => {
+    const ghCalls: string[][] = [];
+
+    const result = await runMergeGate(
+      { handoff: mergeHandoff(), project, pr: 42 },
+      {
+        gh: async (args) => {
+          ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "checks") {
+            return "not json";
+          }
+          return "";
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      reason: "Could not parse required checks from gh",
+      resumeSkill: "/merge",
+    });
+    expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
   });
 });
 
