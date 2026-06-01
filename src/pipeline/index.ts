@@ -15,6 +15,7 @@ export {
 } from "./advance.js";
 export {
   runLinearSlice,
+  toSliceReadyForMerge,
   type RunLinearSliceAwaitingHuman,
   type RunLinearSliceBlocked,
   type RunLinearSliceDeps,
@@ -22,4 +23,5 @@ export {
   type RunLinearSliceRecoveryComplete,
   type RunLinearSliceResult,
   type RunLinearSliceSuccess,
+  type SliceReadyForMerge,
 } from "./runSlice.js";

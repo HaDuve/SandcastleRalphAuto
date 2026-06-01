@@ -47,7 +47,13 @@ async function setupProjectRoot(): Promise<{
 async function seedActiveSliceWithLogs(
   stateRoot: string,
   project: Project,
-  active: { issue: number; phase: string; branch: string; status: string },
+  active: {
+    issue: number;
+    phase: string;
+    branch: string;
+    status: string;
+    pr?: number;
+  },
   logFiles: Record<string, string>,
 ): Promise<void> {
   const activeDir = join(stateRoot, project.remote);

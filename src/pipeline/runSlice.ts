@@ -70,6 +70,29 @@ export type RunLinearSliceResult =
   | RunLinearSliceAwaitingHuman
   | RunLinearSliceRecoveryComplete;
 
+export type SliceReadyForMerge = Extract<
+  RunLinearSliceResult,
+  { status: "ready-for-next" }
+>;
+
+export function toSliceReadyForMerge(
+  slice: RunLinearSliceResult,
+): SliceReadyForMerge | null {
+  if (slice.status === "recovery-complete") {
+    return {
+      status: "ready-for-next",
+      issue: slice.issue,
+      branch: slice.branch,
+      pr: slice.pr,
+      phasesCompleted: [],
+    };
+  }
+  if (slice.status === "ready-for-next") {
+    return slice;
+  }
+  return null;
+}
+
 export type RunLinearSliceDeps = {
   runPhase: (
     options: RunPhaseOptions,
