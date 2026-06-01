@@ -57,6 +57,29 @@ function stubProjectsFetch(projects: typeof portfolio[]) {
         { status: 200 },
       );
     }
+    if (url.endsWith("/history")) {
+      return new Response(
+        JSON.stringify({
+          history: [
+            {
+              pr: 99,
+              issue: 9,
+              branch: "issue-9",
+              startedAt: "2026-06-01T00:00:00.000Z",
+              endedAt: "2026-06-01T01:00:00.000Z",
+              phases: [
+                {
+                  phase: "merge",
+                  startedAt: "2026-06-01T00:00:00.000Z",
+                  endedAt: "2026-06-01T01:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
     if (url.endsWith("/start") && init?.method === "POST") {
       return new Response(JSON.stringify({ status: "started" }), { status: 202 });
     }
@@ -147,6 +170,22 @@ describe("App", () => {
     });
   });
 
+  it("loads history for the focused project", async () => {
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+
+    expect(await screen.findByRole("link", { name: /#99/i })).toHaveAttribute(
+      "href",
+      "https://github.com/HaDuve/Portfolio/pull/99",
+    );
+    expect(screen.getByText(/issue #9/i)).toBeInTheDocument();
+    expect(screen.getByText(/1h/i)).toBeInTheDocument();
+  });
+
   it("loads queue and active panels for the focused project", async () => {
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
 
@@ -198,6 +237,10 @@ describe("App", () => {
             { status: 200 },
           );
         }
+        if (url === "/api/projects/portfolio/history") {
+          await portfolioPanelsGate;
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
         if (url === "/api/projects/other/queue") {
           return new Response(
             JSON.stringify({
@@ -208,6 +251,9 @@ describe("App", () => {
         }
         if (url === "/api/projects/other/active") {
           return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url === "/api/projects/other/history") {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
         }
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
       }),
@@ -250,6 +296,9 @@ describe("App", () => {
       }
       if (url.endsWith("/active")) {
         return new Response(JSON.stringify({ active: null }), { status: 200 });
+      }
+      if (url.endsWith("/history")) {
+        return new Response(JSON.stringify({ history: [] }), { status: 200 });
       }
       if (url === "/api/projects/portfolio/skip" && init?.method === "POST") {
         await skipGate;
@@ -354,6 +403,9 @@ describe("App", () => {
       }
       if (url.endsWith("/active")) {
         return new Response(JSON.stringify({ active: null }), { status: 200 });
+      }
+      if (url.endsWith("/history")) {
+        return new Response(JSON.stringify({ history: [] }), { status: 200 });
       }
       if (url.endsWith("/start") && init?.method === "POST") {
         return new Response(JSON.stringify({ status: "started" }), { status: 202 });

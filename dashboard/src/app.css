@@ -72,7 +72,8 @@ body {
 }
 
 .queue-panel,
-.active-panel {
+.active-panel,
+.history-panel {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -104,7 +105,8 @@ body {
 
 .queue-item-reason,
 .queue-empty,
-.active-idle {
+.active-idle,
+.history-empty {
   color: #9aa7b5;
 }
 
