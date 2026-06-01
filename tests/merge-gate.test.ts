@@ -21,14 +21,28 @@ function mergeHandoff(overrides: Partial<Handoff> = {}): Handoff {
   };
 }
 
-const project: Pick<Project, "autoMerge"> = {
+const project: Pick<Project, "autoMerge" | "remote"> = {
   autoMerge: true,
+  remote: "HaDuve/SandcastleRalphAuto",
 };
 
 const mergeablePrView = JSON.stringify({
   mergeable: "MERGEABLE",
   mergeStateStatus: "CLEAN",
 });
+
+function respondToPrView(
+  args: string[],
+  input: { state?: string; mergeability?: string },
+): string {
+  if (args[0] !== "pr" || args[1] !== "view") {
+    return "";
+  }
+  if (args.includes("state")) {
+    return JSON.stringify({ state: input.state ?? "OPEN" });
+  }
+  return input.mergeability ?? mergeablePrView;
+}
 
 describe("runMergeGate", () => {
   it("merges via gh when Approve, no blockers, green required checks, and autoMerge", async () => {
@@ -39,10 +53,7 @@ describe("runMergeGate", () => {
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
-            return JSON.stringify({
-              mergeable: "MERGEABLE",
-              mergeStateStatus: "CLEAN",
-            });
+            return respondToPrView(args, {});
           }
           if (args[0] === "pr" && args[1] === "checks") {
             return JSON.stringify([
@@ -57,8 +68,19 @@ describe("runMergeGate", () => {
     expect(result).toEqual({ status: "auto-merge-queued" });
     expect(ghCalls).toContainEqual([
       "pr",
+      "view",
+      "42",
+      "--repo",
+      "HaDuve/SandcastleRalphAuto",
+      "--json",
+      "state",
+    ]);
+    expect(ghCalls).toContainEqual([
+      "pr",
       "checks",
       "42",
+      "--repo",
+      "HaDuve/SandcastleRalphAuto",
       "--required",
       "--json",
       "name,state,bucket,link",
@@ -67,6 +89,8 @@ describe("runMergeGate", () => {
       "pr",
       "merge",
       "42",
+      "--repo",
+      "HaDuve/SandcastleRalphAuto",
       "--squash",
       "--auto",
     ]);
@@ -106,7 +130,7 @@ describe("runMergeGate", () => {
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
-            return mergeablePrView;
+            return respondToPrView(args, {});
           }
           if (args[0] === "pr" && args[1] === "checks") {
             return JSON.stringify([
@@ -136,9 +160,11 @@ describe("runMergeGate", () => {
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
-            return JSON.stringify({
-              mergeable: "CONFLICTING",
-              mergeStateStatus: "DIRTY",
+            return respondToPrView(args, {
+              mergeability: JSON.stringify({
+                mergeable: "CONFLICTING",
+                mergeStateStatus: "DIRTY",
+              }),
             });
           }
           if (args[0] === "pr" && args[1] === "checks") {
@@ -221,7 +247,7 @@ describe("runMergeGate", () => {
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
-            return mergeablePrView;
+            return respondToPrView(args, {});
           }
           if (args[0] === "pr" && args[1] === "checks") {
             return JSON.stringify([
@@ -261,11 +287,32 @@ describe("runMergeGate", () => {
     expect(result).toEqual({
       status: "blocked",
       kind: "mergeability-parse-error",
-      reason: "Could not read PR mergeability from gh",
+      reason: "Could not read PR state from gh",
       resumeSkill: "/merge",
     });
     expect(ghCalls.some((args) => args[1] === "checks")).toBe(false);
     expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
+  });
+
+  it("treats an already-merged PR as auto-merge-queued without re-merging", async () => {
+    const ghCalls: string[][] = [];
+
+    const result = await runMergeGate(
+      { handoff: mergeHandoff(), project, pr: 42 },
+      {
+        gh: async (args) => {
+          ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return respondToPrView(args, { state: "MERGED" });
+          }
+          return "";
+        },
+      },
+    );
+
+    expect(result).toEqual({ status: "auto-merge-queued" });
+    expect(ghCalls).toHaveLength(1);
+    expect(ghCalls[0]).toContain("state");
   });
 
   it("blocks when gh returns malformed checks JSON", async () => {
@@ -277,7 +324,7 @@ describe("runMergeGate", () => {
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
-            return mergeablePrView;
+            return respondToPrView(args, {});
           }
           if (args[0] === "pr" && args[1] === "checks") {
             return "not json";

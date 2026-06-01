@@ -17,6 +17,8 @@ export type PhaseLogHandler = ((chunk: string) => void) | null;
 export type LogPanelProps = {
   project: Project | null;
   activePhase: string | null;
+  /** When `active.json` is cleared mid-run, load logs by issue + phase. */
+  logIssueFallback?: number | null;
   registerPhaseLogHandler?: (handler: PhaseLogHandler) => void;
 };
 
@@ -40,7 +42,12 @@ function applyProjectLog(
   }
 }
 
-export function LogPanel({ project, activePhase, registerPhaseLogHandler }: LogPanelProps) {
+export function LogPanel({
+  project,
+  activePhase,
+  logIssueFallback = null,
+  registerPhaseLogHandler,
+}: LogPanelProps) {
   const [logText, setLogText] = useState("");
   const [phases, setPhases] = useState<string[]>([]);
   const [viewPhase, setViewPhase] = useState<string | null>(null);
@@ -68,7 +75,18 @@ export function LogPanel({ project, activePhase, registerPhaseLogHandler }: LogP
       }
       const generation = ++logLoadGenerationRef.current;
       try {
-        const result = await fetchProjectLog(project.id, options.phase);
+        let result = await fetchProjectLog(project.id, { phase: options.phase });
+        if (
+          !result &&
+          logIssueFallback !== null &&
+          logIssueFallback !== undefined &&
+          options.phase
+        ) {
+          result = await fetchProjectLog(project.id, {
+            phase: options.phase,
+            issue: logIssueFallback,
+          });
+        }
         if (generation !== logLoadGenerationRef.current) {
           return null;
         }
@@ -95,7 +113,7 @@ export function LogPanel({ project, activePhase, registerPhaseLogHandler }: LogP
         return null;
       }
     },
-    [project],
+    [logIssueFallback, project],
   );
 
   useEffect(() => {
@@ -171,7 +189,10 @@ export function LogPanel({ project, activePhase, registerPhaseLogHandler }: LogP
     viewPhaseRef.current = phase;
     void (async () => {
       try {
-        const result = await fetchProjectLog(project.id, phase);
+        let result = await fetchProjectLog(project.id, { phase });
+        if (!result && logIssueFallback !== null && logIssueFallback !== undefined) {
+          result = await fetchProjectLog(project.id, { phase, issue: logIssueFallback });
+        }
         if (generation !== phaseFetchGenerationRef.current || !result) {
           return;
         }
