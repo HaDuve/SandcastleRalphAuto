@@ -1,6 +1,6 @@
 # SandcastleRalphAuto
 
-A local control plane that runs a fixed vertical-slice pipeline (`/tdd` → `/create-pr` → `/review-pr` → `/review-tdd` → `/babysit` → `/merge` → `/next`) AFK across registered repos, using Cursor's Auto model via Sandcastle, with an operator dashboard for oversight.
+A local control plane that runs a fixed, linear vertical-slice pipeline (`/tdd` → `/create-pr` → `/review-pr` → `/review-tdd` → `/merge`, then `/next`) AFK across registered repos, using Cursor's Auto model via Sandcastle, with an operator dashboard for oversight.
 
 ## Language
 
@@ -9,7 +9,7 @@ One unit of work: a single GitHub issue taken from `ready-for-agent` through to 
 _Avoid_: task, ticket, story
 
 **Phase**:
-One step of the pipeline (`tdd`, `create-pr`, `review-pr`, `review-tdd`, `babysit`, `merge`, `next`). Each phase is one cold agent invocation — no transcript carries between phases.
+One step of the canonical pipeline — `tdd`, `create-pr`, `review-pr`, `review-tdd`, `merge` — run linearly, every phase every slice. Each phase is one cold agent invocation; no transcript carries between phases. `next` is host orchestration (no agent), not a skill phase.
 _Avoid_: step, stage
 
 **Skill**:

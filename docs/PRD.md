@@ -31,12 +31,15 @@ A **local control plane** = a long-lived Node/TS orchestrator process + a local 
 
 ## 4. Pipeline (canonical)
 
-`/tdd` → `/create-pr` → `/review-pr` → [`/review-tdd` | `/babysit`]* → `/merge` → `/next`
+`/tdd #<issue>` → `/create-pr` → `/review-pr` → `/review-tdd` → `/merge`, then `/next`
+
+This is the exact, **linear** skill-flow proven in practice — every phase runs every slice, in order. No conditional branches, no request-changes loop, no `/babysit`.
 
 - Each phase = one **cold** `cursor("auto")` run. Inputs = the JSON handoff + GitHub only; no transcript carry-over. Target ≤100k tokens/invocation.
 - Completion signal: `<promise>PHASE_COMPLETE</promise>`.
-- `tdd` uses `maxIterations: N`; phases emit/validate the handoff host-side.
-- `/next` (host TS, no agent): verify merge → archive handoff → select next eligible issue (lowest #, minus skips/blocked) → start `/tdd`, or emit `QUEUE_EMPTY`.
+- `tdd` uses `maxIterations: N`; the rest are single-shot. Phases emit/validate the handoff host-side.
+- `/next` is **host orchestration, not a skill phase** (no agent): verify merge → archive handoff → select next eligible issue (lowest #, minus skips/blocked) → start `/tdd`, or emit `QUEUE_EMPTY`.
+- If `/merge` can't proceed (red required checks / open blockers) the slice is marked `blocked` for the operator — there is no automated CI-repair phase in v0.
 
 ## 5. Handoff schema (v0 draft)
 
@@ -46,12 +49,12 @@ const Handoff = z.object({
   issue: z.number(),
   branch: z.string(),
   pr: z.number().optional(),
-  phase: z.enum(["tdd","create-pr","review-pr","review-tdd","babysit","merge","next"]),
+  phase: z.enum(["tdd","create-pr","review-pr","review-tdd","merge"]),
   acceptanceState: z.enum(["in-progress","done","blocked"]),
   verdict: z.enum(["approve","request-changes","n/a"]).optional(),
   blockers: z.array(z.string()),
   mergeReady: z.boolean(),
-  nextSkill: z.string(),      // e.g. "/review-tdd"
+  nextSkill: z.string(),      // next phase in the fixed order, e.g. "/review-tdd"
   startedAt: z.string(),
   endedAt: z.string(),
 });
