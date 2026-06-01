@@ -98,7 +98,7 @@ export function advanceSlice(input: AdvanceSliceInput): AdvanceSliceOutcome {
       active: blockedActive(
         input,
         failure,
-        handoff.nextSkill || skillForPhase(input.phase),
+        skillForPhase(input.phase),
       ),
       reason: failure,
     };

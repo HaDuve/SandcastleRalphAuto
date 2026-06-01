@@ -108,7 +108,7 @@ describe("advanceSlice", () => {
         pr: 99,
         status: "blocked",
         reason: expect.stringMatching(/linear pipeline/),
-        resumeSkill: "/babysit",
+        resumeSkill: "/review-pr",
       });
     }
   });
@@ -127,6 +127,23 @@ describe("advanceSlice", () => {
     if (!outcome.ok) {
       expect(outcome.active.phase).toBe("tdd");
       expect(outcome.active.status).toBe("blocked");
+      expect(outcome.active.resumeSkill).toBe("/tdd");
+    }
+  });
+
+  it("blocks with current-phase resumeSkill when acceptanceState is blocked", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "merge",
+      result: phaseResult("merge", "/next", {
+        acceptanceState: "blocked",
+        blockers: ["ci failed"],
+      }),
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.active.resumeSkill).toBe("/merge");
     }
   });
 });
@@ -219,12 +236,55 @@ describe("runLinearSlice", () => {
         issue: 7,
         phase: "create-pr",
         status: "blocked",
-        resumeSkill: "/babysit",
+        resumeSkill: "/create-pr",
       });
     }
     await expect(readActive(projectId, stateRoot)).resolves.toMatchObject({
       status: "blocked",
       phase: "create-pr",
     });
+  });
+
+  it("persists blocked state with current-phase resumeSkill when runPhase throws", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+      },
+      {
+        runPhase: async (options) => {
+          if (options.phase === "review-tdd") {
+            throw new Error("sandbox run failed");
+          }
+          return phaseResult(
+            options.phase,
+            NEXT_SKILL_BY_PHASE[options.phase],
+            { pr: 42 },
+          );
+        },
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    if (result.status === "blocked") {
+      expect(result.phasesCompleted).toEqual([
+        "tdd",
+        "create-pr",
+        "review-pr",
+      ]);
+      expect(result.active).toMatchObject({
+        phase: "review-tdd",
+        status: "blocked",
+        resumeSkill: "/review-tdd",
+        reason: "sandbox run failed",
+      });
+    }
   });
 });
