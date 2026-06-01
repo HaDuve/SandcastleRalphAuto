@@ -2,11 +2,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { branchForIssue } from "../src/next/index.js";
 import {
   buildPrompt,
   CANONICAL_PHASES,
   formatSyncReport,
   parsePrompt,
+  renderHarness,
   syncSkills,
 } from "../src/prompts/index.js";
 
@@ -21,6 +23,41 @@ describe("canonical phase prompts", () => {
       "review-tdd",
       "merge",
     ]);
+  });
+});
+
+describe("renderHarness", () => {
+  it("lists commit, handoff, and completion signal in order under Outputs", () => {
+    const harness = renderHarness("tdd");
+    const outputsStart = harness.indexOf("## Outputs (in order)");
+    expect(outputsStart).toBeGreaterThan(-1);
+
+    const outputsSection = harness.slice(outputsStart);
+    const commitStep = outputsSection.indexOf("1. **Commit**");
+    const handoffStep = outputsSection.indexOf("2. **Handoff**");
+    const signalStep = outputsSection.indexOf("3. **Signal**");
+
+    expect(commitStep).toBeGreaterThan(-1);
+    expect(handoffStep).toBeGreaterThan(commitStep);
+    expect(signalStep).toBeGreaterThan(handoffStep);
+    expect(outputsSection).toMatch(/empty commit/i);
+    expect(outputsSection).toContain("<promise>PHASE_COMPLETE</promise>");
+  });
+
+  it("pins every phase to handoff.branch (issue-<n>)", () => {
+    const harness = renderHarness("review-pr");
+
+    expect(harness).toContain("handoff.branch");
+    expect(harness).toContain("issue-<handoff.issue>");
+    expect(branchForIssue(42)).toBe("issue-42");
+    expect(harness).toMatch(/feat\/<slug>/i);
+  });
+
+  it("overrides create-pr skill branch resolution to handoff.branch only", () => {
+    const harness = renderHarness("create-pr");
+
+    expect(harness).toMatch(/ignore.*branch/i);
+    expect(harness).not.toMatch(/feat\/<slug>-<issue>/);
   });
 });
 
@@ -66,8 +103,13 @@ describe("committed prompts/*.md", () => {
 
       expect(parsed.phase).toBe(phase);
       expect(parsed.harness).toMatch(/Do not ask questions/i);
+      expect(parsed.harness).toMatch(/empty commit/i);
+      expect(parsed.harness).toContain("handoff.branch");
       expect(parsed.harness).toContain("<promise>PHASE_COMPLETE</promise>");
       expect(parsed.skillSnapshot.length).toBeGreaterThan(0);
+      if (phase === "create-pr") {
+        expect(parsed.harness).toMatch(/ignore.*branch/i);
+      }
       expect(parsed.skillSnapshot).toMatch(/^---\nname: /);
     },
   );
