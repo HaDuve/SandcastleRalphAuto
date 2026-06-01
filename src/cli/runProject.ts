@@ -35,6 +35,12 @@ import {
   type ProjectMutex,
 } from "./mutex.js";
 
+export type WorkerControl = {
+  signal: AbortSignal;
+  isPaused: () => boolean;
+  waitIfPaused: () => Promise<void>;
+};
+
 export type RunProjectSliceInput = {
   projectId: string;
   issue: number;
@@ -99,6 +105,7 @@ export type RunProjectDeps = {
     },
     gh: GhRunner,
   ) => Promise<BootstrapFirstIssueResult>;
+  control?: WorkerControl;
 };
 
 function resolvePaths(input: { rootDir?: string; stateRoot?: string }): {
@@ -295,7 +302,10 @@ function createSliceRunner(
 
   return {
     async runPhase(options) {
-      const result = await runPhaseFn(options);
+      const result = await runPhaseFn({
+        ...options,
+        signal: options.signal ?? deps.control?.signal,
+      });
       if (options.phase === "review-pr") {
         reviewHandoff = result.handoff;
       }
@@ -575,6 +585,13 @@ export async function loopProject(
 
   try {
     for (;;) {
+      if (deps.control) {
+        await deps.control.waitIfPaused();
+        if (deps.control.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+      }
+
       const sliceRunner = createSliceRunner(deps);
       const runLinearSliceFn = deps.runLinearSlice ?? resolved.runLinearSlice;
       const slice = await runLinearSliceFn(

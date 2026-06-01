@@ -1,0 +1,306 @@
+import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { type Handoff } from "../src/handoff/index.js";
+import { type Project } from "../src/registry/index.js";
+import { createEventBus } from "../src/server/eventBus.js";
+import { createDashboardServer, type DashboardServerOptions } from "../src/server/index.js";
+import { createWorkerManager } from "../src/server/workerManager.js";
+
+const portfolio: Project = {
+  id: "portfolio",
+  path: "/tmp/portfolio",
+  remote: "HaDuve/Portfolio",
+  defaultBase: "main",
+  afkLabel: "ready-for-agent",
+  blockedLabels: ["needs-info"],
+  autoMerge: true,
+  concurrency: "single",
+  sandbox: "none",
+};
+
+async function setupProjectRoot(): Promise<{
+  rootDir: string;
+  project: Project;
+  stateRoot: string;
+}> {
+  const rootDir = await mkdtemp(join(tmpdir(), "server-root-"));
+  const projectPath = join(rootDir, "portfolio-repo");
+  await mkdir(projectPath);
+  const project: Project = { ...portfolio, path: projectPath };
+  await writeFile(
+    join(rootDir, "projects.json"),
+    JSON.stringify({ projects: [project] }, null, 2),
+  );
+  return { rootDir, project, stateRoot: join(rootDir, "state") };
+}
+
+async function startServer(
+  rootDir: string,
+  overrides: Omit<DashboardServerOptions, "rootDir"> = {},
+): Promise<{ server: Server; baseUrl: string }> {
+  const server = createDashboardServer({ rootDir, ...overrides });
+  await new Promise<void>((resolve) =>
+    server.listen(0, "127.0.0.1", () => resolve()),
+  );
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected server to listen on a TCP port");
+  }
+  return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+}
+
+describe("dashboard server", () => {
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => {
+      if (!server) {
+        resolve();
+        return;
+      }
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    server = undefined;
+  });
+
+  it("lists registered projects", async () => {
+    const { rootDir, project } = await setupProjectRoot();
+    const started = await startServer(rootDir);
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ projects: [project] });
+  });
+
+  it("returns active slice state for a project", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const activeDir = join(stateRoot, project.remote);
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(
+      join(activeDir, "active.json"),
+      JSON.stringify(
+        {
+          issue: 11,
+          phase: "tdd",
+          branch: "issue-11",
+          status: "active",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/active`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      active: {
+        issue: 11,
+        phase: "tdd",
+        branch: "issue-11",
+        status: "active",
+      },
+    });
+  });
+
+  it("returns queue issues with skip and eligibility flags", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const started = await startServer(rootDir, {
+      stateRoot,
+      fetchQueue: async () => [
+        { number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true },
+        { number: 12, labels: ["ready-for-agent", "needs-info"], skipped: false, eligible: false },
+      ],
+    });
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/queue`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      queue: [
+        { number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true },
+        { number: 12, labels: ["ready-for-agent", "needs-info"], skipped: false, eligible: false },
+      ],
+    });
+    void project;
+  });
+
+  it("returns archived handoff history", async () => {
+    const { rootDir, project } = await setupProjectRoot();
+    const historyDir = join(project.path, ".sandcastle-ralph", "handoff", "history");
+    await mkdir(historyDir, { recursive: true });
+    const handoff: Handoff = {
+      project: project.remote,
+      issue: 9,
+      branch: "issue-9",
+      pr: 99,
+      phase: "merge",
+      acceptanceState: "done",
+      verdict: "approve",
+      blockers: [],
+      mergeReady: true,
+      nextSkill: "/next",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    };
+    await writeFile(
+      join(historyDir, "99-2026-06-01T01-00-00.000Z.json"),
+      JSON.stringify(handoff, null, 2) + "\n",
+    );
+
+    const started = await startServer(rootDir);
+    server = started.server;
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/history`);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { history: Array<{ pr: number; issue: number }> };
+    expect(body.history).toHaveLength(1);
+    expect(body.history[0]).toMatchObject({ pr: 99, issue: 9 });
+  });
+
+  it("records operator skip for an issue", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/skip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ issue: 15 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "skipped", issue: 15 });
+
+    const skipsPath = join(stateRoot, project.remote, "skips.json");
+    const skips = JSON.parse(await (await import("node:fs/promises")).readFile(skipsPath, "utf8"));
+    expect(skips).toEqual([15]);
+  });
+
+  it("starts, pauses, and kills a project worker", async () => {
+    const { rootDir, stateRoot } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    let releaseLoop: (() => void) | undefined;
+    const loopStarted = new Promise<void>((resolve) => {
+      releaseLoop = resolve;
+    });
+
+    const workerManager = createWorkerManager({
+      eventBus,
+      loopProject: async () => {
+        await loopStarted;
+        return { status: "queue-empty", slicesCompleted: 0 };
+      },
+    });
+
+    const started = await startServer(rootDir, {
+      stateRoot,
+      eventBus,
+      workerManager,
+    });
+    server = started.server;
+
+    const startResponse = await fetch(`${started.baseUrl}/api/projects/portfolio/start`, {
+      method: "POST",
+    });
+    expect(startResponse.status).toBe(202);
+    expect(await startResponse.json()).toEqual({ status: "started" });
+
+    const pauseResponse = await fetch(`${started.baseUrl}/api/projects/portfolio/pause`, {
+      method: "POST",
+    });
+    expect(pauseResponse.status).toBe(200);
+    expect(await pauseResponse.json()).toEqual({ status: "paused" });
+
+    const killResponse = await fetch(`${started.baseUrl}/api/projects/portfolio/kill`, {
+      method: "POST",
+    });
+    expect(killResponse.status).toBe(200);
+    expect(await killResponse.json()).toEqual({ status: "killed" });
+
+    releaseLoop?.();
+  });
+
+  it("streams project events over SSE", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    const started = await startServer(rootDir, { eventBus });
+    server = started.server;
+
+    const events: unknown[] = [];
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/events`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    eventBus.emit({ type: "phase-log", projectId: "portfolio", chunk: "hello" });
+
+    while (events.length < 2) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      const chunk = decoder.decode(value);
+      for (const block of chunk.split("\n\n")) {
+        if (!block.includes("data:")) {
+          continue;
+        }
+        const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
+        if (dataLine) {
+          events.push(JSON.parse(dataLine.slice("data: ".length)));
+        }
+      }
+    }
+    reader.cancel();
+
+    expect(events[0]).toEqual({ type: "connected", projectId: "portfolio" });
+    expect(events[1]).toEqual({
+      type: "phase-log",
+      projectId: "portfolio",
+      chunk: "hello",
+    });
+  });
+
+  it("serves the built Vite app from the static directory", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const staticDir = join(rootDir, "dashboard", "dist");
+    await mkdir(staticDir, { recursive: true });
+    await writeFile(join(staticDir, "index.html"), "<!doctype html><title>Dashboard</title>");
+
+    const started = await startServer(rootDir, { staticDir });
+    server = started.server;
+    const response = await fetch(`${started.baseUrl}/`);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Dashboard");
+  });
+
+  it("binds to localhost only", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const started = await startServer(rootDir);
+    server = started.server;
+
+    const address = server.address();
+    expect(address).toMatchObject({ address: "127.0.0.1" });
+  });
+
+  it("returns 404 for unknown projects", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const started = await startServer(rootDir);
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects/missing/active`);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Unknown project: missing" });
+  });
+});

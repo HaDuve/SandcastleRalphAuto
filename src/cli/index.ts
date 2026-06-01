@@ -16,5 +16,6 @@ export {
   type RunProjectDeps,
   type RunProjectSliceInput,
   type RunProjectSliceResult,
+  type WorkerControl,
 } from "./runProject.js";
 export { isProcessAlive } from "./mutex.js";

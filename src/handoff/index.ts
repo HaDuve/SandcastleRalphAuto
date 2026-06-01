@@ -1,4 +1,5 @@
 export { HandoffSchema, type Handoff } from "./schema.js";
+export { listHandoffHistory, type HistoryEntry } from "./history.js";
 export {
   HandoffError,
   archiveHandoff,
