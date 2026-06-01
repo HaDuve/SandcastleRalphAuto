@@ -9,3 +9,21 @@ export type Project = {
   concurrency: "single";
   sandbox: "none";
 };
+
+export type QueueIssue = {
+  number: number;
+  labels: string[];
+  skipped: boolean;
+  eligible: boolean;
+};
+
+export type ActiveSlice = {
+  issue: number;
+  phase: string;
+  branch: string;
+  pr?: number;
+  status: "active" | "blocked" | "awaiting-human";
+  reason?: string;
+  resumeSkill?: string;
+  startedAt?: string;
+};

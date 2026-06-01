@@ -20,6 +20,7 @@ export const ActiveStateSchema = z
     status: ActiveStatusSchema,
     reason: z.string().min(1).optional(),
     resumeSkill: z.string().min(1).optional(),
+    startedAt: z.string().optional(),
   })
   .refine(
     (data) =>
