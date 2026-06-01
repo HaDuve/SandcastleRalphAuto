@@ -3,9 +3,12 @@ import {
   fetchActive,
   fetchProjects,
   fetchQueue,
+  killProject,
   pauseProject,
+  resumeProject,
   setIssueSkip,
   startProject,
+  subscribeProjectEvents,
 } from "../../dashboard/src/api.js";
 
 describe("dashboard API client", () => {
@@ -73,6 +76,71 @@ describe("dashboard API client", () => {
     );
 
     await expect(pauseProject("portfolio")).resolves.toEqual({ status: "paused" });
+  });
+
+  it("kills a project worker via POST", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        expect(url).toBe("/api/projects/portfolio/kill");
+        expect(init?.method).toBe("POST");
+        return new Response(JSON.stringify({ status: "killed" }), { status: 200 });
+      }),
+    );
+
+    await expect(killProject("portfolio")).resolves.toEqual({ status: "killed" });
+  });
+
+  it("resumes a paused project worker via POST", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        expect(url).toBe("/api/projects/portfolio/resume");
+        expect(init?.method).toBe("POST");
+        return new Response(JSON.stringify({ status: "resumed" }), { status: 200 });
+      }),
+    );
+
+    await expect(resumeProject("portfolio")).resolves.toEqual({ status: "resumed" });
+  });
+
+  it("subscribes to project worker events over SSE", () => {
+    const listeners = new Map<string, Set<(event: Event) => void>>();
+    class MockEventSource {
+      url: string;
+      constructor(url: string) {
+        this.url = url;
+      }
+      addEventListener(type: string, handler: (event: Event) => void) {
+        let typeListeners = listeners.get(type);
+        if (!typeListeners) {
+          typeListeners = new Set();
+          listeners.set(type, typeListeners);
+        }
+        typeListeners.add(handler);
+      }
+      removeEventListener(type: string, handler: (event: Event) => void) {
+        listeners.get(type)?.delete(handler);
+      }
+      close = vi.fn();
+    }
+    vi.stubGlobal("EventSource", MockEventSource);
+
+    const onEvent = vi.fn();
+    const unsubscribe = subscribeProjectEvents("portfolio", onEvent);
+
+    expect(listeners.has("worker-started")).toBe(true);
+
+    listeners.get("worker-started")!.forEach((handler) =>
+      handler({ data: JSON.stringify({ type: "worker-started", projectId: "portfolio" }) }),
+    );
+    expect(onEvent).toHaveBeenCalledWith({
+      type: "worker-started",
+      projectId: "portfolio",
+    });
+
+    unsubscribe();
+    expect(listeners.get("worker-started")!.size).toBe(0);
   });
 
   it("fetches queue issues for a project", async () => {

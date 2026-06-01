@@ -193,7 +193,16 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
             "Cache-Control": "no-cache",
             Connection: "keep-alive",
           });
-          writeSseEvent(res, "connected", { type: "connected", projectId: project.id });
+          const workerStatus = workerManager.isRunning(project.id)
+            ? workerManager.isPaused(project.id)
+              ? "paused"
+              : "running"
+            : "idle";
+          writeSseEvent(res, "connected", {
+            type: "connected",
+            projectId: project.id,
+            workerStatus,
+          });
           const unsubscribe = eventBus.subscribe(project.id, (event) => {
             writeSseEvent(res, event.type, event);
           });
