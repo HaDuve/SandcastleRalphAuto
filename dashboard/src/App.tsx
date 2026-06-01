@@ -4,6 +4,7 @@ import {
   fetchProjects,
   fetchQueue,
   killProject,
+  NOT_RUNNING_ERROR,
   pauseProject,
   resumeProject,
   setIssueSkip,
@@ -171,13 +172,28 @@ export function App() {
           await startProject(projectId);
           setWorkerStatus(projectId, "running");
         } else if (action === "pause") {
-          await pauseProject(projectId);
+          const result = await pauseProject(projectId);
+          if (result.status === "not-running") {
+            setWorkerStatus(projectId, "idle");
+            setControlError(NOT_RUNNING_ERROR);
+            return;
+          }
           setWorkerStatus(projectId, "paused");
         } else if (action === "resume") {
-          await resumeProject(projectId);
+          const result = await resumeProject(projectId);
+          if (result.status === "not-running") {
+            setWorkerStatus(projectId, "idle");
+            setControlError(NOT_RUNNING_ERROR);
+            return;
+          }
           setWorkerStatus(projectId, "running");
         } else {
-          await killProject(projectId);
+          const result = await killProject(projectId);
+          if (result.status === "not-running") {
+            setWorkerStatus(projectId, "idle");
+            setControlError(NOT_RUNNING_ERROR);
+            return;
+          }
         }
         if (focusedProjectIdRef.current === projectId) {
           await refreshPanels(projectId);

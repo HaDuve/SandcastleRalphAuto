@@ -3,6 +3,8 @@ import type { WorkerStatus } from "./workerStatus.js";
 
 type ControlStatusBody = { status?: string; error?: string };
 
+export const NOT_RUNNING_ERROR = "Project worker is not running";
+
 export type ProjectEvent = {
   type: string;
   projectId?: string;
@@ -25,7 +27,7 @@ function controlErrorMessage(body: ControlStatusBody, status: number): string {
     return "Project worker is already running";
   }
   if (body.status === "not-running") {
-    return "Project worker is not running";
+    return NOT_RUNNING_ERROR;
   }
   return `Request failed (${status})`;
 }

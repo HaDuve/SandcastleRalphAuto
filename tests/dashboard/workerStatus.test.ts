@@ -36,5 +36,6 @@ describe("applyWorkerEvent", () => {
 
   it("ignores unrelated dashboard events", () => {
     expect(applyWorkerEvent("running", { type: "phase-log" })).toBe("running");
+    expect(applyWorkerEvent(undefined, { type: "phase-log" })).toBe("unknown");
   });
 });

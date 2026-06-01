@@ -1,5 +1,6 @@
 import type { Project } from "./types.js";
 import type { WorkerStatus } from "./workerStatus.js";
+import { isControlReady } from "./workerStatus.js";
 
 export type ProjectPickerProps = {
   projects: Project[];
@@ -16,7 +17,7 @@ function workerStatusFor(
   workerStatuses: Record<string, WorkerStatus>,
   projectId: string,
 ): WorkerStatus {
-  return workerStatuses[projectId] ?? "idle";
+  return workerStatuses[projectId] ?? "unknown";
 }
 
 export function ProjectPicker({
@@ -35,10 +36,11 @@ export function ProjectPicker({
         {projects.map((project) => {
           const checked = selectedIds.has(project.id);
           const status = workerStatusFor(workerStatuses, project.id);
-          const startDisabled = !checked || status !== "idle";
-          const pauseDisabled = !checked || status !== "running";
-          const resumeDisabled = !checked || status !== "paused";
-          const killDisabled = !checked || status === "idle";
+          const controlsReady = checked && isControlReady(status);
+          const startDisabled = !controlsReady || status !== "idle";
+          const pauseDisabled = !controlsReady || status !== "running";
+          const resumeDisabled = !controlsReady || status !== "paused";
+          const killDisabled = !controlsReady || status === "idle";
 
           return (
             <li key={project.id}>

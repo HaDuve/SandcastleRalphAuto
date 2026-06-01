@@ -51,7 +51,11 @@ describe("ProjectPicker", () => {
   it("calls start only for checked projects", async () => {
     const user = userEvent.setup();
     const onStart = vi.fn();
-    renderPicker({ selectedIds: new Set(["portfolio"]), onStart });
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "idle" },
+      onStart,
+    });
 
     await user.click(screen.getByRole("button", { name: /start portfolio/i }));
 
@@ -112,5 +116,14 @@ describe("ProjectPicker", () => {
     await user.click(screen.getByRole("button", { name: /resume portfolio/i }));
 
     expect(onResume).toHaveBeenCalledWith("portfolio");
+  });
+
+  it("disables all controls while worker status is unknown", () => {
+    renderPicker({ selectedIds: new Set(["portfolio"]) });
+
+    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeDisabled();
   });
 });

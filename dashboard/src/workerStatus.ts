@@ -1,4 +1,4 @@
-export type WorkerStatus = "idle" | "running" | "paused";
+export type WorkerStatus = "unknown" | "idle" | "running" | "paused";
 
 type WorkerStatusEvent = {
   type: string;
@@ -11,7 +11,7 @@ export function applyWorkerEvent(
 ): WorkerStatus {
   switch (event.type) {
     case "connected":
-      return event.workerStatus ?? current ?? "idle";
+      return event.workerStatus ?? current ?? "unknown";
     case "worker-started":
       return "running";
     case "worker-paused":
@@ -21,6 +21,10 @@ export function applyWorkerEvent(
     case "worker-stopped":
       return "idle";
     default:
-      return current ?? "idle";
+      return current ?? "unknown";
   }
+}
+
+export function isControlReady(status: WorkerStatus): boolean {
+  return status !== "unknown";
 }
