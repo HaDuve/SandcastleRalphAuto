@@ -11,6 +11,7 @@ import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readHandoff, writeHandoff, type Handoff } from "../handoff/index.js";
+import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 import { type CanonicalPhase } from "../prompts/phases.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
@@ -86,16 +87,12 @@ function resolveMaxIterations(
   return phase === "tdd" ? tddMaxIterations : 1;
 }
 
-function sanitizeBranchForFilename(branch: string): string {
-  return branch.replace(/[/\\:*?"<>|]/g, "-");
-}
-
-function resolveLogPath(projectPath: string, branch: string, name?: string): string {
-  const sanitizedBranch = sanitizeBranchForFilename(branch);
-  const nameSuffix = name
-    ? `-${name.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}`
-    : "";
-  return join(projectPath, ".sandcastle", "logs", `${sanitizedBranch}${nameSuffix}.log`);
+function resolveLogPath(
+  projectPath: string,
+  branch: string,
+  phase: CanonicalPhase,
+): string {
+  return resolvePhaseLogPath({ projectPath, branch, phase });
 }
 
 const defaultDeps = (): RunPhaseDeps => ({
@@ -150,7 +147,7 @@ export async function runPhase(
               path: resolveLogPath(
                 options.projectPath,
                 options.branch,
-                options.name,
+                options.phase,
               ),
               onAgentStreamEvent: options.onAgentStreamEvent,
             },

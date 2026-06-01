@@ -475,7 +475,7 @@ describe("runPhase", () => {
 
     expect(runCalls[0]?.logging).toMatchObject({
       type: "file",
-      path: join(projectPath, ".sandcastle", "logs", "feature-foo@bar.log"),
+      path: join(projectPath, ".sandcastle", "logs", "feature-foo@bar-tdd.log"),
     });
   });
 
