@@ -23,6 +23,14 @@ The on-disk record written at the end of every phase and read by the next phase.
 An active execution of the pipeline for one project — holds the project's concurrency slot (mutex) and advances one slice at a time.
 _Avoid_: agent (an agent is a single phase invocation; a worker spans many)
 
+**Run**:
+One Worker's continuous AFK session — from operator Start until it stops. A Worker holds the slot; a Run is one activation of it. Spans many slices and phases.
+_Avoid_: session (ambiguous), job
+
+**Run outcome**:
+The terminal reason a Run stopped, surfaced to the operator: `queue-empty` (no eligible issues left), `blocked` (failed/halted slice needing a human), `awaiting-human` (gate paused for a decision), `killed` (operator kill switch), or `error` (unexpected crash).
+_Avoid_: failure (covers only `blocked`/`error`)
+
 **AFK**:
 "Away From Keyboard" — unattended autonomous operation. An **AFK-ready** issue is labeled `ready-for-agent` and not blocked.
 
@@ -36,6 +44,10 @@ A registered repo the orchestrator can run slices against, keyed canonically by 
 **Skip**:
 An operator marking an issue as not-to-be-picked, set from the dashboard. Stored in local orchestrator state per project (never on GitHub) and filtered out during selection. Distinct from blocked: a skip is a human's "not this one," not a pipeline failure.
 _Avoid_: blocked (blocked = a failed/halted slice; skip = operator exclusion)
+
+**Hide**:
+An operator dismissing a Project's card from the dashboard view. Per-browser only (client `localStorage`), reversible via "show all," and never touches `projects.json` or any Run. Operates on a Project; a Skip operates on an issue.
+_Avoid_: remove (implies deleting from the registry), skip (skip = issue exclusion)
 
 ## Example dialogue
 
