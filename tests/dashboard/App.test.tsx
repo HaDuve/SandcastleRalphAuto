@@ -152,6 +152,31 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: /history/i })).toBeInTheDocument();
   });
 
+  it("orders focused-project regions in the main column", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole("checkbox", { name: /portfolio/i });
+
+    const regions = within(screen.getByRole("main")).getAllByRole("region");
+    expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual([
+      "Run outcome",
+      "Phase stepper",
+      "Active",
+      "Log",
+      "Queue",
+      "History",
+    ]);
+  });
+
   it("starts a checked project through the API", async () => {
     const fetchMock = stubProjectsFetch([portfolio]);
     vi.stubGlobal("fetch", fetchMock);
