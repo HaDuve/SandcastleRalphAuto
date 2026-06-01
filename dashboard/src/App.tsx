@@ -13,14 +13,20 @@ import {
   startProject,
   subscribeProjectEvents,
 } from "./api.js";
+import {
+  activeSummariesFromProjects,
+  activeSummaryFromSlice,
+  withActivePhase,
+} from "./activeSummaries.js";
 import { ActivePanel } from "./ActivePanel.js";
 import { DashboardLayout } from "./DashboardLayout.js";
 import { HistoryPanel } from "./HistoryPanel.js";
 import { LogPanel } from "./LogPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
+import { PhaseStepper } from "./PhaseStepper.js";
 import { RunOutcomePanel } from "./RunOutcomePanel.js";
-import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
+import type { ActiveSlice, HistoryEntry, Project, ProjectActiveSummary, QueueIssue } from "./types.js";
 import { pruneHiddenIds, readHiddenIds, writeHiddenIds } from "./hiddenProjects.js";
 import { workerStatesFromProjects } from "./rehydrateProjects.js";
 import {
@@ -34,20 +40,14 @@ import {
 import { applyWorkerEvent, canHideProject, stoppedRunOutcome, type WorkerState } from "./workerStatus.js";
 import "./app.css";
 
-function PanelPlaceholder({ title, projectId }: { title: string; projectId: string | null }) {
-  return (
-    <div className="panel-placeholder">
-      <h2>{title}</h2>
-      <p>{projectId ? `Project: ${projectId}` : "Select a project to view details."}</p>
-    </div>
-  );
-}
-
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => readHiddenIds());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => readSelectedIds());
   const [workerStates, setWorkerStates] = useState<Record<string, WorkerState>>({});
+  const [activeSummaries, setActiveSummaries] = useState<Record<string, ProjectActiveSummary | null>>(
+    {},
+  );
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueIssue[]>([]);
   const [active, setActive] = useState<ActiveSlice | null>(null);
@@ -94,6 +94,7 @@ export function App() {
             });
           });
           setWorkerStates(workerStatesFromProjects(loaded, nextSelectedIds));
+          setActiveSummaries(activeSummariesFromProjects(loaded));
           setFocusedProjectId(
             resolveFocusedProjectId(nextSelectedIds, readFocusedProjectId()),
           );
@@ -109,6 +110,21 @@ export function App() {
     };
   }, []);
 
+  const syncActiveSummary = useCallback(async (projectId: string) => {
+    try {
+      const nextActive = await fetchActive(projectId);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: activeSummaryFromSlice(nextActive),
+      }));
+      if (focusedProjectIdRef.current === projectId) {
+        setActive(nextActive);
+      }
+    } catch {
+      // Sidebar sync is best-effort; panel errors surface on explicit refresh.
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribes: Array<() => void> = [];
     for (const projectId of selectedIds) {
@@ -118,19 +134,28 @@ export function App() {
             ...current,
             [projectId]: applyWorkerEvent(current[projectId], event),
           }));
+          if (event.type === "stream" && event.phase) {
+            const nextPhase = event.phase;
+            setActiveSummaries((current) => ({
+              ...current,
+              [projectId]: withActivePhase(current[projectId], nextPhase, event.issue),
+            }));
+            if (projectId === focusedProjectIdRef.current) {
+              setActive((current) =>
+                current && current.phase !== nextPhase
+                  ? { ...current, phase: nextPhase }
+                  : current,
+              );
+            }
+          }
+          if (event.type === "worker-stopped") {
+            void syncActiveSummary(projectId);
+          }
           if (projectId !== focusedProjectIdRef.current) {
             return;
           }
           if (event.type === "phase-log" && event.chunk) {
             logPhaseLogHandlerRef.current?.(event.chunk);
-          }
-          if (event.type === "stream" && event.phase) {
-            const nextPhase = event.phase;
-            setActive((current) =>
-              current && current.phase !== nextPhase
-                ? { ...current, phase: nextPhase }
-                : current,
-            );
           }
         }),
       );
@@ -140,7 +165,7 @@ export function App() {
         unsubscribe();
       }
     };
-  }, [selectedIds]);
+  }, [selectedIds, syncActiveSummary]);
 
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
@@ -156,6 +181,10 @@ export function App() {
       setQueue(nextQueue);
       setActive(nextActive);
       setHistory(nextHistory);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: activeSummaryFromSlice(nextActive),
+      }));
     } catch (error: unknown) {
       if (focusedProjectIdRef.current !== projectId) {
         return;
@@ -189,6 +218,10 @@ export function App() {
         setQueue(nextQueue);
         setActive(nextActive);
         setHistory(nextHistory);
+        setActiveSummaries((current) => ({
+          ...current,
+          [projectId]: activeSummaryFromSlice(nextActive),
+        }));
       } catch (error: unknown) {
         if (cancelled || focusedProjectIdRef.current !== projectId) {
           return;
@@ -244,6 +277,10 @@ export function App() {
         setWorkerStates((current) => ({
           ...current,
           [projectId]: workerStatesFromProjects([project], new Set([projectId]))[projectId]!,
+        }));
+        setActiveSummaries((current) => ({
+          ...current,
+          [projectId]: project.active ?? null,
         }));
       }
     }
@@ -353,6 +390,7 @@ export function App() {
             projects={visibleProjects}
             selectedIds={selectedIds}
             workerStates={workerStates}
+            activeSummaries={activeSummaries}
             hasHiddenProjects={hiddenIds.size > 0}
             onSelectedChange={handleSelectedChange}
             onStart={(projectId) => void runControl("start", projectId)}
@@ -366,7 +404,16 @@ export function App() {
         runOutcome={
           <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
         }
-        phaseStepper={<PanelPlaceholder title="Phase stepper" projectId={focusedProjectId} />}
+        phaseStepper={
+          <PhaseStepper
+            project={focusedProject}
+            currentPhase={
+              focusedProjectId === null
+                ? null
+                : (activeSummaries[focusedProjectId]?.phase ?? active?.phase ?? null)
+            }
+          />
+        }
         active={<ActivePanel project={focusedProject} active={active} />}
         log={
           <LogPanel
