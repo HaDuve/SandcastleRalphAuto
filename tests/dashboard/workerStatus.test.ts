@@ -1,42 +1,96 @@
 import { describe, expect, it } from "vitest";
-import { applyWorkerEvent, canHideProject } from "../../dashboard/src/workerStatus.js";
+import {
+  applyWorkerEvent,
+  canHideProject,
+  workerStateFromSnapshot,
+} from "../../dashboard/src/workerStatus.js";
 
 describe("applyWorkerEvent", () => {
   it("marks a project worker as running when it starts", () => {
-    expect(applyWorkerEvent("idle", { type: "worker-started" })).toBe("running");
+    expect(applyWorkerEvent({ status: "idle", lastOutcome: null }, { type: "worker-started" })).toEqual({
+      status: "running",
+      lastOutcome: null,
+    });
   });
 
   it("marks a running worker as paused", () => {
-    expect(applyWorkerEvent("running", { type: "worker-paused" })).toBe("paused");
-  });
-
-  it("marks a paused worker as running again on resume", () => {
-    expect(applyWorkerEvent("paused", { type: "worker-resumed" })).toBe("running");
-  });
-
-  it("returns the worker to idle when it stops", () => {
-    expect(applyWorkerEvent("running", { type: "worker-stopped" })).toBe("idle");
-    expect(applyWorkerEvent("paused", { type: "worker-stopped" })).toBe("idle");
-  });
-
-  it("applies connected events that carry orchestrator status", () => {
-    expect(applyWorkerEvent(undefined, { type: "connected", workerStatus: "idle" })).toBe(
-      "idle",
-    );
-    expect(applyWorkerEvent("running", { type: "connected", workerStatus: "idle" })).toBe(
-      "idle",
-    );
-    expect(applyWorkerEvent(undefined, { type: "connected", workerStatus: "running" })).toBe(
-      "running",
-    );
-    expect(applyWorkerEvent("idle", { type: "connected", workerStatus: "paused" })).toBe(
+    expect(applyWorkerEvent({ status: "running", lastOutcome: null }, { type: "worker-paused" }).status).toBe(
       "paused",
     );
   });
 
+  it("marks a paused worker as running again on resume", () => {
+    expect(applyWorkerEvent({ status: "paused", lastOutcome: null }, { type: "worker-resumed" }).status).toBe(
+      "running",
+    );
+  });
+
+  it("returns the worker to idle when it stops", () => {
+    expect(applyWorkerEvent({ status: "running" }, { type: "worker-stopped" }).status).toBe(
+      "idle",
+    );
+    expect(applyWorkerEvent({ status: "paused" }, { type: "worker-stopped" }).status).toBe(
+      "idle",
+    );
+  });
+
+  it("carries lastOutcome from worker-stopped reason", () => {
+    const next = applyWorkerEvent({ status: "running" }, {
+      type: "worker-stopped",
+      reason: "queue-empty",
+    });
+
+    expect(next.status).toBe("idle");
+    expect(next.lastOutcome).toEqual({
+      outcome: "queue-empty",
+      stoppedAt: expect.any(String),
+    });
+  });
+
+  it("applies connected events that carry orchestrator status", () => {
+    expect(applyWorkerEvent(undefined, { type: "connected", workerStatus: "idle" }).status).toBe(
+      "idle",
+    );
+    expect(
+      applyWorkerEvent({ status: "running", lastOutcome: null }, { type: "connected", workerStatus: "idle" })
+        .status,
+    ).toBe("idle");
+    expect(applyWorkerEvent(undefined, { type: "connected", workerStatus: "running" }).status).toBe(
+      "running",
+    );
+    expect(
+      applyWorkerEvent({ status: "idle", lastOutcome: null }, { type: "connected", workerStatus: "paused" })
+        .status,
+    ).toBe("paused");
+  });
+
   it("ignores unrelated dashboard events", () => {
-    expect(applyWorkerEvent("running", { type: "phase-log" })).toBe("running");
-    expect(applyWorkerEvent(undefined, { type: "phase-log" })).toBe("unknown");
+    expect(applyWorkerEvent({ status: "running", lastOutcome: null }, { type: "phase-log" }).status).toBe(
+      "running",
+    );
+    expect(applyWorkerEvent(undefined, { type: "phase-log" }).status).toBe("unknown");
+  });
+});
+
+describe("workerStateFromSnapshot", () => {
+  it("maps enriched project fields into worker state", () => {
+    expect(
+      workerStateFromSnapshot({
+        workerStatus: "running",
+        lastRunOutcome: {
+          outcome: "blocked",
+          reason: "CI failed",
+          stoppedAt: "2026-06-01T12:00:00.000Z",
+        },
+      }),
+    ).toEqual({
+      status: "running",
+      lastOutcome: {
+        outcome: "blocked",
+        reason: "CI failed",
+        stoppedAt: "2026-06-01T12:00:00.000Z",
+      },
+    });
   });
 });
 

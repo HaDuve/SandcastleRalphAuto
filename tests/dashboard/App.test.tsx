@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../dashboard/src/App.js";
 import { HIDDEN_IDS_STORAGE_KEY } from "../../dashboard/src/hiddenProjects.js";
+import { SELECTED_IDS_STORAGE_KEY } from "../../dashboard/src/selectedProjects.js";
 
 const portfolio = {
   id: "portfolio",
@@ -582,6 +583,84 @@ describe("App", () => {
 
     expect(await screen.findByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
     expect(localStorage.getItem(HIDDEN_IDS_STORAGE_KEY)).toBe(JSON.stringify([]));
+  });
+
+  it("restores selected projects and run data on reload without control calls", async () => {
+    const eventSourceUrls: string[] = [];
+    class SilentEventSource {
+      url: string;
+      constructor(url: string) {
+        this.url = url;
+        eventSourceUrls.push(url);
+      }
+      addEventListener() {}
+      removeEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal("EventSource", SilentEventSource as unknown as typeof EventSource);
+
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/projects") {
+        return new Response(
+          JSON.stringify({
+            projects: [
+              {
+                ...portfolio,
+                workerStatus: "running",
+                lastRunOutcome: null,
+                active: { issue: 11, phase: "tdd", status: "active" },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/queue")) {
+        return new Response(
+          JSON.stringify({
+            queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/active")) {
+        return new Response(
+          JSON.stringify({
+            active: {
+              issue: 11,
+              phase: "tdd",
+              branch: "issue-11",
+              status: "active",
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/history")) {
+        return new Response(JSON.stringify({ history: [] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const checkbox = await screen.findByRole("checkbox", { name: /portfolio/i });
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    expect(await screen.findByText(/#10/)).toBeInTheDocument();
+    expect(screen.getByText(/#11/)).toBeInTheDocument();
+
+    const controlCalls = fetchMock.mock.calls.filter(([url, init]) => {
+      if (!init?.method || init.method !== "POST") {
+        return false;
+      }
+      return /\/(start|pause|resume|kill)$/.test(String(url));
+    });
+    expect(controlCalls).toHaveLength(0);
+    expect(eventSourceUrls).toContain("/api/projects/portfolio/events");
   });
 
   it("blocks Hide while the project worker is running", async () => {

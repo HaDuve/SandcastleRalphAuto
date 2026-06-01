@@ -1,11 +1,11 @@
 import type { Project } from "./types.js";
-import type { WorkerStatus } from "./workerStatus.js";
+import type { WorkerState, WorkerStatus } from "./workerStatus.js";
 import { canHideProject, isControlReady } from "./workerStatus.js";
 
 export type ProjectPickerProps = {
   projects: Project[];
   selectedIds: Set<string>;
-  workerStatuses: Record<string, WorkerStatus>;
+  workerStates: Record<string, WorkerState>;
   hasHiddenProjects: boolean;
   onSelectedChange: (projectId: string, selected: boolean) => void;
   onStart: (projectId: string) => void;
@@ -16,17 +16,14 @@ export type ProjectPickerProps = {
   onShowAll: () => void;
 };
 
-function workerStatusFor(
-  workerStatuses: Record<string, WorkerStatus>,
-  projectId: string,
-): WorkerStatus {
-  return workerStatuses[projectId] ?? "unknown";
+function workerStatusFor(workerStates: Record<string, WorkerState>, projectId: string): WorkerStatus {
+  return workerStates[projectId]?.status ?? "unknown";
 }
 
 export function ProjectPicker({
   projects,
   selectedIds,
-  workerStatuses,
+  workerStates,
   hasHiddenProjects,
   onSelectedChange,
   onStart,
@@ -46,7 +43,7 @@ export function ProjectPicker({
       <ul>
         {projects.map((project) => {
           const checked = selectedIds.has(project.id);
-          const status = workerStatusFor(workerStatuses, project.id);
+          const status = workerStatusFor(workerStates, project.id);
           const controlsReady = checked && isControlReady(status);
           const startDisabled = !controlsReady || status !== "idle";
           const pauseDisabled = !controlsReady || status !== "running";

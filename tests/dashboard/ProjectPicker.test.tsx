@@ -3,7 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectPicker } from "../../dashboard/src/ProjectPicker.js";
 import type { Project } from "../../dashboard/src/types.js";
-import type { WorkerStatus } from "../../dashboard/src/workerStatus.js";
+import type { WorkerState, WorkerStatus } from "../../dashboard/src/workerStatus.js";
+
+function workerState(status: WorkerStatus): WorkerState {
+  return { status, lastOutcome: null };
+}
 
 const portfolio: Project = {
   id: "portfolio",
@@ -28,7 +32,7 @@ function renderPicker(
   overrides: Partial<{
     projects: Project[];
     selectedIds: Set<string>;
-    workerStatuses: Record<string, WorkerStatus>;
+    workerStates: Record<string, WorkerState>;
     onStart: (projectId: string) => void;
     onPause: (projectId: string) => void;
     onResume: (projectId: string) => void;
@@ -42,7 +46,7 @@ function renderPicker(
     <ProjectPicker
       projects={overrides.projects ?? [portfolio]}
       selectedIds={overrides.selectedIds ?? new Set()}
-      workerStatuses={overrides.workerStatuses ?? {}}
+      workerStates={overrides.workerStates ?? {}}
       hasHiddenProjects={overrides.hasHiddenProjects ?? false}
       onSelectedChange={() => {}}
       onStart={overrides.onStart ?? (() => {})}
@@ -67,7 +71,7 @@ describe("ProjectPicker", () => {
     const onStart = vi.fn();
     renderPicker({
       selectedIds: new Set(["portfolio"]),
-      workerStatuses: { portfolio: "idle" },
+      workerStates: { portfolio: workerState("idle") },
       onStart,
     });
 
@@ -81,7 +85,7 @@ describe("ProjectPicker", () => {
     const onPause = vi.fn();
     renderPicker({
       selectedIds: new Set(["portfolio"]),
-      workerStatuses: { portfolio: "running" },
+      workerStates: { portfolio: workerState("running") },
       onPause,
     });
 
@@ -93,7 +97,7 @@ describe("ProjectPicker", () => {
   it("disables Start and enables Kill when the project worker is running", () => {
     renderPicker({
       selectedIds: new Set(["portfolio"]),
-      workerStatuses: { portfolio: "running" },
+      workerStates: { portfolio: workerState("running") },
     });
 
     expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
@@ -106,7 +110,7 @@ describe("ProjectPicker", () => {
     const onKill = vi.fn();
     renderPicker({
       selectedIds: new Set(["portfolio"]),
-      workerStatuses: { portfolio: "running" },
+      workerStates: { portfolio: workerState("running") },
       onKill,
     });
 
@@ -120,7 +124,7 @@ describe("ProjectPicker", () => {
     const onResume = vi.fn();
     renderPicker({
       selectedIds: new Set(["portfolio"]),
-      workerStatuses: { portfolio: "paused" },
+      workerStates: { portfolio: workerState("paused") },
       onResume,
     });
 
@@ -157,7 +161,7 @@ describe("ProjectPicker", () => {
       <ProjectPicker
         projects={[other]}
         selectedIds={new Set()}
-        workerStatuses={{}}
+        workerStates={{}}
         hasHiddenProjects
         onSelectedChange={() => {}}
         onStart={() => {}}
@@ -176,7 +180,7 @@ describe("ProjectPicker", () => {
   it("disables Hide while the project worker is running", () => {
     renderPicker({
       selectedIds: new Set(["portfolio"]),
-      workerStatuses: { portfolio: "running" },
+      workerStates: { portfolio: workerState("running") },
     });
 
     expect(screen.getByRole("button", { name: /hide portfolio/i })).toBeDisabled();
