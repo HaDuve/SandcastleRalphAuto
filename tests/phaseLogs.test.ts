@@ -74,5 +74,20 @@ describe("phase logs service", () => {
       null,
     );
   });
+
+  it("treats ENOENT during read as a missing log (no crash)", async () => {
+    const { rootDir, projectId } = await setupProject();
+
+    await expect(
+      readPhaseLog(projectId, 7, "tdd", {
+        rootDir,
+        readTextFile: async () => {
+          const err = new Error("missing") as Error & { code?: string };
+          err.code = "ENOENT";
+          throw err;
+        },
+      }),
+    ).resolves.toBeNull();
+  });
 });
 

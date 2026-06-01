@@ -80,12 +80,10 @@ export async function readPhaseLog(
   options: {
     rootDir?: string;
     readTextFile?: (path: string) => Promise<string>;
-    accessFile?: (path: string) => Promise<void>;
     loadRegistryFromRoot?: typeof loadRegistryFromRoot;
   } = {},
 ): Promise<string | null> {
   const rootDir = options.rootDir ?? process.cwd();
-  const accessFile = options.accessFile ?? (async (path: string) => access(path));
   const readTextFile =
     options.readTextFile ?? (async (path: string) => readFile(path, "utf8"));
   const deps = {
@@ -97,11 +95,16 @@ export async function readPhaseLog(
   const path = resolvePhaseLogPath({ projectPath: project.path, branch, phase });
 
   try {
-    await accessFile(path);
-  } catch {
-    return null;
+    return await readTextFile(path);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "ENOENT"
+    ) {
+      return null;
+    }
+    throw error;
   }
-
-  return readTextFile(path);
 }
 
