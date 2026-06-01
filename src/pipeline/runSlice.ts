@@ -19,6 +19,8 @@ export type RunLinearSliceOptions = {
   branch: string;
   projectPath: string;
   stateRoot: string;
+  /** Resume a slice after `/next` has already run `/tdd`. */
+  fromPhase?: CanonicalPhase;
   runPhaseOptions?: Omit<
     RunPhaseOptions,
     "phase" | "branch" | "projectPath"
@@ -81,7 +83,8 @@ export async function runLinearSlice(
   options: RunLinearSliceOptions,
   deps: RunLinearSliceDeps = defaultDeps(),
 ): Promise<RunLinearSliceResult> {
-  const { projectId, issue, branch, projectPath, stateRoot } = options;
+  const { projectId, issue, branch, projectPath, stateRoot, fromPhase } =
+    options;
   const phasesCompleted: CanonicalPhase[] = [];
   let pr: number | undefined;
 
@@ -93,7 +96,15 @@ export async function runLinearSlice(
     return { status: "awaiting-human", active: existing, phasesCompleted };
   }
 
-  for (const phase of CANONICAL_PHASES) {
+  const phaseStartIndex =
+    fromPhase === undefined
+      ? 0
+      : CANONICAL_PHASES.indexOf(fromPhase);
+  if (fromPhase !== undefined && phaseStartIndex === -1) {
+    throw new Error(`Unknown fromPhase: ${fromPhase}`);
+  }
+
+  for (const phase of CANONICAL_PHASES.slice(phaseStartIndex)) {
     const activeBeforeRun: ActiveState = {
       issue,
       phase,
