@@ -13,10 +13,43 @@ You are running phase `review-tdd` AFK. Do not ask questions; use only the hando
 The host checked out `handoff.branch` before this run. It is always `issue-<handoff.issue>` — stay on that branch for all git work in this phase.
 Do not create or switch to `feat/<slug>-<n>` or other branch names.
 
+## Handoff contract (`current.json`)
+
+Required JSON (host validates with Zod after this phase):
+
+- `project` — `owner/repo`
+- `issue` — number
+- `branch` — `issue-<issue>` for this pipeline
+- `pr` — optional PR number (set once a PR exists)
+- `phase` — must be `"review-tdd"` for this run (allowed values: "tdd", "create-pr", "review-pr", "review-tdd", "babysit", "merge", "next")
+- `acceptanceState` — one of: "in-progress" | "done" | "blocked". When this phase **finishes successfully**, use `"done"` — **not** `"complete"`, `"finished"`, or other words.
+- `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
+- `blockers` — string array (empty when unblocked)
+- `mergeReady` — boolean
+- `nextSkill` — for this phase when done: `"/merge"`
+- `startedAt` / `endedAt` — ISO-8601 timestamps
+
+Example when this phase is complete:
+
+```json
+{
+  "project": "owner/repo",
+  "issue": 29,
+  "branch": "issue-29",
+  "phase": "review-tdd",
+  "acceptanceState": "done",
+  "blockers": [],
+  "mergeReady": false,
+  "nextSkill": "/merge",
+  "startedAt": "2026-06-01T00:00:00.000Z",
+  "endedAt": "2026-06-01T01:00:00.000Z"
+}
+```
+
 ## Outputs (in order)
 
 1. **Commit** — stage only the paths you changed in this phase (not blind `git add -A` unless the skill explicitly requires it). Commit with a message matching repo style (1–2 sentences, focus on **why**). **Do not create an empty commit**; if there are no file changes from this phase, skip this step.
-2. **Handoff** — write an updated handoff to `.sandcastle-ralph/handoff/current.json` (valid per host schema: phase, acceptanceState, blockers, mergeReady, nextSkill, timestamps).
+2. **Handoff** — write `.sandcastle-ralph/handoff/current.json` per the **Handoff contract** above.
 3. **Signal** — emit `<promise>PHASE_COMPLETE</promise>` as the final line of your response.
 
 <!-- /sandcastle-ralph:harness -->
@@ -147,3 +180,4 @@ Rules:
 
 When **Merge-ready: yes**, `/merge` may proceed without a follow-up `/review-pr` Approve.
 <!-- /sandcastle-ralph:skill-snapshot -->
+

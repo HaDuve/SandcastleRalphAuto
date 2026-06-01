@@ -10,7 +10,8 @@
     "dev:dashboard": "vite --config dashboard/vite.config.ts",
     "start": "tsx src/cli/main.ts",
     "dashboard": "tsx src/server/main.ts",
-    "sync-skills": "tsx scripts/sync-skills.ts"
+    "sync-skills": "tsx scripts/sync-skills.ts",
+    "refresh-harness": "tsx scripts/refresh-harness.ts"
   },
   "dependencies": {
     "@ai-hero/sandcastle": "^0.7.0",

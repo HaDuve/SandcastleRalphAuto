@@ -13,7 +13,7 @@ Pick `ready-for-agent` issue → `/tdd` → `/create-pr` → `/review-pr` → `/
 - [`CONTEXT.md`](./CONTEXT.md) — glossary
 - [`docs/PRD.md`](./docs/PRD.md) — decisions, pipeline, milestones
 - [`docs/adr/`](./docs/adr/) — key decision records
-- Phase prompts live in [`prompts/`](./prompts/); after editing `~/.cursor/skills/*/SKILL.md`, run `npm run sync-skills` to refresh committed snapshots.
+- Phase prompts live in [`prompts/`](./prompts/); after editing `~/.cursor/skills/*/SKILL.md`, run `npm run sync-skills` to refresh skill snapshots and the harness. After changing only the harness or handoff schema (`src/prompts/harness.ts`, `src/handoff/`), run `npm run refresh-harness` to update `prompts/*.md` without re-reading skills.
 
 ## Dashboard (M2)
 
