@@ -119,7 +119,10 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
   const rootDir = options.rootDir;
   const stateRoot = options.stateRoot ?? join(rootDir, "state");
   const staticDir = options.staticDir ?? join(rootDir, "dashboard", "dist");
-  const loadRegistry = options.loadRegistry ?? loadRegistryFromRoot;
+  const loadRegistry =
+    options.loadRegistry ??
+    ((rootDir: string) =>
+      loadRegistryFromRoot(rootDir, { checkGhAuth: async () => {} }));
   const readActiveFn = options.readActive ?? readActive;
   const readSkipsFn = options.readSkips ?? readSkips;
   const writeSkipsFn = options.writeSkips ?? writeSkips;
