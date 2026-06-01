@@ -261,6 +261,10 @@ export function App() {
             onKill={(projectId) => void runControl("kill", projectId)}
           />
         }
+        runOutcome={<PanelPlaceholder title="Run outcome" projectId={focusedProjectId} />}
+        phaseStepper={<PanelPlaceholder title="Phase stepper" projectId={focusedProjectId} />}
+        active={<ActivePanel project={focusedProject} active={active} />}
+        log={<PanelPlaceholder title="Log" projectId={focusedProjectId} />}
         queue={
           <QueuePanel
             project={focusedProject}
@@ -268,8 +272,6 @@ export function App() {
             onSkipToggle={(issue, skipped) => void handleSkipToggle(issue, skipped)}
           />
         }
-        active={<ActivePanel project={focusedProject} active={active} />}
-        stream={<PanelPlaceholder title="Live stream" projectId={focusedProjectId} />}
         history={<HistoryPanel project={focusedProject} history={history} />}
       />
     </div>
