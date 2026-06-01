@@ -19,7 +19,13 @@ export {
   writeHandoff,
 } from "./io.js";
 export {
+  isReviewPrBlockersStallReason,
+  isReviewPrRequestChangesToReviewTdd,
+  formatReviewFindingsNote,
+} from "./reviewPrRoute.js";
+export {
   isHandoffSchemaBlockReason,
+  tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
 } from "./reconcileBlockedHandoff.js";
 export {

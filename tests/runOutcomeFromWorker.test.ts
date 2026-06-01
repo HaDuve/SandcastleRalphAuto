@@ -1,7 +1,8 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { type Handoff } from "../src/handoff/index.js";
 import { type Project } from "../src/registry/index.js";
 import { readRunOutcome } from "../src/state/index.js";
 import {
@@ -37,6 +38,44 @@ describe("runOutcomeFromWorkerError", () => {
     ).resolves.toEqual({
       outcome: "killed",
       stoppedAt,
+    });
+  });
+
+  it("uses host handoff for logRef when active slice was cleared", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "run-outcome-handoff-"));
+    const handoffDir = join(stateRoot, project.remote, "handoff");
+    await mkdir(handoffDir, { recursive: true });
+    const handoff: Handoff = {
+      project: project.remote,
+      issue: 30,
+      branch: "issue-30",
+      pr: 42,
+      phase: "merge",
+      acceptanceState: "done",
+      blockers: [],
+      mergeReady: true,
+      nextSkill: "/next",
+      startedAt: stoppedAt,
+      endedAt: stoppedAt,
+    };
+    await writeFile(
+      join(handoffDir, "current.json"),
+      JSON.stringify(handoff, null, 2) + "\n",
+    );
+
+    await expect(
+      runOutcomeFromWorkerError(new Error("gh failed"), {
+        project,
+        stateRoot,
+        stoppedAt,
+        readActiveFn: async () => null,
+      }),
+    ).resolves.toEqual({
+      outcome: "error",
+      reason: "gh failed",
+      phase: "merge",
+      stoppedAt,
+      logRef: "/tmp/portfolio/.sandcastle/logs/issue-30-merge.log",
     });
   });
 

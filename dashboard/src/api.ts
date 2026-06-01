@@ -115,11 +115,18 @@ export type ProjectLog = {
 
 export async function fetchProjectLog(
   projectId: string,
-  phase?: string,
+  options?: { phase?: string; issue?: number },
 ): Promise<ProjectLog | null> {
-  const params = phase ? `?phase=${encodeURIComponent(phase)}` : "";
+  const params = new URLSearchParams();
+  if (options?.phase) {
+    params.set("phase", options.phase);
+  }
+  if (options?.issue !== undefined) {
+    params.set("issue", String(options.issue));
+  }
+  const query = params.toString();
   const response = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/log${params}`,
+    `/api/projects/${encodeURIComponent(projectId)}/log${query ? `?${query}` : ""}`,
   );
   if (response.status === 404) {
     return null;

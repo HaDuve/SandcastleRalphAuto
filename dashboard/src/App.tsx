@@ -127,6 +127,32 @@ export function App() {
     }
   }, []);
 
+  const refreshPanels = useCallback(async (projectId: string) => {
+    setPanelError(null);
+    try {
+      const [nextQueue, nextActive, nextHistory] = await Promise.all([
+        fetchQueue(projectId),
+        fetchActive(projectId),
+        fetchHistory(projectId),
+      ]);
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setQueue(nextQueue);
+      setActive(nextActive);
+      setHistory(nextHistory);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: activeSummaryFromSlice(nextActive),
+      }));
+    } catch (error: unknown) {
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setPanelError(error instanceof Error ? error.message : "Failed to load project panels");
+    }
+  }, []);
+
   useEffect(() => {
     if (!catalogReady) {
       return;
@@ -163,8 +189,16 @@ export function App() {
               );
             }
           }
+          if (event.type === "worker-started") {
+            if (projectId === focusedProjectIdRef.current) {
+              void refreshPanels(projectId);
+            }
+          }
           if (event.type === "worker-stopped") {
             void syncActiveSummary(projectId);
+            if (projectId === focusedProjectIdRef.current) {
+              void refreshPanels(projectId);
+            }
           }
           if (projectId !== focusedProjectIdRef.current) {
             return;
@@ -180,33 +214,7 @@ export function App() {
         unsubscribe();
       }
     };
-  }, [catalogReady, selectedIds, syncActiveSummary]);
-
-  const refreshPanels = useCallback(async (projectId: string) => {
-    setPanelError(null);
-    try {
-      const [nextQueue, nextActive, nextHistory] = await Promise.all([
-        fetchQueue(projectId),
-        fetchActive(projectId),
-        fetchHistory(projectId),
-      ]);
-      if (focusedProjectIdRef.current !== projectId) {
-        return;
-      }
-      setQueue(nextQueue);
-      setActive(nextActive);
-      setHistory(nextHistory);
-      setActiveSummaries((current) => ({
-        ...current,
-        [projectId]: activeSummaryFromSlice(nextActive),
-      }));
-    } catch (error: unknown) {
-      if (focusedProjectIdRef.current !== projectId) {
-        return;
-      }
-      setPanelError(error instanceof Error ? error.message : "Failed to load project panels");
-    }
-  }, []);
+  }, [catalogReady, refreshPanels, selectedIds, syncActiveSummary]);
 
   useEffect(() => {
     if (!focusedProjectId) {
@@ -441,6 +449,13 @@ export function App() {
           <LogPanel
             project={focusedProject}
             activePhase={active?.phase ?? null}
+            logIssueFallback={
+              active?.issue ??
+              focusedProject?.active?.issue ??
+              (focusedProjectId === null
+                ? null
+                : (activeSummaries[focusedProjectId]?.issue ?? null))
+            }
             registerPhaseLogHandler={(handler) => {
               logPhaseLogHandlerRef.current = handler;
             }}

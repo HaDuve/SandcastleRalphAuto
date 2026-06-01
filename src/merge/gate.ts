@@ -8,12 +8,12 @@ import {
 /** Pre-flight input for the host merge gate (D3/D4). */
 export type RunMergeGateInput = {
   /**
-   * Handoff snapshot for pre-flight. Per D3, `verdict` must be `approve` from
-   * `/review-pr`. Callers should pass the review handoff or preserve that
-   * verdict through the slice — a merge-phase handoff with `n/a` will block.
+   * Handoff snapshot for pre-flight. Per D3, `verdict` must be `approve` before
+   * merge. Callers should pass the latest host handoff after `/review-tdd` when
+   * available (ADR 0009) — a merge-phase handoff with `n/a` will block.
    */
   handoff: Handoff;
-  project: Pick<Project, "autoMerge">;
+  project: Pick<Project, "autoMerge" | "remote">;
   pr: number;
 };
 
@@ -100,6 +100,32 @@ function allRequiredChecksGreen(checks: PrCheck[]): boolean {
   );
 }
 
+function ghRepoArgs(remote: string): string[] {
+  return ["--repo", remote];
+}
+
+function parsePrState(raw: string): string | RunMergeGateBlocked {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      typeof (parsed as { state?: unknown }).state !== "string"
+    ) {
+      return blocked(
+        "mergeability-parse-error",
+        "Could not read PR state from gh",
+      );
+    }
+    return (parsed as { state: string }).state;
+  } catch {
+    return blocked(
+      "mergeability-parse-error",
+      "Could not read PR state from gh",
+    );
+  }
+}
+
 function parseRequiredChecks(raw: string): PrCheck[] | RunMergeGateBlocked {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -145,10 +171,29 @@ export async function runMergeGate(
     );
   }
 
+  const repo = ghRepoArgs(project.remote);
+
+  const stateRaw = await deps.gh([
+    "pr",
+    "view",
+    String(pr),
+    ...repo,
+    "--json",
+    "state",
+  ]);
+  const prState = parsePrState(stateRaw);
+  if (typeof prState !== "string") {
+    return prState;
+  }
+  if (prState === "MERGED") {
+    return { status: "auto-merge-queued" };
+  }
+
   const mergeabilityRaw = await deps.gh([
     "pr",
     "view",
     String(pr),
+    ...repo,
     "--json",
     "mergeable,mergeStateStatus",
   ]);
@@ -167,6 +212,7 @@ export async function runMergeGate(
     "pr",
     "checks",
     String(pr),
+    ...repo,
     "--required",
     "--json",
     "name,state,bucket,link",
@@ -187,7 +233,7 @@ export async function runMergeGate(
     );
   }
 
-  await deps.gh(["pr", "merge", String(pr), "--squash", "--auto"]);
+  await deps.gh(["pr", "merge", String(pr), ...repo, "--squash", "--auto"]);
 
   return { status: "auto-merge-queued" };
 }

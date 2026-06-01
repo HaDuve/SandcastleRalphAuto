@@ -241,6 +241,38 @@ describe("dashboard server", () => {
     expect(await response.json()).toEqual({ error: "No active slice" });
   });
 
+  it("serves log by issue and phase when active slice was cleared", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    await seedActiveSliceWithLogs(
+      stateRoot,
+      project,
+      { issue: 7, phase: "merge", branch: "issue-7", status: "active" },
+      { "issue-7-merge.log": "merged output\n" },
+    );
+    const activePath = join(
+      stateRoot,
+      project.remote,
+      "active.json",
+    );
+    const { unlink } = await import("node:fs/promises");
+    await unlink(activePath);
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(
+      `${started.baseUrl}/api/projects/portfolio/log?issue=7&phase=merge`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      issue: 7,
+      phase: "merge",
+      log: "merged output\n",
+      phases: expect.arrayContaining(["merge"]),
+    });
+  });
+
   it("rejects unknown phase query on log endpoint", async () => {
     const { rootDir, project, stateRoot } = await setupProjectRoot();
     await seedActiveSliceWithLogs(

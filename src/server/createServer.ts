@@ -199,25 +199,47 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
 
         if (req.method === "GET" && projectRoute.action === "log") {
           const active = await readActiveFn(project.remote, stateRoot);
-          if (!active) {
-            sendJson(res, 404, { error: "No active slice" });
-            return;
-          }
+          const searchParams = requestSearchParams(req);
+          const phaseParam = searchParams.get("phase");
+          const issueParam = searchParams.get("issue");
 
-          const phaseParam = requestSearchParams(req).get("phase");
-          const phase = parseRunnablePhase(phaseParam ?? active.phase);
-          if (!phase) {
+          if (phaseParam !== null && parseRunnablePhase(phaseParam) === null) {
             sendJson(res, 400, { error: "Invalid phase" });
             return;
           }
 
-          const phases = await listPhaseLogsFn(project.remote, active.issue, {
+          let issue: number | undefined;
+          let phase =
+            phaseParam === null ? null : parseRunnablePhase(phaseParam);
+
+          if (active) {
+            issue = active.issue;
+            if (!phase) {
+              phase = parseRunnablePhase(active.phase);
+            }
+          } else if (issueParam !== null && phaseParam !== null) {
+            issue = Number(issueParam);
+            if (!Number.isFinite(issue) || issue <= 0) {
+              sendJson(res, 400, { error: "Invalid issue" });
+              return;
+            }
+          } else {
+            sendJson(res, 404, { error: "No active slice" });
+            return;
+          }
+
+          if (!phase || issue === undefined) {
+            sendJson(res, 400, { error: "Invalid phase" });
+            return;
+          }
+
+          const phases = await listPhaseLogsFn(project.remote, issue, {
             rootDir,
           });
-          const log = await readPhaseLogFn(project.remote, active.issue, phase, {
+          const log = await readPhaseLogFn(project.remote, issue, phase, {
             rootDir,
           });
-          sendJson(res, 200, { issue: active.issue, phase, log, phases });
+          sendJson(res, 200, { issue, phase, log, phases });
           return;
         }
 

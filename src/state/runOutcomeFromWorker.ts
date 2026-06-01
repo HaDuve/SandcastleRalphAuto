@@ -1,4 +1,6 @@
 import { type LoopProjectResult } from "../cli/index.js";
+import { readHostHandoff } from "../handoff/index.js";
+import { branchForIssue } from "../next/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 import { isRunnablePhase } from "../prompts/phases.js";
 import { type Project } from "../registry/index.js";
@@ -74,12 +76,32 @@ export async function runOutcomeFromWorkerError(
 
   const readActiveFn = input.readActiveFn ?? readActive;
   const active = await readActiveFn(input.project.remote, input.stateRoot);
-  const logRef = logRefForActive(input.project, active);
+  let logRef = logRefForActive(input.project, active);
+  let phase = active?.phase;
+
+  if (logRef === undefined) {
+    try {
+      const handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.project.remote,
+      });
+      if (isRunnablePhase(handoff.phase)) {
+        phase = phase ?? handoff.phase;
+        logRef = resolvePhaseLogPath({
+          projectPath: input.project.path,
+          branch: branchForIssue(handoff.issue),
+          phase: handoff.phase,
+        });
+      }
+    } catch {
+      // No host handoff — omit logRef.
+    }
+  }
 
   return {
     outcome: "error",
     reason: workerStopReason(error),
-    phase: active?.phase,
+    phase,
     stoppedAt: input.stoppedAt,
     ...(logRef !== undefined ? { logRef } : {}),
   };
