@@ -13,6 +13,10 @@ import {
 } from "../state/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export type RunLinearSliceOptions = {
   projectId: string;
   issue: number;
@@ -123,6 +127,9 @@ export async function runLinearSlice(
         ...options.runPhaseOptions,
       });
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       const reason =
         error instanceof Error ? error.message : "Phase run failed";
       const blocked: ActiveState = {

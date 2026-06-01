@@ -420,4 +420,70 @@ describe("loopProject", () => {
     expect(bootstrapCalled).toBe(true);
     expect(result).toEqual({ status: "queue-empty", slicesCompleted: 1 });
   });
+
+  it("releases the mutex when the worker is aborted", async () => {
+    const events: string[] = [];
+    const abortController = new AbortController();
+
+    await expect(
+      loopProject(
+        { projectId: "portfolio", issue: 10 },
+        {
+          loadRegistry: async () => [portfolio],
+          control: {
+            signal: abortController.signal,
+            isPaused: () => false,
+            waitIfPaused: async () => {},
+          },
+          runLinearSlice: async () => {
+            abortController.abort();
+            throw new DOMException("Aborted", "AbortError");
+          },
+          mutex: {
+            acquire: async () => {
+              events.push("acquire");
+            },
+            release: async () => {
+              events.push("release");
+            },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(events).toEqual(["acquire", "release"]);
+  });
+
+  it("keeps the mutex when the slice is blocked", async () => {
+    const events: string[] = [];
+
+    const result = await loopProject(
+      { projectId: "portfolio", issue: 10 },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async () => ({
+          status: "blocked" as const,
+          phasesCompleted: [],
+          active: {
+            issue: 10,
+            phase: "tdd" as const,
+            branch: "issue-10",
+            status: "blocked" as const,
+            reason: "tests failing",
+          },
+        }),
+        mutex: {
+          acquire: async () => {
+            events.push("acquire");
+          },
+          release: async () => {
+            events.push("release");
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({ status: "blocked", reason: "tests failing" });
+    expect(events).toEqual(["acquire"]);
+  });
 });

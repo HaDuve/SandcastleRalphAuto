@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "tsx src/cli/main.ts",
+    "dashboard": "tsx src/server/main.ts",
     "sync-skills": "tsx scripts/sync-skills.ts"
   },
   "dependencies": {

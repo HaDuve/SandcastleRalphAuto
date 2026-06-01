@@ -13,7 +13,7 @@ import {
   seedTddHandoff,
   type RunNextResult,
 } from "../next/index.js";
-import { selectNextIssue, type GhIssue } from "../next/select.js";
+import { selectNextIssue, parseGhIssueList, type GhIssue } from "../next/select.js";
 import {
   loadRegistryFromRoot,
   type Project,
@@ -34,6 +34,12 @@ import {
   createFileProjectMutex,
   type ProjectMutex,
 } from "./mutex.js";
+
+export type WorkerControl = {
+  signal: AbortSignal;
+  isPaused: () => boolean;
+  waitIfPaused: () => Promise<void>;
+};
 
 export type RunProjectSliceInput = {
   projectId: string;
@@ -99,6 +105,7 @@ export type RunProjectDeps = {
     },
     gh: GhRunner,
   ) => Promise<BootstrapFirstIssueResult>;
+  control?: WorkerControl;
 };
 
 function resolvePaths(input: { rootDir?: string; stateRoot?: string }): {
@@ -124,12 +131,7 @@ export function findProjectById(
 }
 
 function parseIssueList(raw: string): GhIssue[] | null {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as GhIssue[]) : null;
-  } catch {
-    return null;
-  }
+  return parseGhIssueList(raw);
 }
 
 export async function bootstrapFirstIssue(
@@ -295,7 +297,10 @@ function createSliceRunner(
 
   return {
     async runPhase(options) {
-      const result = await runPhaseFn(options);
+      const result = await runPhaseFn({
+        ...options,
+        signal: options.signal ?? deps.control?.signal,
+      });
       if (options.phase === "review-pr") {
         reviewHandoff = result.handoff;
       }
@@ -540,6 +545,10 @@ async function resolveLoopStart(
   };
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export async function loopProject(
   input: LoopProjectInput,
   deps: RunProjectDeps = {},
@@ -575,6 +584,13 @@ export async function loopProject(
 
   try {
     for (;;) {
+      if (deps.control) {
+        await deps.control.waitIfPaused();
+        if (deps.control.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+      }
+
       const sliceRunner = createSliceRunner(deps);
       const runLinearSliceFn = deps.runLinearSlice ?? resolved.runLinearSlice;
       const slice = await runLinearSliceFn(
@@ -659,8 +675,8 @@ export async function loopProject(
       fromPhase = "create-pr";
     }
   } catch (error) {
-    if (error instanceof CliError) {
-      throw error;
+    if (isAbortError(error)) {
+      await mutex.release(project.remote);
     }
     throw error;
   }
