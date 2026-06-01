@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectPicker } from "../../dashboard/src/ProjectPicker.js";
 import type { Project } from "../../dashboard/src/types.js";
+import type { WorkerStatus } from "../../dashboard/src/workerStatus.js";
 
 const portfolio: Project = {
   id: "portfolio",
@@ -16,17 +17,33 @@ const portfolio: Project = {
   sandbox: "none",
 };
 
+function renderPicker(
+  overrides: Partial<{
+    selectedIds: Set<string>;
+    workerStatuses: Record<string, WorkerStatus>;
+    onStart: (projectId: string) => void;
+    onPause: (projectId: string) => void;
+    onResume: (projectId: string) => void;
+    onKill: (projectId: string) => void;
+  }> = {},
+) {
+  return render(
+    <ProjectPicker
+      projects={[portfolio]}
+      selectedIds={overrides.selectedIds ?? new Set()}
+      workerStatuses={overrides.workerStatuses ?? {}}
+      onSelectedChange={() => {}}
+      onStart={overrides.onStart ?? (() => {})}
+      onPause={overrides.onPause ?? (() => {})}
+      onResume={overrides.onResume ?? (() => {})}
+      onKill={overrides.onKill ?? (() => {})}
+    />,
+  );
+}
+
 describe("ProjectPicker", () => {
   it("renders a checkbox per registered project", () => {
-    render(
-      <ProjectPicker
-        projects={[portfolio]}
-        selectedIds={new Set()}
-        onSelectedChange={() => {}}
-        onStart={() => {}}
-        onPause={() => {}}
-      />,
-    );
+    renderPicker();
 
     expect(screen.getByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
   });
@@ -34,15 +51,11 @@ describe("ProjectPicker", () => {
   it("calls start only for checked projects", async () => {
     const user = userEvent.setup();
     const onStart = vi.fn();
-    render(
-      <ProjectPicker
-        projects={[portfolio]}
-        selectedIds={new Set(["portfolio"])}
-        onSelectedChange={() => {}}
-        onStart={onStart}
-        onPause={() => {}}
-      />,
-    );
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "idle" },
+      onStart,
+    });
 
     await user.click(screen.getByRole("button", { name: /start portfolio/i }));
 
@@ -52,18 +65,65 @@ describe("ProjectPicker", () => {
   it("calls pause only for checked projects", async () => {
     const user = userEvent.setup();
     const onPause = vi.fn();
-    render(
-      <ProjectPicker
-        projects={[portfolio]}
-        selectedIds={new Set(["portfolio"])}
-        onSelectedChange={() => {}}
-        onStart={() => {}}
-        onPause={onPause}
-      />,
-    );
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "running" },
+      onPause,
+    });
 
     await user.click(screen.getByRole("button", { name: /pause portfolio/i }));
 
     expect(onPause).toHaveBeenCalledWith("portfolio");
+  });
+
+  it("disables Start and enables Kill when the project worker is running", () => {
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "running" },
+    });
+
+    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+  });
+
+  it("calls kill for a checked running project", async () => {
+    const user = userEvent.setup();
+    const onKill = vi.fn();
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "running" },
+      onKill,
+    });
+
+    await user.click(screen.getByRole("button", { name: /kill portfolio/i }));
+
+    expect(onKill).toHaveBeenCalledWith("portfolio");
+  });
+
+  it("enables Resume when the worker is paused", async () => {
+    const user = userEvent.setup();
+    const onResume = vi.fn();
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStatuses: { portfolio: "paused" },
+      onResume,
+    });
+
+    expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /resume portfolio/i }));
+
+    expect(onResume).toHaveBeenCalledWith("portfolio");
+  });
+
+  it("disables all controls while worker status is unknown", () => {
+    renderPicker({ selectedIds: new Set(["portfolio"]) });
+
+    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeDisabled();
   });
 });

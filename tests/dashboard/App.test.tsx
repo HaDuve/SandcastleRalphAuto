@@ -63,6 +63,12 @@ function stubProjectsFetch(projects: typeof portfolio[]) {
     if (url.endsWith("/pause") && init?.method === "POST") {
       return new Response(JSON.stringify({ status: "paused" }), { status: 200 });
     }
+    if (url.endsWith("/resume") && init?.method === "POST") {
+      return new Response(JSON.stringify({ status: "resumed" }), { status: 200 });
+    }
+    if (url.endsWith("/kill") && init?.method === "POST") {
+      return new Response(JSON.stringify({ status: "killed" }), { status: 200 });
+    }
     if (url === "/api/projects/portfolio/skip" && init?.method === "POST") {
       return new Response(JSON.stringify({ status: "skipped", issue: 10 }), { status: 200 });
     }
@@ -125,6 +131,12 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    });
+
     await user.click(screen.getByRole("button", { name: /pause portfolio/i }));
 
     await waitFor(() => {
@@ -290,6 +302,120 @@ describe("App", () => {
         String(call[0]).endsWith("/queue"),
       ).length;
       expect(queueCallsAfter).toBeGreaterThan(queueCallsBefore);
+    });
+  });
+
+  it("disables Start after the worker starts successfully", async () => {
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeEnabled();
+    });
+  });
+
+  it("kills a running project worker through the API", async () => {
+    const fetchMock = stubProjectsFetch([portfolio]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /kill portfolio/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/projects/portfolio/kill",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+  });
+
+  it("does not mark the worker paused when pause returns not-running", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/projects") {
+        return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+      }
+      if (url.endsWith("/queue")) {
+        return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+      }
+      if (url.endsWith("/active")) {
+        return new Response(JSON.stringify({ active: null }), { status: 200 });
+      }
+      if (url.endsWith("/start") && init?.method === "POST") {
+        return new Response(JSON.stringify({ status: "started" }), { status: 202 });
+      }
+      if (url.endsWith("/pause") && init?.method === "POST") {
+        return new Response(JSON.stringify({ status: "not-running" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /pause portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/not running/i);
+      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
+    });
+  });
+
+  it("resumes a paused project worker through the API", async () => {
+    const fetchMock = stubProjectsFetch([portfolio]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /pause portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: /resume portfolio/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/projects/portfolio/resume",
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
     });
   });
 });

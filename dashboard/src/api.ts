@@ -1,6 +1,23 @@
 import type { ActiveSlice, Project, QueueIssue } from "./types.js";
+import type { WorkerStatus } from "./workerStatus.js";
 
 type ControlStatusBody = { status?: string; error?: string };
+
+export const NOT_RUNNING_ERROR = "Project worker is not running";
+
+export type ProjectEvent = {
+  type: string;
+  projectId?: string;
+  workerStatus?: WorkerStatus;
+};
+
+const WORKER_EVENT_TYPES = [
+  "connected",
+  "worker-started",
+  "worker-stopped",
+  "worker-paused",
+  "worker-resumed",
+] as const;
 
 function controlErrorMessage(body: ControlStatusBody, status: number): string {
   if (body.error) {
@@ -10,7 +27,7 @@ function controlErrorMessage(body: ControlStatusBody, status: number): string {
     return "Project worker is already running";
   }
   if (body.status === "not-running") {
-    return "Project worker is not running";
+    return NOT_RUNNING_ERROR;
   }
   return `Request failed (${status})`;
 }
@@ -47,6 +64,24 @@ export async function pauseProject(
   return parseJson(response);
 }
 
+export async function resumeProject(
+  projectId: string,
+): Promise<{ status: "resumed" } | { status: "not-running" }> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/resume`, {
+    method: "POST",
+  });
+  return parseJson(response);
+}
+
+export async function killProject(
+  projectId: string,
+): Promise<{ status: "killed" } | { status: "not-running" }> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/kill`, {
+    method: "POST",
+  });
+  return parseJson(response);
+}
+
 export async function fetchQueue(projectId: string): Promise<QueueIssue[]> {
   const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/queue`);
   const body = await parseJson<{ queue: QueueIssue[] }>(response);
@@ -70,4 +105,30 @@ export async function setIssueSkip(
     body: JSON.stringify({ issue }),
   });
   return parseJson(response);
+}
+
+export function subscribeProjectEvents(
+  projectId: string,
+  onEvent: (event: ProjectEvent) => void,
+): () => void {
+  const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`);
+  const handler = (event: Event) => {
+    const message = event as MessageEvent;
+    try {
+      onEvent(JSON.parse(message.data) as ProjectEvent);
+    } catch {
+      // Ignore malformed SSE payloads.
+    }
+  };
+
+  for (const type of WORKER_EVENT_TYPES) {
+    source.addEventListener(type, handler);
+  }
+
+  return () => {
+    for (const type of WORKER_EVENT_TYPES) {
+      source.removeEventListener(type, handler);
+    }
+    source.close();
+  };
 }

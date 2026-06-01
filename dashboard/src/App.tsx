@@ -3,15 +3,20 @@ import {
   fetchActive,
   fetchProjects,
   fetchQueue,
+  killProject,
+  NOT_RUNNING_ERROR,
   pauseProject,
+  resumeProject,
   setIssueSkip,
   startProject,
+  subscribeProjectEvents,
 } from "./api.js";
 import { ActivePanel } from "./ActivePanel.js";
 import { DashboardLayout } from "./DashboardLayout.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
 import type { ActiveSlice, Project, QueueIssue } from "./types.js";
+import { applyWorkerEvent, type WorkerStatus } from "./workerStatus.js";
 import "./app.css";
 
 function PanelPlaceholder({ title, projectId }: { title: string; projectId: string | null }) {
@@ -26,6 +31,7 @@ function PanelPlaceholder({ title, projectId }: { title: string; projectId: stri
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [workerStatuses, setWorkerStatuses] = useState<Record<string, WorkerStatus>>({});
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueIssue[]>([]);
   const [active, setActive] = useState<ActiveSlice | null>(null);
@@ -58,6 +64,25 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribes: Array<() => void> = [];
+    for (const projectId of selectedIds) {
+      unsubscribes.push(
+        subscribeProjectEvents(projectId, (event) => {
+          setWorkerStatuses((current) => ({
+            ...current,
+            [projectId]: applyWorkerEvent(current[projectId], event),
+          }));
+        }),
+      );
+    }
+    return () => {
+      for (const unsubscribe of unsubscribes) {
+        unsubscribe();
+      }
+    };
+  }, [selectedIds]);
 
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
@@ -135,14 +160,40 @@ export function App() {
     });
   }, []);
 
+  const setWorkerStatus = useCallback((projectId: string, status: WorkerStatus) => {
+    setWorkerStatuses((current) => ({ ...current, [projectId]: status }));
+  }, []);
+
   const runControl = useCallback(
-    async (action: "start" | "pause", projectId: string) => {
+    async (action: "start" | "pause" | "resume" | "kill", projectId: string) => {
       setControlError(null);
       try {
         if (action === "start") {
           await startProject(projectId);
+          setWorkerStatus(projectId, "running");
+        } else if (action === "pause") {
+          const result = await pauseProject(projectId);
+          if (result.status === "not-running") {
+            setWorkerStatus(projectId, "idle");
+            setControlError(NOT_RUNNING_ERROR);
+            return;
+          }
+          setWorkerStatus(projectId, "paused");
+        } else if (action === "resume") {
+          const result = await resumeProject(projectId);
+          if (result.status === "not-running") {
+            setWorkerStatus(projectId, "idle");
+            setControlError(NOT_RUNNING_ERROR);
+            return;
+          }
+          setWorkerStatus(projectId, "running");
         } else {
-          await pauseProject(projectId);
+          const result = await killProject(projectId);
+          if (result.status === "not-running") {
+            setWorkerStatus(projectId, "idle");
+            setControlError(NOT_RUNNING_ERROR);
+            return;
+          }
         }
         if (focusedProjectIdRef.current === projectId) {
           await refreshPanels(projectId);
@@ -151,7 +202,7 @@ export function App() {
         setControlError(error instanceof Error ? error.message : "Control request failed");
       }
     },
-    [refreshPanels],
+    [refreshPanels, setWorkerStatus],
   );
 
   const handleSkipToggle = useCallback(
@@ -194,9 +245,12 @@ export function App() {
           <ProjectPicker
             projects={projects}
             selectedIds={selectedIds}
+            workerStatuses={workerStatuses}
             onSelectedChange={handleSelectedChange}
             onStart={(projectId) => void runControl("start", projectId)}
             onPause={(projectId) => void runControl("pause", projectId)}
+            onResume={(projectId) => void runControl("resume", projectId)}
+            onKill={(projectId) => void runControl("kill", projectId)}
           />
         }
         queue={

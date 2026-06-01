@@ -324,11 +324,71 @@ describe("dashboard server", () => {
     }
     reader.cancel();
 
-    expect(events[0]).toEqual({ type: "connected", projectId: "portfolio" });
+    expect(events[0]).toEqual({
+      type: "connected",
+      projectId: "portfolio",
+      workerStatus: "idle",
+    });
     expect(events[1]).toEqual({
       type: "phase-log",
       projectId: "portfolio",
       chunk: "hello",
+    });
+  });
+
+  it("includes orchestrator status in the SSE connected event when a worker is running", async () => {
+    const { rootDir, stateRoot } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    let releaseLoop: (() => void) | undefined;
+    const loopStarted = new Promise<void>((resolve) => {
+      releaseLoop = resolve;
+    });
+
+    const workerManager = createWorkerManager({
+      eventBus,
+      loopProject: async () => {
+        await loopStarted;
+        return { status: "queue-empty", slicesCompleted: 0 };
+      },
+    });
+
+    const started = await startServer(rootDir, {
+      stateRoot,
+      eventBus,
+      workerManager,
+    });
+    server = started.server;
+
+    await fetch(`${started.baseUrl}/api/projects/portfolio/start`, { method: "POST" });
+
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/events`);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const events: unknown[] = [];
+
+    while (events.length < 1) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      const chunk = decoder.decode(value);
+      for (const block of chunk.split("\n\n")) {
+        if (!block.includes("data:")) {
+          continue;
+        }
+        const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
+        if (dataLine) {
+          events.push(JSON.parse(dataLine.slice("data: ".length)));
+        }
+      }
+    }
+    reader.cancel();
+    releaseLoop?.();
+
+    expect(events[0]).toEqual({
+      type: "connected",
+      projectId: "portfolio",
+      workerStatus: "running",
     });
   });
 
@@ -375,7 +435,11 @@ describe("dashboard server", () => {
     }
     reader.cancel();
 
-    expect(events[0]).toEqual({ type: "connected", projectId: "portfolio" });
+    expect(events[0]).toEqual({
+      type: "connected",
+      projectId: "portfolio",
+      workerStatus: "idle",
+    });
     expect(events[1]).toEqual({
       type: "stream",
       projectId: "portfolio",
