@@ -1,7 +1,12 @@
 import { type LoopProjectResult } from "../cli/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
+import { CANONICAL_PHASES, type CanonicalPhase } from "../prompts/phases.js";
 import { type Project } from "../registry/index.js";
 import { readActive, writeRunOutcome, type RunOutcome } from "./index.js";
+
+function isCanonicalPhase(phase: string): phase is CanonicalPhase {
+  return (CANONICAL_PHASES as readonly string[]).includes(phase);
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -15,7 +20,7 @@ function logRefForActive(
   project: Project,
   active: Awaited<ReturnType<typeof readActive>>,
 ): string | undefined {
-  if (!active) {
+  if (!active || !isCanonicalPhase(active.phase)) {
     return undefined;
   }
   return resolvePhaseLogPath({
