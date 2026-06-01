@@ -1,0 +1,230 @@
+import { access } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { type Handoff } from "../src/handoff/index.js";
+import { CANONICAL_PHASES } from "../src/prompts/phases.js";
+import {
+  advanceSlice,
+  getNextOrchestratorPhase,
+  ORCHESTRATOR_PHASES,
+  runLinearSlice,
+} from "../src/pipeline/index.js";
+import {
+  PHASE_COMPLETE_SIGNAL,
+  type RunPhaseOptions,
+  type RunPhaseResult,
+} from "../src/runner/index.js";
+import { readActive, resolveActivePath } from "../src/state/index.js";
+
+describe("orchestrator phase sequence", () => {
+  it("follows idle → tdd → create-pr → review-pr → review-tdd → merge → next", () => {
+    expect(ORCHESTRATOR_PHASES).toEqual([
+      "idle",
+      "tdd",
+      "create-pr",
+      "review-pr",
+      "review-tdd",
+      "merge",
+      "next",
+    ]);
+    expect(getNextOrchestratorPhase("idle")).toBe("tdd");
+    expect(getNextOrchestratorPhase("tdd")).toBe("create-pr");
+    expect(getNextOrchestratorPhase("create-pr")).toBe("review-pr");
+    expect(getNextOrchestratorPhase("review-pr")).toBe("review-tdd");
+    expect(getNextOrchestratorPhase("review-tdd")).toBe("merge");
+    expect(getNextOrchestratorPhase("merge")).toBe("next");
+    expect(getNextOrchestratorPhase("next")).toBeNull();
+  });
+});
+
+function phaseResult(
+  phase: Handoff["phase"],
+  nextSkill: string,
+  overrides: Partial<Handoff> = {},
+): RunPhaseResult {
+  return {
+    commits: [],
+    branch: "issue-7-pipeline",
+    completionSignal: PHASE_COMPLETE_SIGNAL,
+    handoff: {
+      project: "HaDuve/SandcastleRalphAuto",
+      issue: 7,
+      branch: "issue-7-pipeline",
+      phase,
+      acceptanceState: "done",
+      blockers: [],
+      mergeReady: phase === "merge",
+      nextSkill,
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+      ...overrides,
+    },
+  };
+}
+
+describe("advanceSlice", () => {
+  const base = {
+    issue: 7,
+    branch: "issue-7-pipeline",
+  };
+
+  it("advances review-pr to review-tdd (never babysit)", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "review-pr",
+      result: phaseResult("review-pr", "/review-tdd", { pr: 99 }),
+    });
+
+    expect(outcome).toEqual({
+      ok: true,
+      handoffToNext: false,
+      active: {
+        issue: 7,
+        phase: "review-tdd",
+        branch: "issue-7-pipeline",
+        pr: 99,
+        status: "active",
+      },
+    });
+  });
+
+  it("blocks when handoff routes to /babysit instead of review-tdd", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "review-pr",
+      pr: 99,
+      result: phaseResult("review-pr", "/babysit", { pr: 99 }),
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.reason).toMatch(/linear pipeline/);
+      expect(outcome.active).toEqual({
+        issue: 7,
+        phase: "review-pr",
+        branch: "issue-7-pipeline",
+        pr: 99,
+        status: "blocked",
+        reason: expect.stringMatching(/linear pipeline/),
+        resumeSkill: "/babysit",
+      });
+    }
+  });
+
+  it("blocks without advancing when completion signal is missing", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "tdd",
+      result: {
+        ...phaseResult("tdd", "/create-pr"),
+        completionSignal: undefined,
+      },
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.active.phase).toBe("tdd");
+      expect(outcome.active.status).toBe("blocked");
+    }
+  });
+});
+
+const NEXT_SKILL_BY_PHASE: Record<(typeof CANONICAL_PHASES)[number], string> =
+  {
+    tdd: "/create-pr",
+    "create-pr": "/review-pr",
+    "review-pr": "/review-tdd",
+    "review-tdd": "/merge",
+    merge: "/next",
+  };
+
+describe("runLinearSlice", () => {
+  it("runs the full linear sequence with a stubbed runner and hands off to /next", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          return phaseResult(
+            options.phase,
+            NEXT_SKILL_BY_PHASE[options.phase],
+            {
+              pr: options.phase === "create-pr" ? 42 : 42,
+            },
+          );
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual([...CANONICAL_PHASES]);
+    expect(result).toEqual({
+      status: "ready-for-next",
+      issue: 7,
+      branch: "issue-7-pipeline",
+      pr: 42,
+      phasesCompleted: [...CANONICAL_PHASES],
+    });
+    await expect(readActive(projectId, stateRoot)).resolves.toBeNull();
+    await expect(
+      access(resolveActivePath(stateRoot, projectId)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("persists blocked state and stops after a failed phase", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          if (options.phase === "create-pr") {
+            return phaseResult("create-pr", "/babysit");
+          }
+          return phaseResult(
+            options.phase,
+            NEXT_SKILL_BY_PHASE[options.phase],
+          );
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual(["tdd", "create-pr"]);
+    expect(result.status).toBe("blocked");
+    if (result.status === "blocked") {
+      expect(result.phasesCompleted).toEqual(["tdd"]);
+      expect(result.active).toMatchObject({
+        issue: 7,
+        phase: "create-pr",
+        status: "blocked",
+        resumeSkill: "/babysit",
+      });
+    }
+    await expect(readActive(projectId, stateRoot)).resolves.toMatchObject({
+      status: "blocked",
+      phase: "create-pr",
+    });
+  });
+});
