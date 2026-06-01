@@ -212,7 +212,7 @@ describe("runMergeGate", () => {
     expect(ghCalls).toHaveLength(0);
   });
 
-  it("blocks when the verdict is not Approve", async () => {
+  it("blocks when the verdict is not Approve and the PR is still open", async () => {
     const ghCalls: string[][] = [];
 
     const result = await runMergeGate(
@@ -224,7 +224,10 @@ describe("runMergeGate", () => {
       {
         gh: async (args) => {
           ghCalls.push(args);
-          return "[]";
+          if (args[0] === "pr" && args[1] === "view") {
+            return respondToPrView(args, { state: "OPEN" });
+          }
+          return "";
         },
       },
     );
@@ -235,7 +238,40 @@ describe("runMergeGate", () => {
       reason: "Merge gate requires a clean Approve verdict",
       resumeSkill: "/merge",
     });
-    expect(ghCalls).toHaveLength(0);
+    expect(ghCalls).toHaveLength(1);
+    expect(ghCalls[0]).toContain("state");
+    expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
+  });
+
+  it("treats an already-merged PR as success when merge phase handoff has verdict n/a", async () => {
+    const ghCalls: string[][] = [];
+
+    const result = await runMergeGate(
+      {
+        handoff: mergeHandoff({
+          verdict: "n/a",
+          phase: "merge",
+          acceptanceState: "done",
+          nextSkill: "/next",
+        }),
+        project,
+        pr: 42,
+      },
+      {
+        gh: async (args) => {
+          ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return respondToPrView(args, { state: "MERGED" });
+          }
+          return "";
+        },
+      },
+    );
+
+    expect(result).toEqual({ status: "auto-merge-queued" });
+    expect(ghCalls).toHaveLength(1);
+    expect(ghCalls[0]).toContain("state");
+    expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
   });
 
   it("blocks when a required check is still pending", async () => {

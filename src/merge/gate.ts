@@ -9,8 +9,10 @@ import {
 export type RunMergeGateInput = {
   /**
    * Handoff snapshot for pre-flight. Per D3, `verdict` must be `approve` before
-   * merge. Callers should pass the latest host handoff after `/review-tdd` when
-   * available (ADR 0009) — a merge-phase handoff with `n/a` will block.
+   * the host queues merge on an open PR. Callers should pass the latest host
+   * handoff after `/review-tdd` when available (ADR 0009). If the PR is already
+   * `MERGED` on GitHub (e.g. merge agent merged first), the gate succeeds
+   * without re-merging even when `verdict` is `n/a`.
    */
   handoff: Handoff;
   project: Pick<Project, "autoMerge" | "remote">;
@@ -157,13 +159,6 @@ export async function runMergeGate(
     };
   }
 
-  if (handoff.verdict !== "approve") {
-    return blocked(
-      "no-approve-verdict",
-      "Merge gate requires a clean Approve verdict",
-    );
-  }
-
   if (handoff.blockers.length > 0) {
     return blocked(
       "open-blockers",
@@ -187,6 +182,13 @@ export async function runMergeGate(
   }
   if (prState === "MERGED") {
     return { status: "auto-merge-queued" };
+  }
+
+  if (handoff.verdict !== "approve") {
+    return blocked(
+      "no-approve-verdict",
+      "Merge gate requires a clean Approve verdict",
+    );
   }
 
   const mergeabilityRaw = await deps.gh([
