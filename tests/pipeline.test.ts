@@ -16,7 +16,7 @@ import {
   type RunPhaseOptions,
   type RunPhaseResult,
 } from "../src/runner/index.js";
-import { readActive, resolveActivePath } from "../src/state/index.js";
+import { readActive, resolveActivePath, writeActive } from "../src/state/index.js";
 
 describe("orchestrator phase sequence", () => {
   it("follows idle → tdd → create-pr → review-pr → review-tdd → merge → next", () => {
@@ -286,5 +286,48 @@ describe("runLinearSlice", () => {
         reason: "sandbox run failed",
       });
     }
+  });
+
+  it("stops without re-running phases when active slice is awaiting-human", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const awaitingHuman = {
+      issue: 7,
+      phase: "merge" as const,
+      branch: "issue-7-pipeline",
+      pr: 42,
+      status: "awaiting-human" as const,
+      reason: "autoMerge is disabled for this project",
+    };
+    await writeActive(projectId, awaitingHuman, stateRoot);
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          return phaseResult(
+            options.phase,
+            NEXT_SKILL_BY_PHASE[options.phase],
+            { pr: 42 },
+          );
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual([]);
+    expect(result).toEqual({
+      status: "awaiting-human",
+      active: awaitingHuman,
+      phasesCompleted: [],
+    });
   });
 });

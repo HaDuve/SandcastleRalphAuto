@@ -15,6 +15,7 @@ export {
 } from "./advance.js";
 export {
   runLinearSlice,
+  type RunLinearSliceAwaitingHuman,
   type RunLinearSliceBlocked,
   type RunLinearSliceDeps,
   type RunLinearSliceOptions,

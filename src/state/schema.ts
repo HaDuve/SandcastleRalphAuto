@@ -9,7 +9,7 @@ export const PhaseSchema = z.enum([
   "merge",
 ]);
 
-export const ActiveStatusSchema = z.enum(["active", "blocked"]);
+export const ActiveStatusSchema = z.enum(["active", "blocked", "awaiting-human"]);
 
 export const ActiveStateSchema = z
   .object({
