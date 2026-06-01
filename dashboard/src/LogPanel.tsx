@@ -1,15 +1,46 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { fetchProjectLog, subscribeProjectEvents } from "./api.js";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
+import { fetchProjectLog } from "./api.js";
 import { appendLogChunk, lastLines } from "./logLines.js";
 import type { Project } from "./types.js";
 
 const PREVIEW_LINE_COUNT = 5;
 
-type LogPanelProps = {
+export type PhaseLogHandler = ((chunk: string) => void) | null;
+
+export type LogPanelProps = {
   project: Project | null;
+  activePhase: string | null;
+  registerPhaseLogHandler?: (handler: PhaseLogHandler) => void;
 };
 
-export function LogPanel({ project }: LogPanelProps) {
+function applyProjectLog(
+  result: NonNullable<Awaited<ReturnType<typeof fetchProjectLog>>>,
+  options: {
+    livePhaseRef: MutableRefObject<string | null>;
+    viewPhaseRef: MutableRefObject<string | null>;
+    reseedView: boolean;
+    setPhases: (phases: string[]) => void;
+    setViewPhase: (phase: string) => void;
+    setLogText: (log: string) => void;
+  },
+): void {
+  options.livePhaseRef.current = result.phase;
+  options.setPhases(result.phases);
+  if (options.reseedView) {
+    options.viewPhaseRef.current = result.phase;
+    options.setViewPhase(result.phase);
+    options.setLogText(result.log ?? "");
+  }
+}
+
+export function LogPanel({ project, activePhase, registerPhaseLogHandler }: LogPanelProps) {
   const [logText, setLogText] = useState("");
   const [phases, setPhases] = useState<string[]>([]);
   const [viewPhase, setViewPhase] = useState<string | null>(null);
@@ -17,7 +48,59 @@ export function LogPanel({ project }: LogPanelProps) {
   const livePhaseRef = useRef<string | null>(null);
   const viewPhaseRef = useRef<string | null>(null);
   const expandedBodyRef = useRef<HTMLPreElement>(null);
+  const phaseFetchGenerationRef = useRef(0);
+  const logLoadGenerationRef = useRef(0);
+  const previousActivePhaseRef = useRef<string | null>(null);
   const [hasActiveLog, setHasActiveLog] = useState(false);
+
+  const isViewingLivePhase = useCallback(() => {
+    return (
+      viewPhaseRef.current !== null &&
+      livePhaseRef.current !== null &&
+      viewPhaseRef.current === livePhaseRef.current
+    );
+  }, []);
+
+  const loadProjectLog = useCallback(
+    async (options: { phase?: string; reseedView: boolean }) => {
+      if (!project) {
+        return null;
+      }
+      const generation = ++logLoadGenerationRef.current;
+      try {
+        const result = await fetchProjectLog(project.id, options.phase);
+        if (generation !== logLoadGenerationRef.current) {
+          return null;
+        }
+        if (!result) {
+          setHasActiveLog(false);
+          setLogText("");
+          setPhases([]);
+          setViewPhase(null);
+          livePhaseRef.current = null;
+          viewPhaseRef.current = null;
+          return null;
+        }
+        setHasActiveLog(true);
+        applyProjectLog(result, {
+          livePhaseRef,
+          viewPhaseRef,
+          reseedView: options.reseedView,
+          setPhases,
+          setViewPhase,
+          setLogText,
+        });
+        return result;
+      } catch {
+        return null;
+      }
+    },
+    [project],
+  );
+
+  useEffect(() => {
+    viewPhaseRef.current = viewPhase;
+  }, [viewPhase]);
 
   useEffect(() => {
     if (!project) {
@@ -31,48 +114,42 @@ export function LogPanel({ project }: LogPanelProps) {
       return;
     }
 
-    let cancelled = false;
-    void (async () => {
-      const result = await fetchProjectLog(project.id);
-      if (cancelled) {
-        return;
-      }
-      if (!result) {
-        setLogText("");
-        setPhases([]);
-        setViewPhase(null);
-        setHasActiveLog(false);
-        livePhaseRef.current = null;
-        viewPhaseRef.current = null;
-        return;
-      }
-      setHasActiveLog(true);
-      livePhaseRef.current = result.phase;
-      viewPhaseRef.current = result.phase;
-      setPhases(result.phases);
-      setViewPhase(result.phase);
-      setLogText(result.log ?? "");
-    })();
-
-    const unsubscribe = subscribeProjectEvents(project.id, (event) => {
-      if (event.type !== "phase-log") {
-        return;
-      }
-      if (viewPhaseRef.current !== livePhaseRef.current || !event.chunk) {
-        return;
-      }
-      setLogText((current) => appendLogChunk(current, event.chunk!));
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [project?.id]);
+    setExpanded(false);
+    previousActivePhaseRef.current = activePhase;
+    void loadProjectLog({ reseedView: true });
+  }, [activePhase, project?.id, loadProjectLog]);
 
   useEffect(() => {
-    viewPhaseRef.current = viewPhase;
-  }, [viewPhase]);
+    if (!project || !activePhase) {
+      return;
+    }
+
+    const previousPhase = previousActivePhaseRef.current;
+    previousActivePhaseRef.current = activePhase;
+    if (previousPhase === null || previousPhase === activePhase) {
+      return;
+    }
+
+    void loadProjectLog({ reseedView: isViewingLivePhase() });
+  }, [activePhase, isViewingLivePhase, loadProjectLog, project]);
+
+  useEffect(() => {
+    if (!registerPhaseLogHandler || !project) {
+      return;
+    }
+
+    const onChunk = (chunk: string) => {
+      if (!isViewingLivePhase() || !chunk) {
+        return;
+      }
+      setLogText((current) => appendLogChunk(current, chunk));
+    };
+
+    registerPhaseLogHandler(onChunk);
+    return () => {
+      registerPhaseLogHandler(null);
+    };
+  }, [isViewingLivePhase, project?.id, registerPhaseLogHandler]);
 
   useLayoutEffect(() => {
     if (!expanded) {
@@ -89,14 +166,19 @@ export function LogPanel({ project }: LogPanelProps) {
     if (!project) {
       return;
     }
+    const generation = ++phaseFetchGenerationRef.current;
     setViewPhase(phase);
     viewPhaseRef.current = phase;
     void (async () => {
-      const result = await fetchProjectLog(project.id, phase);
-      if (!result) {
-        return;
+      try {
+        const result = await fetchProjectLog(project.id, phase);
+        if (generation !== phaseFetchGenerationRef.current || !result) {
+          return;
+        }
+        setLogText(result.log ?? "");
+      } catch {
+        // Keep the previous log visible when a phase fetch fails.
       }
-      setLogText(result.log ?? "");
     })();
   };
 

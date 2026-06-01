@@ -11,6 +11,7 @@ export type ProjectEvent = {
   workerStatus?: WorkerStatus;
   reason?: string;
   chunk?: string;
+  phase?: string;
 };
 
 const PROJECT_EVENT_TYPES = [
@@ -20,6 +21,7 @@ const PROJECT_EVENT_TYPES = [
   "worker-paused",
   "worker-resumed",
   "phase-log",
+  "stream",
 ] as const;
 
 function controlErrorMessage(body: ControlStatusBody, status: number): string {

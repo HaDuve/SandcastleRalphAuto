@@ -45,7 +45,7 @@ describe("LogPanel", () => {
   });
 
   it("prompts to select a project when none is focused", () => {
-    render(<LogPanel project={null} />);
+    render(<LogPanel project={null} activePhase={null} />);
 
     expect(screen.getByText(/select a project/i)).toBeInTheDocument();
   });
@@ -54,7 +54,7 @@ describe("LogPanel", () => {
     const log = ["line1", "line2", "line3", "line4", "line5", "line6", "line7"].join("\n") + "\n";
     vi.stubGlobal("fetch", stubLogFetch(log));
 
-    render(<LogPanel project={portfolio} />);
+    render(<LogPanel project={portfolio} activePhase="review-pr" />);
 
     const preview = await screen.findByTestId("log-preview");
     expect(preview).toHaveTextContent("line3");
@@ -67,7 +67,7 @@ describe("LogPanel", () => {
     vi.stubGlobal("fetch", stubLogFetch(log));
 
     const user = userEvent.setup();
-    render(<LogPanel project={portfolio} />);
+    render(<LogPanel project={portfolio} activePhase="review-pr" />);
 
     await screen.findByTestId("log-preview");
     await user.click(screen.getByRole("button", { name: /expand/i }));
@@ -77,41 +77,100 @@ describe("LogPanel", () => {
     expect(expanded).toHaveTextContent("line7");
   });
 
-  it("appends phase-log chunks from SSE without polling", async () => {
-    const listeners = new Map<string, Set<(event: Event) => void>>();
-    class ControllableEventSource {
-      url: string;
-      constructor(url: string) {
-        this.url = url;
-      }
-      addEventListener(type: string, handler: (event: Event) => void) {
-        let typeListeners = listeners.get(type);
-        if (!typeListeners) {
-          typeListeners = new Set();
-          listeners.set(type, typeListeners);
+  it("re-seeds the log when the active phase advances", async () => {
+    let logFetchCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects/portfolio/log") {
+          logFetchCount += 1;
+          if (logFetchCount === 1) {
+            return new Response(
+              JSON.stringify({
+                issue: 7,
+                phase: "tdd",
+                log: "tdd output\n",
+                phases: ["tdd", "review-pr"],
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "review-pr",
+              log: "review-pr output\n",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
         }
-        typeListeners.add(handler);
-      }
-      removeEventListener(type: string, handler: (event: Event) => void) {
-        listeners.get(type)?.delete(handler);
-      }
-      close() {}
-    }
-    vi.stubGlobal("EventSource", ControllableEventSource as unknown as typeof EventSource);
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    const { rerender } = render(<LogPanel project={portfolio} activePhase="tdd" />);
+
+    expect(await screen.findByText("tdd output")).toBeInTheDocument();
+
+    rerender(<LogPanel project={portfolio} activePhase="review-pr" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("log-preview")).toHaveTextContent("review-pr output");
+    });
+    expect(screen.getByTestId("log-preview")).not.toHaveTextContent("tdd output");
+    expect(logFetchCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("appends phase-log chunks from the shared events subscription", async () => {
+    let tailHandler: ((chunk: string) => void) | null = null;
     vi.stubGlobal("fetch", stubLogFetch("seed\n"));
 
-    render(<LogPanel project={portfolio} />);
+    render(
+      <LogPanel
+        project={portfolio}
+        activePhase="review-pr"
+        registerPhaseLogHandler={(handler) => {
+          tailHandler = handler;
+        }}
+      />,
+    );
 
     await screen.findByText("seed");
-
-    listeners.get("phase-log")!.forEach((handler) =>
-      handler({
-        data: JSON.stringify({ type: "phase-log", projectId: "portfolio", chunk: "live" }),
-      } as unknown as Event),
-    );
+    tailHandler!("live");
 
     await waitFor(() => {
       expect(screen.getByTestId("log-preview")).toHaveTextContent("live");
+    });
+  });
+
+  it("ignores phase-log chunks while viewing a prior phase", async () => {
+    let tailHandler: ((chunk: string) => void) | null = null;
+    vi.stubGlobal("fetch", stubLogFetch("review output\n"));
+
+    const user = userEvent.setup();
+    render(
+      <LogPanel
+        project={portfolio}
+        activePhase="review-pr"
+        registerPhaseLogHandler={(handler) => {
+          tailHandler = handler;
+        }}
+      />,
+    );
+
+    await screen.findByTestId("log-preview");
+    await user.click(screen.getByRole("button", { name: /expand/i }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: /phase/i }), "tdd");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("log-expanded")).toHaveTextContent("tdd-only line");
+    });
+
+    tailHandler!("stale-tail");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("log-expanded")).not.toHaveTextContent("stale-tail");
     });
   });
 
@@ -120,7 +179,7 @@ describe("LogPanel", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const user = userEvent.setup();
-    render(<LogPanel project={portfolio} />);
+    render(<LogPanel project={portfolio} activePhase="review-pr" />);
 
     await screen.findByTestId("log-preview");
     await user.click(screen.getByRole("button", { name: /expand/i }));
