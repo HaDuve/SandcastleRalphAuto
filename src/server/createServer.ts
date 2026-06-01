@@ -111,8 +111,17 @@ async function serveStaticFile(
 }
 
 function writeSseEvent(res: ServerResponse, event: string, data: unknown): void {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
+  if (res.destroyed || res.writableEnded) {
+    return;
+  }
+  try {
+    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    if (!res.write(payload)) {
+      // Drop events for slow clients instead of applying backpressure to publishers.
+    }
+  } catch {
+    // Ignore write failures from disconnected clients.
+  }
 }
 
 export function createDashboardServer(options: DashboardServerOptions): Server {

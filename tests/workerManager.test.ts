@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryProjectMutex, loopProject, type RunProjectDeps } from "../src/cli/index.js";
+import { type AgentStreamEnvelope, createInMemoryProjectMutex, loopProject, type RunProjectDeps } from "../src/cli/index.js";
 import { type Project } from "../src/registry/index.js";
 import { createEventBus, type DashboardEvent } from "../src/server/eventBus.js";
 import { createWorkerManager } from "../src/server/workerManager.js";
@@ -39,6 +39,47 @@ describe("createWorkerManager", () => {
       type: "worker-stopped",
       projectId: "portfolio",
       reason: "Project HaDuve/Portfolio is already running",
+    });
+    expect(manager.isRunning("portfolio")).toBe(false);
+  });
+
+  it("emits stream events tagged with project, issue, and phase", async () => {
+    const eventBus = createEventBus();
+    const events: DashboardEvent[] = [];
+    eventBus.subscribe("portfolio", (event) => events.push(event));
+
+    const streamEnvelope: AgentStreamEnvelope = {
+      issue: 12,
+      phase: "tdd",
+      event: {
+        type: "toolCall",
+        name: "grep",
+        formattedArgs: "pattern=stream",
+        iteration: 2,
+        timestamp: new Date("2026-06-01T12:00:00.000Z"),
+      },
+    };
+
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async (_input, deps) => {
+        deps!.onAgentStream?.(streamEnvelope);
+        return { status: "queue-empty", slicesCompleted: 0 };
+      },
+    });
+
+    await manager.start(portfolio, {
+      rootDir: "/tmp",
+      stateRoot: "/tmp/state",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(events).toContainEqual({
+      type: "stream",
+      projectId: "portfolio",
+      issue: 12,
+      phase: "tdd",
+      event: streamEnvelope.event,
     });
     expect(manager.isRunning("portfolio")).toBe(false);
   });

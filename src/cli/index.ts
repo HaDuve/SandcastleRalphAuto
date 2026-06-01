@@ -10,6 +10,7 @@ export {
   findProjectById,
   loopProject,
   runProjectSlice,
+  type AgentStreamEnvelope,
   type BootstrapFirstIssueResult,
   type LoopProjectInput,
   type LoopProjectResult,

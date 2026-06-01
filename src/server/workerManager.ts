@@ -1,5 +1,6 @@
 import {
   loopProject,
+  type AgentStreamEnvelope,
   type LoopProjectResult,
   type RunProjectDeps,
   type WorkerControl,
@@ -76,6 +77,16 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
         onPhaseLog: (chunk) => {
           deps.eventBus.emit({ type: "phase-log", projectId: project.id, chunk });
           input.deps?.onPhaseLog?.(chunk);
+        },
+        onAgentStream: (envelope: AgentStreamEnvelope) => {
+          deps.eventBus.emit({
+            type: "stream",
+            projectId: project.id,
+            issue: envelope.issue,
+            phase: envelope.phase,
+            event: envelope.event,
+          });
+          input.deps?.onAgentStream?.(envelope);
         },
         runPhase: async (options) => {
           const runPhaseFn =

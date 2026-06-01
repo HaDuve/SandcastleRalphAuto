@@ -1,6 +1,7 @@
 import {
   createSandbox,
   cursor,
+  type AgentStreamEvent,
   type CreateSandboxOptions,
   type Sandbox,
   type SandboxRunOptions,
@@ -40,6 +41,8 @@ export type RunPhaseOptions = {
   name?: string;
   /** Written to `sandbox.worktreePath` before the agent runs (e.g. `/next` tdd seed). */
   seedHandoff?: Handoff;
+  /** Live agent stream events (text/toolCall) forwarded from Sandcastle file logging. */
+  onAgentStreamEvent?: (event: AgentStreamEvent) => void;
 };
 
 export type RunPhaseResult = {
@@ -83,6 +86,18 @@ function resolveMaxIterations(
   return phase === "tdd" ? tddMaxIterations : 1;
 }
 
+function sanitizeBranchForFilename(branch: string): string {
+  return branch.replace(/[/\\:*?"<>|]/g, "-");
+}
+
+function resolveLogPath(projectPath: string, branch: string, name?: string): string {
+  const sanitizedBranch = sanitizeBranchForFilename(branch);
+  const nameSuffix = name
+    ? `-${name.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}`
+    : "";
+  return join(projectPath, ".sandcastle", "logs", `${sanitizedBranch}${nameSuffix}.log`);
+}
+
 const defaultDeps = (): RunPhaseDeps => ({
   createSandbox,
   cursor,
@@ -114,7 +129,7 @@ export async function runPhase(
       await writeHandoff(options.seedHandoff, sandbox.worktreePath);
     }
 
-    const runResult = await sandbox.run({
+    const baseRunOptions = {
       agent: deps.cursor("auto"),
       promptFile,
       maxIterations: resolveMaxIterations(
@@ -124,7 +139,24 @@ export async function runPhase(
       completionSignal: PHASE_COMPLETE_SIGNAL,
       signal: options.signal,
       name: options.name,
-    });
+    } satisfies SandboxRunOptions;
+
+    const runResult = await sandbox.run(
+      options.onAgentStreamEvent
+        ? {
+            ...baseRunOptions,
+            logging: {
+              type: "file",
+              path: resolveLogPath(
+                options.projectPath,
+                options.branch,
+                options.name,
+              ),
+              onAgentStreamEvent: options.onAgentStreamEvent,
+            },
+          }
+        : baseRunOptions,
+    );
 
     const handoff = await deps.readHandoff(sandbox.worktreePath);
 
