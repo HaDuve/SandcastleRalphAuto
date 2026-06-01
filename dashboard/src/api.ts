@@ -1,4 +1,4 @@
-import type { ActiveSlice, Project, QueueIssue } from "./types.js";
+import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
 import type { WorkerStatus } from "./workerStatus.js";
 
 type ControlStatusBody = { status?: string; error?: string };
@@ -92,6 +92,12 @@ export async function fetchActive(projectId: string): Promise<ActiveSlice | null
   const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/active`);
   const body = await parseJson<{ active: ActiveSlice | null }>(response);
   return body.active;
+}
+
+export async function fetchHistory(projectId: string): Promise<HistoryEntry[]> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/history`);
+  const body = await parseJson<{ history: HistoryEntry[] }>(response);
+  return body.history;
 }
 
 export async function setIssueSkip(

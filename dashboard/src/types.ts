@@ -27,3 +27,18 @@ export type ActiveSlice = {
   resumeSkill?: string;
   startedAt?: string;
 };
+
+export type HistoryPhase = {
+  phase: string;
+  startedAt: string;
+  endedAt: string;
+};
+
+export type HistoryEntry = {
+  pr: number;
+  issue: number;
+  branch: string;
+  startedAt: string;
+  endedAt: string;
+  phases: HistoryPhase[];
+};

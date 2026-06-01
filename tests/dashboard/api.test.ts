@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchActive,
+  fetchHistory,
   fetchProjects,
   fetchQueue,
   killProject,
@@ -176,6 +177,34 @@ describe("dashboard API client", () => {
     );
 
     await expect(fetchActive("portfolio")).resolves.toEqual(active);
+  });
+
+  it("fetches archived handoff history for a project", async () => {
+    const history = [
+      {
+        pr: 99,
+        issue: 9,
+        branch: "issue-9",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        endedAt: "2026-06-01T01:00:00.000Z",
+        phases: [
+          {
+            phase: "merge",
+            startedAt: "2026-06-01T00:00:00.000Z",
+            endedAt: "2026-06-01T01:00:00.000Z",
+          },
+        ],
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        expect(url).toBe("/api/projects/portfolio/history");
+        return new Response(JSON.stringify({ history }), { status: 200 });
+      }),
+    );
+
+    await expect(fetchHistory("portfolio")).resolves.toEqual(history);
   });
 
   it("sets skip state for an issue via POST or DELETE", async () => {

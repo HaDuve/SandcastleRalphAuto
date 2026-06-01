@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchActive,
+  fetchHistory,
   fetchProjects,
   fetchQueue,
   killProject,
@@ -13,9 +14,10 @@ import {
 } from "./api.js";
 import { ActivePanel } from "./ActivePanel.js";
 import { DashboardLayout } from "./DashboardLayout.js";
+import { HistoryPanel } from "./HistoryPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
-import type { ActiveSlice, Project, QueueIssue } from "./types.js";
+import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
 import { applyWorkerEvent, type WorkerStatus } from "./workerStatus.js";
 import "./app.css";
 
@@ -35,6 +37,7 @@ export function App() {
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueIssue[]>([]);
   const [active, setActive] = useState<ActiveSlice | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -87,15 +90,17 @@ export function App() {
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
     try {
-      const [nextQueue, nextActive] = await Promise.all([
+      const [nextQueue, nextActive, nextHistory] = await Promise.all([
         fetchQueue(projectId),
         fetchActive(projectId),
+        fetchHistory(projectId),
       ]);
       if (focusedProjectIdRef.current !== projectId) {
         return;
       }
       setQueue(nextQueue);
       setActive(nextActive);
+      setHistory(nextHistory);
     } catch (error: unknown) {
       if (focusedProjectIdRef.current !== projectId) {
         return;
@@ -108,6 +113,7 @@ export function App() {
     if (!focusedProjectId) {
       setQueue([]);
       setActive(null);
+      setHistory([]);
       return;
     }
 
@@ -117,15 +123,17 @@ export function App() {
     void (async () => {
       setPanelError(null);
       try {
-        const [nextQueue, nextActive] = await Promise.all([
+        const [nextQueue, nextActive, nextHistory] = await Promise.all([
           fetchQueue(projectId),
           fetchActive(projectId),
+          fetchHistory(projectId),
         ]);
         if (cancelled || focusedProjectIdRef.current !== projectId) {
           return;
         }
         setQueue(nextQueue);
         setActive(nextActive);
+        setHistory(nextHistory);
       } catch (error: unknown) {
         if (cancelled || focusedProjectIdRef.current !== projectId) {
           return;
@@ -262,7 +270,7 @@ export function App() {
         }
         active={<ActivePanel project={focusedProject} active={active} />}
         stream={<PanelPlaceholder title="Live stream" projectId={focusedProjectId} />}
-        history={<PanelPlaceholder title="History" projectId={focusedProjectId} />}
+        history={<HistoryPanel project={focusedProject} history={history} />}
       />
     </div>
   );
