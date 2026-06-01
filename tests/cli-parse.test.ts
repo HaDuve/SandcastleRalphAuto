@@ -22,6 +22,13 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("parses loop --project <id> without --issue", () => {
+    expect(parseCliArgs(["loop", "--project", "portfolio"])).toEqual({
+      command: "loop",
+      projectId: "portfolio",
+    });
+  });
+
   it("rejects invalid commands", () => {
     expect(() => parseCliArgs(["status"])).toThrow(CliError);
   });

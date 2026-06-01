@@ -10,12 +10,15 @@ import {
   branchForIssue,
   QUEUE_EMPTY,
   runNext,
+  seedTddHandoff,
   type RunNextResult,
 } from "../next/index.js";
+import { selectNextIssue, type GhIssue } from "../next/select.js";
 import {
   loadRegistryFromRoot,
   type Project,
 } from "../registry/index.js";
+import { CANONICAL_PHASES } from "../prompts/phases.js";
 import {
   runLinearSlice,
   type RunLinearSliceResult,
@@ -25,7 +28,7 @@ import {
   type RunPhaseOptions,
   type RunPhaseResult,
 } from "../runner/index.js";
-import { writeActive } from "../state/index.js";
+import { readActive, writeActive, type ActiveState } from "../state/index.js";
 import { CliError } from "./errors.js";
 import {
   createFileProjectMutex,
@@ -57,15 +60,19 @@ export type RunProjectSliceResult =
 
 export type LoopProjectInput = {
   projectId: string;
-  issue: number;
+  issue?: number;
   rootDir?: string;
   stateRoot?: string;
 };
 
 export type LoopProjectResult =
   | { status: "queue-empty"; slicesCompleted: number }
-  | { status: "blocked" | "awaiting-human"; reason: string }
-  | { status: "completed"; slicesCompleted: number };
+  | { status: "blocked" | "awaiting-human"; reason: string };
+
+export type BootstrapFirstIssueResult =
+  | { status: "started"; issue: number; branch: string }
+  | { status: typeof QUEUE_EMPTY }
+  | { status: "blocked"; reason: string };
 
 export type RunProjectDeps = {
   loadRegistry?: (
@@ -83,6 +90,15 @@ export type RunProjectDeps = {
   readLogFile?: (path: string) => Promise<string>;
   onPhaseLog?: (chunk: string) => void;
   mutex?: ProjectMutex;
+  readActive?: (projectId: string, stateRoot: string) => Promise<ActiveState | null>;
+  bootstrapFirstIssue?: (
+    input: {
+      project: Project;
+      projectPath: string;
+      stateRoot: string;
+    },
+    gh: GhRunner,
+  ) => Promise<BootstrapFirstIssueResult>;
 };
 
 function resolvePaths(input: { rootDir?: string; stateRoot?: string }): {
@@ -105,6 +121,100 @@ export function findProjectById(
     throw new CliError(`Unknown project: ${projectId}`);
   }
   return project;
+}
+
+function parseIssueList(raw: string): GhIssue[] | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as GhIssue[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function bootstrapFirstIssue(
+  input: {
+    project: Project;
+    projectPath: string;
+    stateRoot: string;
+  },
+  gh: GhRunner,
+  deps: {
+    readSkips?: (projectId: string, stateRoot: string) => Promise<number[]>;
+    writeActive?: typeof writeActive;
+    startTdd?: (startInput: {
+      project: Project;
+      issue: number;
+      branch: string;
+      projectPath: string;
+      stateRoot: string;
+      handoff: Handoff;
+    }) => Promise<void>;
+    now?: () => Date;
+  } = {},
+): Promise<BootstrapFirstIssueResult> {
+  const { project, projectPath, stateRoot } = input;
+  const now = deps.now ?? (() => new Date());
+  const readSkipsFn =
+    deps.readSkips ??
+    (async (projectId, skipsRoot) => {
+      const { readSkips } = await import("../state/index.js");
+      return readSkips(projectId, skipsRoot);
+    });
+  const writeActiveFn = deps.writeActive ?? writeActive;
+  const startTddFn =
+    deps.startTdd ??
+    (async (startInput) => {
+      const { startTddViaRunPhase } = await import("../next/index.js");
+      await startTddViaRunPhase(startInput);
+    });
+
+  const issuesRaw = await gh([
+    "issue",
+    "list",
+    "--repo",
+    project.remote,
+    "--state",
+    "open",
+    "--label",
+    project.afkLabel,
+    "--json",
+    "number,labels,state",
+  ]);
+  const issues = parseIssueList(issuesRaw);
+  if (!issues) {
+    return { status: "blocked", reason: "Could not parse issues from gh" };
+  }
+
+  const skips = await readSkipsFn(project.remote, stateRoot);
+  const nextIssue = selectNextIssue(issues, project, skips);
+  if (nextIssue === null) {
+    return { status: QUEUE_EMPTY };
+  }
+
+  const branch = branchForIssue(nextIssue);
+  const handoff = seedTddHandoff(project, nextIssue, branch, now());
+
+  await writeActiveFn(
+    project.remote,
+    {
+      issue: nextIssue,
+      phase: "tdd",
+      branch,
+      status: "active",
+    },
+    stateRoot,
+  );
+  await startTddFn({
+    project,
+    issue: nextIssue,
+    branch,
+    projectPath,
+    stateRoot,
+    handoff,
+  });
+
+  return { status: "started", issue: nextIssue, branch };
 }
 
 type ResolvedRunProjectDeps = Required<
@@ -268,6 +378,7 @@ export async function runProjectSlice(
   const loadRegistry = deps.loadRegistry ?? resolved.loadRegistry;
   const runLinearSliceFn = deps.runLinearSlice ?? resolved.runLinearSlice;
   const mutex = deps.mutex ?? resolved.mutex;
+  const waitForMergedPr = deps.waitForMergedPr ?? resolved.waitForMergedPr;
 
   const project = findProjectById(await loadRegistry(rootDir), input.projectId);
   await mutex.acquire(project.remote);
@@ -312,7 +423,15 @@ export async function runProjectSlice(
         reason: mergeResult.reason,
       };
     }
+    if (slice.pr === undefined) {
+      return {
+        status: "blocked",
+        issue: slice.issue,
+        reason: "Slice completed without a PR number",
+      };
+    }
 
+    await waitForMergedPr({ project, pr: slice.pr });
     await mutex.release(project.remote);
     return {
       status: "completed",
@@ -348,6 +467,79 @@ function nextBlocked(
   };
 }
 
+type LoopStartReady = {
+  kind: "ready";
+  issue: number;
+  fromPhase?: RunPhaseOptions["phase"];
+};
+
+type LoopStart = LoopStartReady | LoopProjectResult;
+
+function isLoopStartReady(start: LoopStart): start is LoopStartReady {
+  return "kind" in start && start.kind === "ready";
+}
+
+async function resolveLoopStart(
+  project: Project,
+  projectPath: string,
+  stateRoot: string,
+  issue: number | undefined,
+  deps: RunProjectDeps,
+  resolved: ResolvedRunProjectDeps,
+): Promise<LoopStart> {
+  if (issue !== undefined) {
+    return { kind: "ready", issue };
+  }
+
+  const readActiveFn = deps.readActive ?? readActive;
+  const active = await readActiveFn(project.remote, stateRoot);
+  if (active?.status === "blocked") {
+    return {
+      status: "blocked",
+      reason: active.reason ?? "Slice is blocked",
+    };
+  }
+  if (active?.status === "awaiting-human") {
+    return {
+      status: "awaiting-human",
+      reason: active.reason ?? "Slice is awaiting human",
+    };
+  }
+  if (active?.status === "active") {
+    if (!(CANONICAL_PHASES as readonly string[]).includes(active.phase)) {
+      return {
+        status: "blocked",
+        reason: `Cannot resume non-canonical phase: ${active.phase}`,
+      };
+    }
+    return {
+      kind: "ready",
+      issue: active.issue,
+      fromPhase: active.phase as RunPhaseOptions["phase"],
+    };
+  }
+
+  const bootstrapFn =
+    deps.bootstrapFirstIssue ??
+    ((input, gh) => bootstrapFirstIssue(input, gh));
+  const bootstrap = await bootstrapFn(
+    { project, projectPath, stateRoot },
+    deps.gh ?? resolved.gh,
+  );
+  if (bootstrap.status === QUEUE_EMPTY) {
+    return { status: "queue-empty", slicesCompleted: 0 };
+  }
+  if (bootstrap.status === "blocked") {
+    return { status: "blocked", reason: bootstrap.reason };
+  }
+
+  return {
+    kind: "ready",
+    issue: bootstrap.issue,
+    fromPhase: "create-pr",
+  };
+}
+
 export async function loopProject(
   input: LoopProjectInput,
   deps: RunProjectDeps = {},
@@ -362,9 +554,24 @@ export async function loopProject(
   const project = findProjectById(await loadRegistry(rootDir), input.projectId);
   await mutex.acquire(project.remote);
 
+  const loopStart = await resolveLoopStart(
+    project,
+    project.path,
+    stateRoot,
+    input.issue,
+    deps,
+    resolved,
+  );
+  if (!isLoopStartReady(loopStart)) {
+    if (loopStart.status === "queue-empty") {
+      await mutex.release(project.remote);
+    }
+    return loopStart;
+  }
+
   let slicesCompleted = 0;
-  let currentIssue = input.issue;
-  let fromPhase: RunPhaseOptions["phase"] | undefined;
+  let currentIssue = loopStart.issue;
+  let fromPhase = loopStart.fromPhase;
 
   try {
     for (;;) {

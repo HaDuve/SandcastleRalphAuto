@@ -101,6 +101,7 @@ describe("runProjectSlice", () => {
             handoff: reviewHandoff(),
           }) satisfies RunPhaseResult,
         runMergeGate: async () => ({ status: "auto-merge-queued" as const }),
+        waitForMergedPr: async () => {},
         mutex: {
           acquire: async () => {},
           release: async () => {},
@@ -173,6 +174,7 @@ describe("runProjectSlice", () => {
           mergeInput = input;
           return { status: "auto-merge-queued" };
         },
+        waitForMergedPr: async () => {},
         mutex: {
           acquire: async () => {},
           release: async () => {},
@@ -215,6 +217,7 @@ describe("runProjectSlice", () => {
           logs.push(line);
         },
         runMergeGate: async () => ({ status: "auto-merge-queued" }),
+        waitForMergedPr: async () => {},
         mutex: {
           acquire: async () => {},
           release: async () => {},
@@ -223,6 +226,46 @@ describe("runProjectSlice", () => {
     );
 
     expect(logs).toEqual(["phase log line\n"]);
+  });
+
+  it("waits for the PR to merge before releasing the mutex", async () => {
+    const events: string[] = [];
+
+    await runProjectSlice(
+      { projectId: "portfolio", issue: 10 },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (_options, deps) => {
+          await deps!.runPhase({
+            phase: "review-pr",
+            branch: "issue-10",
+            projectPath: "/tmp/portfolio",
+          });
+          return sliceSuccess();
+        },
+        runPhase: async (options) =>
+          ({
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: reviewHandoff(),
+          }) satisfies RunPhaseResult,
+        runMergeGate: async () => ({ status: "auto-merge-queued" }),
+        waitForMergedPr: async () => {
+          events.push("waited-for-merge");
+        },
+        mutex: {
+          acquire: async () => {
+            events.push("acquire");
+          },
+          release: async () => {
+            events.push("release");
+          },
+        },
+      },
+    );
+
+    expect(events).toEqual(["acquire", "waited-for-merge", "release"]);
   });
 
   it("refuses to start when the project mutex is already held", async () => {
@@ -289,5 +332,92 @@ describe("loopProject", () => {
     expect(sliceCount).toBe(2);
     expect(nextCalls).toEqual([41, 42]);
     expect(result).toEqual({ status: "queue-empty", slicesCompleted: 2 });
+  });
+
+  it("passes fromPhase create-pr on the second loop iteration", async () => {
+    const sliceOptions: RunLinearSliceOptions[] = [];
+
+    await loopProject(
+      { projectId: "portfolio", issue: 10 },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (options, sliceDeps) => {
+          sliceOptions.push(options);
+          await sliceDeps!.runPhase({
+            phase: "review-pr",
+            branch: options.branch,
+            projectPath: options.projectPath,
+          });
+          return sliceSuccess(
+            options.issue,
+            options.issue === 10 ? 41 : 42,
+          );
+        },
+        runPhase: async (options) =>
+          ({
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: reviewHandoff(),
+          }) satisfies RunPhaseResult,
+        runMergeGate: async () => ({ status: "auto-merge-queued" }),
+        waitForMergedPr: async () => {},
+        runNext: async (input) =>
+          input.pr === 41
+            ? { status: "started", issue: 11, branch: "issue-11" }
+            : { status: QUEUE_EMPTY },
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(sliceOptions[0]?.fromPhase).toBeUndefined();
+    expect(sliceOptions[1]).toMatchObject({
+      issue: 11,
+      fromPhase: "create-pr",
+    });
+  });
+
+  it("cold-starts the lowest eligible issue when loop has no seed issue", async () => {
+    let bootstrapCalled = false;
+
+    const result = await loopProject(
+      { projectId: "portfolio" },
+      {
+        loadRegistry: async () => [portfolio],
+        readActive: async () => null,
+        bootstrapFirstIssue: async () => {
+          bootstrapCalled = true;
+          return { status: "started", issue: 9, branch: "issue-9" };
+        },
+        runLinearSlice: async (options, sliceDeps) => {
+          await sliceDeps!.runPhase({
+            phase: "review-pr",
+            branch: options.branch,
+            projectPath: options.projectPath,
+          });
+          return sliceSuccess(9, 41);
+        },
+        runPhase: async (options) =>
+          ({
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: reviewHandoff(41),
+          }) satisfies RunPhaseResult,
+        runMergeGate: async () => ({ status: "auto-merge-queued" }),
+        waitForMergedPr: async () => {},
+        runNext: async () => ({ status: QUEUE_EMPTY }),
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(bootstrapCalled).toBe(true);
+    expect(result).toEqual({ status: "queue-empty", slicesCompleted: 1 });
   });
 });
