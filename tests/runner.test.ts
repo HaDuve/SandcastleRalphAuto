@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -359,6 +359,51 @@ describe("runPhase", () => {
     );
 
     expect(runCalls[0]?.signal).toBe(controller.signal);
+  });
+
+  it("carries over host handoff when the agent writes no worktree handoff", async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
+    const promptFile = join(projectPath, "prompts", "review-pr.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# review-pr\n");
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
+
+    const deps = createMockDeps({
+      worktreePath,
+      runImpl: async () => {
+        const { unlink } = await import("node:fs/promises");
+        await unlink(
+          join(worktreePath, ".sandcastle-ralph/handoff/current.json"),
+        );
+        return {
+          commits: [],
+          completionSignal: PHASE_COMPLETE_SIGNAL,
+          iterations: [],
+          stdout: "",
+        };
+      },
+    });
+
+    const result = await runPhase(
+      {
+        phase: "review-pr",
+        branch: "issue-6-runner",
+        projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
+        promptFile,
+      },
+      deps,
+    );
+
+    expect(result.handoff).toEqual(sampleHandoff);
+    const hostRaw = await readFile(
+      join(stateRoot, PROJECT_ID, "handoff/current.json"),
+      "utf8",
+    );
+    expect(JSON.parse(hostRaw)).toEqual(sampleHandoff);
   });
 
   it("reads handoff from the worktree before sandbox teardown on a clean success path", async () => {

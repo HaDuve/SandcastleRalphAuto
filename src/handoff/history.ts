@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { HandoffSchema, type Handoff } from "./schema.js";
-import { resolveHandoffHistoryDir } from "./io.js";
+import { resolveHostHandoffHistoryDir } from "./hostStore.js";
 
 export type HistoryEntry = {
   pr: number;
@@ -13,10 +13,10 @@ export type HistoryEntry = {
 };
 
 export async function listHandoffHistory(
-  projectPath: string,
+  input: { stateRoot: string; projectId: string },
   limit = 20,
 ): Promise<HistoryEntry[]> {
-  const historyDir = resolveHandoffHistoryDir(projectPath);
+  const historyDir = resolveHostHandoffHistoryDir(input.stateRoot, input.projectId);
   let filenames: string[];
   try {
     filenames = await readdir(historyDir);

@@ -172,9 +172,14 @@ describe("dashboard server", () => {
     void project;
   });
 
-  it("returns archived handoff history", async () => {
-    const { rootDir, project } = await setupProjectRoot();
-    const historyDir = join(project.path, ".sandcastle-ralph", "handoff", "history");
+  it("returns archived handoff history from the host store", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const historyDir = join(
+      stateRoot,
+      project.remote,
+      "handoff",
+      "history",
+    );
     await mkdir(historyDir, { recursive: true });
     const handoff: Handoff = {
       project: project.remote,
@@ -195,7 +200,7 @@ describe("dashboard server", () => {
       JSON.stringify(handoff, null, 2) + "\n",
     );
 
-    const started = await startServer(rootDir);
+    const started = await startServer(rootDir, { stateRoot });
     server = started.server;
     const response = await fetch(`${started.baseUrl}/api/projects/portfolio/history`);
 
@@ -473,11 +478,15 @@ describe("dashboard server", () => {
           phase: "tdd",
           branch: options.branch,
           projectPath: options.projectPath,
+          projectId: options.projectId,
+          stateRoot: options.stateRoot,
         });
         await sliceDeps!.runPhase({
           phase: "review-pr",
           branch: options.branch,
           projectPath: options.projectPath,
+          projectId: options.projectId,
+          stateRoot: options.stateRoot,
         });
         return {
           status: "ready-for-next",

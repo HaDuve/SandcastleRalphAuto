@@ -276,9 +276,9 @@ describe("runNext", () => {
           }
           return "";
         },
-        archiveHandoff: async (dir) => {
+        archiveHandoff: async (projectId) => {
           archived = true;
-          expect(dir).toBe(fullProject.remote);
+          expect(projectId).toBe(fullProject.remote);
           return "archived";
         },
         writeActive: async (_projectId, active) => {

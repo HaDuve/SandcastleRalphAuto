@@ -182,7 +182,10 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         }
 
         if (req.method === "GET" && projectRoute.action === "history") {
-          const history = await listHistoryFn(project.path);
+          const history = await listHistoryFn({
+            stateRoot,
+            projectId: project.remote,
+          });
           sendJson(res, 200, { history });
           return;
         }

@@ -95,6 +95,8 @@ describe("createWorkerManager", () => {
           phase: "tdd",
           branch: options.branch,
           projectPath: options.projectPath,
+          projectId: options.projectId,
+          stateRoot: options.stateRoot,
         });
         return {
           status: "ready-for-next",

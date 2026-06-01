@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   HandoffError,
   archiveHostHandoff,
+  listHandoffHistory,
   readHostHandoff,
   writeHostHandoff,
   type Handoff,
@@ -159,5 +160,35 @@ describe("archiveHostHandoff", () => {
     );
     expect(error).toBeInstanceOf(HandoffError);
     expect((error as HandoffError).message).toMatch(/pr number/);
+  });
+});
+
+describe("listHandoffHistory", () => {
+  it("lists archived handoffs from state/<projectId>/handoff/history/", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "handoff-test-"));
+    const stateRoot = join(rootDir, "state");
+    const archivedHandoff: Handoff = {
+      ...sampleHandoff,
+      pr: 55,
+      phase: "merge",
+      acceptanceState: "done",
+      mergeReady: true,
+      nextSkill: "/next",
+    };
+
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: archivedHandoff });
+    await archiveHostHandoff(
+      { stateRoot, projectId: PROJECT_ID },
+      () => new Date("2026-06-01T15:00:00.000Z"),
+    );
+
+    const history = await listHandoffHistory({ stateRoot, projectId: PROJECT_ID });
+
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      pr: 55,
+      issue: sampleHandoff.issue,
+      branch: sampleHandoff.branch,
+    });
   });
 });
