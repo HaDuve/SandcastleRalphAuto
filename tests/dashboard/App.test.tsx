@@ -15,6 +15,28 @@ const portfolio = {
   sandbox: "none" as const,
 };
 
+const other = {
+  ...portfolio,
+  id: "other",
+  path: "/tmp/other",
+  remote: "HaDuve/Other",
+};
+
+function stubProjectsFetch(projects: typeof portfolio[]) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/api/projects") {
+      return new Response(JSON.stringify({ projects }), { status: 200 });
+    }
+    if (url.endsWith("/start") && init?.method === "POST") {
+      return new Response(JSON.stringify({ status: "started" }), { status: 202 });
+    }
+    if (url.endsWith("/pause") && init?.method === "POST") {
+      return new Response(JSON.stringify({ status: "paused" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+  });
+}
+
 describe("App", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -44,15 +66,7 @@ describe("App", () => {
   });
 
   it("starts a checked project through the API", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === "/api/projects") {
-        return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
-      }
-      if (url === "/api/projects/portfolio/start" && init?.method === "POST") {
-        return new Response(JSON.stringify({ status: "started" }), { status: 202 });
-      }
-      return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
-    });
+    const fetchMock = stubProjectsFetch([portfolio]);
     vi.stubGlobal("fetch", fetchMock);
 
     const user = userEvent.setup();
@@ -68,5 +82,35 @@ describe("App", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
+  });
+
+  it("pauses a checked project through the API", async () => {
+    const fetchMock = stubProjectsFetch([portfolio]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await user.click(screen.getByRole("button", { name: /pause portfolio/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/projects/portfolio/pause",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+  });
+
+  it("shows the last checked project in panel placeholders", async () => {
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await user.click(await screen.findByRole("checkbox", { name: /\bother\b/i }));
+
+    expect(screen.getByRole("region", { name: /queue/i })).toHaveTextContent("Project: other");
   });
 });

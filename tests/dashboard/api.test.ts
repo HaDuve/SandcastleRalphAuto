@@ -44,6 +44,17 @@ describe("dashboard API client", () => {
     await expect(startProject("portfolio")).resolves.toEqual({ status: "started" });
   });
 
+  it("reports a clear error when start returns already-running", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(JSON.stringify({ status: "already-running" }), { status: 409 });
+      }),
+    );
+
+    await expect(startProject("portfolio")).rejects.toThrow(/already running/i);
+  });
+
   it("pauses a project worker via POST", async () => {
     vi.stubGlobal(
       "fetch",

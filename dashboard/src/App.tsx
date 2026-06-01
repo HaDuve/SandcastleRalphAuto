@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchProjects, pauseProject, startProject } from "./api.js";
 import { DashboardLayout } from "./DashboardLayout.js";
 import { ProjectPicker } from "./ProjectPicker.js";
@@ -17,6 +17,7 @@ function PanelPlaceholder({ title, projectId }: { title: string; projectId: stri
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [controlError, setControlError] = useState<string | null>(null);
 
@@ -39,11 +40,6 @@ export function App() {
     };
   }, []);
 
-  const focusedProjectId = useMemo(() => {
-    const selected = projects.filter((project) => selectedIds.has(project.id));
-    return selected[0]?.id ?? null;
-  }, [projects, selectedIds]);
-
   const handleSelectedChange = useCallback((projectId: string, selected: boolean) => {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -53,6 +49,15 @@ export function App() {
         next.delete(projectId);
       }
       return next;
+    });
+    setFocusedProjectId((current) => {
+      if (selected) {
+        return projectId;
+      }
+      if (current === projectId) {
+        return null;
+      }
+      return current;
     });
   }, []);
 

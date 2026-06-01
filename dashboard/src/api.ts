@@ -1,11 +1,26 @@
 import type { Project } from "./types.js";
 
-async function parseJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed (${response.status})`);
+type ControlStatusBody = { status?: string; error?: string };
+
+function controlErrorMessage(body: ControlStatusBody, status: number): string {
+  if (body.error) {
+    return body.error;
   }
-  return (await response.json()) as T;
+  if (body.status === "already-running") {
+    return "Project worker is already running";
+  }
+  if (body.status === "not-running") {
+    return "Project worker is not running";
+  }
+  return `Request failed (${status})`;
+}
+
+async function parseJson<T>(response: Response): Promise<T> {
+  const body = (await response.json().catch(() => ({}))) as T & ControlStatusBody;
+  if (!response.ok) {
+    throw new Error(controlErrorMessage(body, response.status));
+  }
+  return body as T;
 }
 
 export async function fetchProjects(): Promise<Project[]> {

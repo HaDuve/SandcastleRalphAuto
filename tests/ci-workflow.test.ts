@@ -41,7 +41,7 @@ describe("CI workflow contract", () => {
     );
   });
 
-  it("installs node 22 and runs typecheck plus test", () => {
+  it("installs node 22 and runs typecheck, test, and dashboard build", () => {
     const content = workflowContent();
     expect(content).toContain("actions/setup-node@v4");
     expect(content).toContain("node-version: 22");
@@ -49,6 +49,7 @@ describe("CI workflow contract", () => {
     expect(content).toContain("npm ci");
     expect(content).toContain("npm run typecheck");
     expect(content).toContain("npm test");
+    expect(content).toContain("npm run build:dashboard");
   });
 
   it("fails the job when typecheck or test steps exit non-zero", () => {
