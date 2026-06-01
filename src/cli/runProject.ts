@@ -636,7 +636,6 @@ async function resolveLoopStart(
   const readActiveFn = deps.readActive ?? readActive;
   const active = await readActiveFn(project.remote, stateRoot);
   if (active?.status === "blocked") {
-    const writeActiveFn = deps.writeActive ?? writeActive;
     const reconciled = await tryReconcileSchemaBlockedHandoff({
       projectPath,
       branch: branchForIssue(active.issue),
@@ -645,7 +644,7 @@ async function resolveLoopStart(
       active,
     });
     if (reconciled !== null) {
-      await writeActiveFn(project.remote, reconciled, stateRoot);
+      await writeActive(project.remote, reconciled, stateRoot);
       if (!isRunnablePhase(reconciled.phase)) {
         return {
           status: "blocked",
