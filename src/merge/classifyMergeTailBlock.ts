@@ -12,9 +12,12 @@ const BABYSITABLE_KINDS: ReadonlySet<MergeGateBlockKind> = new Set([
 
 export function classifyMergeTailBlock(
   blocked: Pick<RunMergeGateBlocked, "kind">,
-  handoff: Pick<Handoff, "nextSkill">,
+  handoff: Pick<Handoff, "nextSkill" | "phase">,
 ): MergeTailBlockClassification {
-  if (handoff.nextSkill === "/review-tdd") {
+  if (
+    handoff.phase === "review-pr" &&
+    handoff.nextSkill === "/review-tdd"
+  ) {
     return "human";
   }
   if (BABYSITABLE_KINDS.has(blocked.kind)) {

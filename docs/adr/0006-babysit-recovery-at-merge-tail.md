@@ -20,7 +20,7 @@ pipeline is `… → /review-tdd → /babysit (if needed) → /merge`.
    when the merge gate returns `blocked` for a **babysit-able** reason.
 2. **Classify blocked reasons (deep module, pure).** Babysit-able = required CI red, PR not
    mergeable / conflicts, unresolved review comments. **Human** = no clean `Approve` verdict,
-   review findings needing re-implementation (route to `/review-tdd`, not babysit), or
+   review-pr still routing to `/review-tdd` (linear path — not merge tail), or
    logical blockers. Human reasons skip babysit and block immediately.
 3. **`/babysit` is an agent phase.** A cold `cursor("auto")` run like the other phases —
    reads the handoff + GitHub, can push commits, uses `maxIterations > 1` (it watches CI in

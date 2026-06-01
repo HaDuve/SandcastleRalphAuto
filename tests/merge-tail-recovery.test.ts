@@ -432,7 +432,7 @@ describe("merge-tail recovery", () => {
     expect(result.status).toBe("blocked");
   });
 
-  it("does not run babysit for human merge-tail blocks", async () => {
+  it("does not run babysit when merge gate handoff is still on review-pr → review-tdd", async () => {
     const linearCalls: RunLinearSliceOptions[] = [];
     const { deps } = mergeTailDeps({
       runLinearSlice: async (options, sliceDeps) => {
@@ -451,8 +451,18 @@ describe("merge-tail recovery", () => {
         branch: "issue-10",
         completionSignal: PHASE_COMPLETE_SIGNAL,
         handoff: {
-          ...mergeReadyHandoff(),
+          project: "HaDuve/Portfolio",
+          issue: 10,
+          branch: "issue-10",
+          pr: 42,
+          phase: "review-pr",
+          acceptanceState: "done",
+          verdict: "request-changes",
+          blockers: ["ci still red"],
+          mergeReady: false,
           nextSkill: "/review-tdd",
+          startedAt: "2026-06-01T00:00:00.000Z",
+          endedAt: "2026-06-01T01:00:00.000Z",
         },
       }),
       runMergeGate: async () => ({

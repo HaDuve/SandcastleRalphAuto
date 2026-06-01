@@ -7,6 +7,11 @@ import {
 } from "../runner/index.js";
 import { type ActiveState } from "../state/index.js";
 import { getNextOrchestratorPhase, isCanonicalPhase } from "./sequence.js";
+import {
+  isReviewPrRequestChangesToReviewTdd,
+} from "../handoff/reviewPrRoute.js";
+
+export { isReviewPrRequestChangesToReviewTdd } from "../handoff/reviewPrRoute.js";
 
 export type AdvanceSliceInput = {
   issue: number;
@@ -68,7 +73,12 @@ function advanceFailureReason(
   if (handoff.acceptanceState !== "done") {
     return `Handoff acceptanceState is ${handoff.acceptanceState}, expected done`;
   }
-  if (handoff.blockers.length > 0) {
+  if (
+    handoff.blockers.length > 0 &&
+    !(
+      phase === "review-pr" && isReviewPrRequestChangesToReviewTdd(handoff)
+    )
+  ) {
     return `Handoff has blockers: ${handoff.blockers.join("; ")}`;
   }
   const expected = expectedNextSkill(phase);

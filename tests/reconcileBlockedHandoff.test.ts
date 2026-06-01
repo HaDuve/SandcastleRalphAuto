@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   isHandoffSchemaBlockReason,
+  tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
 } from "../src/handoff/reconcileBlockedHandoff.js";
 import { readHostHandoff } from "../src/handoff/hostStore.js";
@@ -125,5 +126,68 @@ describe("reconcileBlockedHandoff", () => {
     });
 
     expect(reconciled).toBeNull();
+  });
+
+  it("resumes at review-tdd when blocked only for review-pr findings in blockers", async () => {
+    const { projectPath, stateRoot, active } =
+      await setupWorktreeHandoff("done");
+    const branch = active.branch;
+    const handoffDir = join(
+      projectPath,
+      ".sandcastle",
+      "worktrees",
+      branch,
+      ".sandcastle-ralph",
+      "handoff",
+    );
+    await writeFile(
+      join(handoffDir, "current.json"),
+      JSON.stringify(
+        {
+          project: "HaDuve/FantasyEconomySim",
+          issue: 29,
+          branch,
+          phase: "review-pr",
+          acceptanceState: "done",
+          verdict: "request-changes",
+          blockers: ["Required check lint failed"],
+          mergeReady: false,
+          nextSkill: "/review-tdd",
+          pr: 55,
+          startedAt: "2026-06-01T00:00:00.000Z",
+          endedAt: "2026-06-01T01:00:00.000Z",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const reviewPrActive: ActiveState = {
+      issue: 29,
+      phase: "review-pr",
+      branch,
+      pr: 55,
+      status: "blocked",
+      reason: "Handoff has blockers: Required check lint failed",
+      resumeSkill: "/review-pr",
+      startedAt: active.startedAt,
+    };
+
+    const reconciled = await tryReconcileReviewPrBlockedHandoff({
+      projectPath,
+      branch,
+      stateRoot,
+      projectId: "proj",
+      active: reviewPrActive,
+    });
+
+    expect(reconciled).toEqual({
+      issue: 29,
+      phase: "review-tdd",
+      branch,
+      pr: 55,
+      status: "active",
+      startedAt: reviewPrActive.startedAt,
+    });
   });
 });

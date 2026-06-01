@@ -8,8 +8,11 @@ function blocked(kind: MergeGateBlockKind): Pick<RunMergeGateBlocked, "kind"> {
   return { kind };
 }
 
-function handoff(nextSkill: string): Pick<Handoff, "nextSkill"> {
-  return { nextSkill };
+function handoff(
+  nextSkill: string,
+  phase: Handoff["phase"] = "merge",
+): Pick<Handoff, "nextSkill" | "phase"> {
+  return { nextSkill, phase };
 }
 
 describe("classifyMergeTailBlock", () => {
@@ -35,12 +38,21 @@ describe("classifyMergeTailBlock", () => {
     );
   });
 
-  it("classifies review-tdd routing as human even for CI failure", () => {
+  it("classifies review-pr route to review-tdd as human even for CI failure", () => {
     expect(
       classifyMergeTailBlock(
         blocked("required-checks-failed"),
-        handoff("/review-tdd"),
+        handoff("/review-tdd", "review-pr"),
       ),
     ).toBe("human");
+  });
+
+  it("classifies CI failure as babysit-able after review-tdd (merge handoff)", () => {
+    expect(
+      classifyMergeTailBlock(
+        blocked("required-checks-failed"),
+        handoff("/merge", "review-tdd"),
+      ),
+    ).toBe("babysit-able");
   });
 });

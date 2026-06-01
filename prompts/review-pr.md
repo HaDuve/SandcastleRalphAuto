@@ -29,7 +29,7 @@ Required JSON (host validates with Zod after this phase):
 - `nextSkill` — for this phase when done: `"/review-tdd"`
 - `startedAt` / `endedAt` — ISO-8601 timestamps
 
-Example when this phase is complete:
+Example when this phase is complete (**Request changes** — findings go in `blockers`; host still advances to `/review-tdd`):
 
 ```json
 {
@@ -38,7 +38,8 @@ Example when this phase is complete:
   "branch": "issue-29",
   "phase": "review-pr",
   "acceptanceState": "done",
-  "blockers": [],
+  "verdict": "request-changes",
+  "blockers": ["Missing test for edge case X"],
   "mergeReady": false,
   "nextSkill": "/review-tdd",
   "startedAt": "2026-06-01T00:00:00.000Z",

@@ -1,9 +1,13 @@
 import { join } from "node:path";
 import { parseRunnablePhase, type RunnablePhase } from "../prompts/phases.js";
 import type { ActiveState } from "../state/schema.js";
-import { writeHostHandoff } from "./hostStore.js";
+import { readHostHandoff, writeHostHandoff } from "./hostStore.js";
 import { readHandoff, writeHandoff } from "./io.js";
 import type { Handoff } from "./schema.js";
+import {
+  isReviewPrBlockersStallReason,
+  isReviewPrRequestChangesToReviewTdd,
+} from "./reviewPrRoute.js";
 
 export function isHandoffSchemaBlockReason(reason: string | undefined): boolean {
   return reason !== undefined && reason.includes("Invalid handoff schema");
@@ -100,4 +104,57 @@ export async function tryReconcileSchemaBlockedHandoff(input: {
   });
 
   return next;
+}
+
+/**
+ * When review-pr populated `blockers` with findings but routed to `/review-tdd`,
+ * unblock the slice on Start so the linear pipeline can continue.
+ */
+export async function tryReconcileReviewPrBlockedHandoff(input: {
+  stateRoot: string;
+  projectId: string;
+  projectPath: string;
+  branch: string;
+  active: ActiveState;
+}): Promise<ActiveState | null> {
+  if (
+    input.active.status !== "blocked" ||
+    !isReviewPrBlockersStallReason(input.active.reason, input.active.phase)
+  ) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff | undefined;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isReviewPrRequestChangesToReviewTdd(handoff)) {
+    return null;
+  }
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: handoff.pr ?? input.active.pr,
+    phase: "review-tdd",
+    status: "active",
+    startedAt: input.active.startedAt,
+  };
 }

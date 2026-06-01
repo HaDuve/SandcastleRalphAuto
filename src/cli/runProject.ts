@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
   HandoffError,
   readHostHandoff,
+  tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   type Handoff,
 } from "../handoff/index.js";
@@ -341,11 +342,9 @@ export async function resolveHandoffForMergeGate(
   reviewHandoff: Handoff | undefined,
   readHostHandoffFn: typeof readHostHandoff = readHostHandoff,
 ): Promise<Handoff | undefined> {
-  if (reviewHandoff !== undefined) {
-    return reviewHandoff;
-  }
+  let hostHandoff: Handoff | undefined;
   try {
-    return await readHostHandoffFn({
+    hostHandoff = await readHostHandoffFn({
       stateRoot,
       projectId: project.remote,
     });
@@ -354,10 +353,21 @@ export async function resolveHandoffForMergeGate(
       error instanceof HandoffError &&
       error.message.startsWith("Handoff not found:")
     ) {
-      return undefined;
+      hostHandoff = undefined;
+    } else {
+      throw error;
     }
-    throw error;
   }
+
+  if (hostHandoff !== undefined && hostHandoff.phase !== "review-pr") {
+    return hostHandoff;
+  }
+
+  if (reviewHandoff !== undefined) {
+    return reviewHandoff;
+  }
+
+  return hostHandoff;
 }
 
 type ApplyMergeGateResult =
@@ -386,9 +396,14 @@ async function applyMergeGate(
   ctx: ApplyMergeGateContext,
 ): Promise<ApplyMergeGateResult> {
   const { project, slice, stateRoot, deps, gh } = ctx;
-  let reviewHandoff = ctx.reviewHandoff;
+  const gateHandoff = await resolveHandoffForMergeGate(
+    project,
+    stateRoot,
+    ctx.reviewHandoff,
+    deps.readHostHandoff,
+  );
 
-  if (!reviewHandoff || slice.pr === undefined) {
+  if (!gateHandoff || slice.pr === undefined) {
     const reason = "Missing review handoff or PR for merge gate";
     await writeActive(
       project.remote,
@@ -416,7 +431,7 @@ async function applyMergeGate(
 
   const mergeResult = await (deps.runMergeGate ?? runMergeGate)(
     {
-      handoff: reviewHandoff,
+      handoff: gateHandoff,
       project,
       pr: slice.pr,
     },
@@ -435,7 +450,7 @@ async function applyMergeGate(
   const shouldAttemptBabysit =
     mergeResult.status === "blocked" &&
     !ctx.babysitAttempted &&
-    classifyMergeTailBlock(mergeResult, reviewHandoff) === "babysit-able";
+    classifyMergeTailBlock(mergeResult, gateHandoff) === "babysit-able";
 
   if (active && !shouldAttemptBabysit) {
     await writeActive(project.remote, active, stateRoot);
@@ -461,7 +476,7 @@ async function applyMergeGate(
       return { source: "recovery-slice", result: recovery };
     }
 
-    reviewHandoff = await resolveHandoffForMergeGate(
+    const refreshedHandoff = await resolveHandoffForMergeGate(
       project,
       stateRoot,
       ctx.sliceRunner.getReviewHandoff(),
@@ -470,7 +485,7 @@ async function applyMergeGate(
 
     return applyMergeGate({
       ...ctx,
-      reviewHandoff,
+      reviewHandoff: refreshedHandoff,
       babysitAttempted: true,
     });
   }
@@ -636,13 +651,21 @@ async function resolveLoopStart(
   const readActiveFn = deps.readActive ?? readActive;
   const active = await readActiveFn(project.remote, stateRoot);
   if (active?.status === "blocked") {
-    const reconciled = await tryReconcileSchemaBlockedHandoff({
-      projectPath,
-      branch: branchForIssue(active.issue),
-      stateRoot,
-      projectId: project.remote,
-      active,
-    });
+    const reconciled =
+      (await tryReconcileSchemaBlockedHandoff({
+        projectPath,
+        branch: branchForIssue(active.issue),
+        stateRoot,
+        projectId: project.remote,
+        active,
+      })) ??
+      (await tryReconcileReviewPrBlockedHandoff({
+        projectPath,
+        branch: branchForIssue(active.issue),
+        stateRoot,
+        projectId: project.remote,
+        active,
+      }));
     if (reconciled !== null) {
       await writeActive(project.remote, reconciled, stateRoot);
       if (!isRunnablePhase(reconciled.phase)) {

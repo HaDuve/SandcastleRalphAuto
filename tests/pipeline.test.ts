@@ -74,6 +74,30 @@ describe("advanceSlice", () => {
     branch: "issue-7-pipeline",
   };
 
+  it("advances review-pr to review-tdd when request-changes lists findings in blockers", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "review-pr",
+      result: phaseResult("review-pr", "/review-tdd", {
+        pr: 99,
+        verdict: "request-changes",
+        blockers: ["CI failing on lint"],
+      }),
+    });
+
+    expect(outcome).toEqual({
+      ok: true,
+      handoffToNext: false,
+      active: {
+        issue: 7,
+        phase: "review-tdd",
+        branch: "issue-7-pipeline",
+        pr: 99,
+        status: "active",
+      },
+    });
+  });
+
   it("advances review-pr to review-tdd (never babysit)", () => {
     const outcome = advanceSlice({
       ...base,

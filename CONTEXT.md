@@ -13,7 +13,7 @@ One step of the canonical pipeline — `tdd`, `create-pr`, `review-pr`, `review-
 _Avoid_: step, stage
 
 **Merge gate**:
-The host-side check that runs after the `merge` phase — verifies a clean `Approve` verdict, no open blockers, and green required checks, then `gh pr merge --squash --auto`. A `blocked` merge gate is **babysit-able** (CI red / not-mergeable / unresolved comments → run `/babysit`, retry once) or **human** (no Approve, review findings, logical blockers → stop for operator).
+The host-side check that runs after the `merge` phase — verifies a clean `Approve` verdict, no open blockers, and green required checks, then `gh pr merge --squash --auto`. Uses the latest host handoff after `/review-tdd`, not a stale review-pr snapshot (ADR 0009). A `blocked` merge gate is **babysit-able** (CI red / not-mergeable / unresolved comments → run `/babysit`, retry once) or **human** (no Approve, review-pr still routing to `/review-tdd`, logical blockers → stop for operator). Red CI after review-tdd still runs merge and may trigger babysit.
 _Avoid_: merge phase (the agent `/merge` run is distinct from the host gate)
 
 **Skill**:
