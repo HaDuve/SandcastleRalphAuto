@@ -13,6 +13,7 @@ Pick `ready-for-agent` issue → `/tdd` → `/create-pr` → `/review-pr` → `/
 - [`CONTEXT.md`](./CONTEXT.md) — glossary
 - [`docs/PRD.md`](./docs/PRD.md) — decisions, pipeline, milestones
 - [`docs/adr/`](./docs/adr/) — key decision records
+- Phase prompts live in [`prompts/`](./prompts/); after editing `~/.cursor/skills/*/SKILL.md`, run `npm run sync-skills` to refresh committed snapshots.
 
 ## Status
 
