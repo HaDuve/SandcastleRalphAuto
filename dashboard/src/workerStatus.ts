@@ -36,7 +36,14 @@ function normalizeCurrent(current: WorkerState | WorkerStatus | undefined): Work
   return current;
 }
 
-function runOutcomeFromWorkerStopped(reason: string): RunOutcome {
+function runOutcomeFromWorkerStopped(reason: string | undefined): RunOutcome {
+  if (!reason) {
+    return {
+      outcome: "error",
+      reason: "Worker stopped without a reason",
+      stoppedAt: new Date().toISOString(),
+    };
+  }
   if (isTerminalOutcome(reason)) {
     return {
       outcome: reason,
@@ -71,7 +78,7 @@ export function applyWorkerEvent(
     case "worker-stopped":
       return {
         status: "idle",
-        lastOutcome: runOutcomeFromWorkerStopped(event.reason ?? "error"),
+        lastOutcome: runOutcomeFromWorkerStopped(event.reason),
       };
     default:
       return state.status === "unknown" ? defaultWorkerState() : state;

@@ -18,7 +18,3 @@ export function workerStatesFromProjects(
   return states;
 }
 
-export function firstSelectedProjectId(selectedIds: ReadonlySet<string>): string | null {
-  const [first] = selectedIds;
-  return first ?? null;
-}

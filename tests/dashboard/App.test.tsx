@@ -3,7 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../dashboard/src/App.js";
 import { HIDDEN_IDS_STORAGE_KEY } from "../../dashboard/src/hiddenProjects.js";
-import { SELECTED_IDS_STORAGE_KEY } from "../../dashboard/src/selectedProjects.js";
+import {
+  FOCUSED_PROJECT_ID_STORAGE_KEY,
+  SELECTED_IDS_STORAGE_KEY,
+} from "../../dashboard/src/selectedProjects.js";
 
 const portfolio = {
   id: "portfolio",
@@ -600,6 +603,7 @@ describe("App", () => {
     vi.stubGlobal("EventSource", SilentEventSource as unknown as typeof EventSource);
 
     localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/projects") {
         return new Response(
@@ -607,8 +611,13 @@ describe("App", () => {
             projects: [
               {
                 ...portfolio,
-                workerStatus: "running",
-                lastRunOutcome: null,
+                workerStatus: "idle",
+                lastRunOutcome: {
+                  outcome: "blocked",
+                  reason: "CI failed",
+                  phase: "review-pr",
+                  stoppedAt: "2026-06-01T12:00:00.000Z",
+                },
                 active: { issue: 11, phase: "tdd", status: "active" },
               },
             ],
@@ -648,8 +657,8 @@ describe("App", () => {
 
     const checkbox = await screen.findByRole("checkbox", { name: /portfolio/i });
     expect(checkbox).toBeChecked();
-    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    expect(screen.getByText(/CI failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/review-pr/i)).toBeInTheDocument();
     expect(await screen.findByText(/#10/)).toBeInTheDocument();
     expect(screen.getByText(/#11/)).toBeInTheDocument();
 

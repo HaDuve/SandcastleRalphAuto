@@ -74,6 +74,7 @@ body {
 
 .queue-panel,
 .active-panel,
+.run-outcome-panel,
 .history-panel {
   display: flex;
   flex-direction: column;
@@ -107,27 +108,32 @@ body {
 .queue-item-reason,
 .queue-empty,
 .active-idle,
+.run-outcome-idle,
 .history-empty {
   color: #9aa7b5;
 }
 
-.active-details {
+.active-details,
+.run-outcome-details {
   display: grid;
   gap: 0.5rem;
 }
 
-.active-details div {
+.active-details div,
+.run-outcome-details div {
   display: grid;
   grid-template-columns: 5rem 1fr;
   gap: 0.5rem;
 }
 
-.active-details dt {
+.active-details dt,
+.run-outcome-details dt {
   color: #9aa7b5;
   font-size: 0.875rem;
 }
 
-.active-details dd {
+.active-details dd,
+.run-outcome-details dd {
   margin: 0;
 }
 

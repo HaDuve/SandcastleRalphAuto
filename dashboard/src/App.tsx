@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   fetchActive,
   fetchHistory,
@@ -17,15 +18,16 @@ import { DashboardLayout } from "./DashboardLayout.js";
 import { HistoryPanel } from "./HistoryPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
+import { RunOutcomePanel } from "./RunOutcomePanel.js";
 import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
 import { pruneHiddenIds, readHiddenIds, writeHiddenIds } from "./hiddenProjects.js";
-import {
-  firstSelectedProjectId,
-  workerStatesFromProjects,
-} from "./rehydrateProjects.js";
+import { workerStatesFromProjects } from "./rehydrateProjects.js";
 import {
   pruneSelectedIds,
+  readFocusedProjectId,
   readSelectedIds,
+  resolveFocusedProjectId,
+  writeFocusedProjectId,
   writeSelectedIds,
 } from "./selectedProjects.js";
 import { applyWorkerEvent, canHideProject, type WorkerState } from "./workerStatus.js";
@@ -55,6 +57,8 @@ export function App() {
   const focusedProjectIdRef = useRef(focusedProjectId);
 
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
+  const focusedLastOutcome =
+    focusedProjectId === null ? null : (workerStates[focusedProjectId]?.lastOutcome ?? null);
   const visibleProjects = projects.filter((project) => !hiddenIds.has(project.id));
 
   useEffect(() => {
@@ -77,15 +81,20 @@ export function App() {
             writeHiddenIds(next);
             return next;
           });
-          setSelectedIds((current) => {
-            const nextSelectedIds = pruneSelectedIds(current, knownProjectIds);
-            if (nextSelectedIds.size !== current.size) {
-              writeSelectedIds(nextSelectedIds);
-            }
-            setWorkerStates(workerStatesFromProjects(loaded, nextSelectedIds));
-            setFocusedProjectId((focused) => focused ?? firstSelectedProjectId(nextSelectedIds));
-            return nextSelectedIds;
+          let nextSelectedIds!: Set<string>;
+          flushSync(() => {
+            setSelectedIds((current) => {
+              nextSelectedIds = pruneSelectedIds(current, knownProjectIds);
+              if (nextSelectedIds.size !== current.size) {
+                writeSelectedIds(nextSelectedIds);
+              }
+              return nextSelectedIds;
+            });
           });
+          setWorkerStates(workerStatesFromProjects(loaded, nextSelectedIds));
+          setFocusedProjectId(
+            resolveFocusedProjectId(nextSelectedIds, readFocusedProjectId()),
+          );
         }
       })
       .catch((error: unknown) => {
@@ -197,7 +206,11 @@ export function App() {
       writeSelectedIds(next);
       return next;
     });
-    setFocusedProjectId((current) => (current === projectId ? null : current));
+    setFocusedProjectId((current) => {
+      const next = current === projectId ? null : current;
+      writeFocusedProjectId(next);
+      return next;
+    });
   }, [workerStates]);
 
   const handleShowAll = useCallback(() => {
@@ -229,13 +242,9 @@ export function App() {
       return next;
     });
     setFocusedProjectId((current) => {
-      if (selected) {
-        return projectId;
-      }
-      if (current === projectId) {
-        return null;
-      }
-      return current;
+      const next = selected ? projectId : current === projectId ? null : current;
+      writeFocusedProjectId(next);
+      return next;
     });
   }, [projects]);
 
@@ -338,7 +347,9 @@ export function App() {
             onShowAll={handleShowAll}
           />
         }
-        runOutcome={<PanelPlaceholder title="Run outcome" projectId={focusedProjectId} />}
+        runOutcome={
+          <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
+        }
         phaseStepper={<PanelPlaceholder title="Phase stepper" projectId={focusedProjectId} />}
         active={<ActivePanel project={focusedProject} active={active} />}
         log={<PanelPlaceholder title="Log" projectId={focusedProjectId} />}
