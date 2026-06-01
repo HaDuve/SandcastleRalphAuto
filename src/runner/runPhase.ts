@@ -1,4 +1,11 @@
-import { run, cursor, type RunOptions, type RunResult } from "@ai-hero/sandcastle";
+import {
+  createSandbox,
+  cursor,
+  type CreateSandboxOptions,
+  type Sandbox,
+  type SandboxRunOptions,
+  type SandboxRunResult,
+} from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,10 +13,20 @@ import { readHandoff, type Handoff } from "../handoff/index.js";
 import { type CanonicalPhase } from "../prompts/phases.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
+
+/** Default Ralph loop cap for `/tdd` until registry config exists (PRD §4). */
 export const DEFAULT_TDD_MAX_ITERATIONS = 10;
 
-export type SandcastleRunOptions = RunOptions;
-export type SandcastleRunResult = RunResult;
+/**
+ * Sandcastle 0.7.0 cursor provider emits `--print --force` via `Sandbox.run()`
+ * but not `--trust`. Operator must trust the project once before AFK use.
+ */
+export const CURSOR_TRUST_SETUP =
+  "Run `cursor-agent --trust` in the project directory once before AFK pipeline use.";
+
+export type SandcastleCreateSandboxOptions = CreateSandboxOptions;
+export type SandcastleSandboxRunOptions = SandboxRunOptions;
+export type SandcastleSandboxRunResult = SandboxRunResult;
 
 export type RunPhaseOptions = {
   phase: CanonicalPhase;
@@ -19,7 +36,7 @@ export type RunPhaseOptions = {
   orchestratorRoot?: string;
   tddMaxIterations?: number;
   signal?: AbortSignal;
-  sandbox?: RunOptions["sandbox"];
+  sandbox?: CreateSandboxOptions["sandbox"];
   name?: string;
 };
 
@@ -31,8 +48,15 @@ export type RunPhaseResult = {
   handoff: Handoff;
 };
 
+export type SandcastleSandboxHandle = Pick<
+  Sandbox,
+  "branch" | "worktreePath" | "run" | "close"
+>;
+
 export type RunPhaseDeps = {
-  run: (options: SandcastleRunOptions) => Promise<SandcastleRunResult>;
+  createSandbox: (
+    options: SandcastleCreateSandboxOptions,
+  ) => Promise<SandcastleSandboxHandle>;
   cursor: typeof cursor;
   noSandbox: typeof noSandbox;
   readHandoff: typeof readHandoff;
@@ -57,15 +81,8 @@ function resolveMaxIterations(
   return phase === "tdd" ? tddMaxIterations : 1;
 }
 
-function resolveHandoffRoot(
-  projectPath: string,
-  runResult: SandcastleRunResult,
-): string {
-  return runResult.preservedWorktreePath ?? projectPath;
-}
-
 const defaultDeps = (): RunPhaseDeps => ({
-  run,
+  createSandbox,
   cursor,
   noSandbox,
   readHandoff,
@@ -82,32 +99,37 @@ export async function runPhase(
     orchestratorRoot,
     options.promptFile,
   );
-  const sandbox = options.sandbox ?? deps.noSandbox();
+  const sandboxProvider = options.sandbox ?? deps.noSandbox();
 
-  const runResult = await deps.run({
-    agent: deps.cursor("auto"),
-    sandbox,
+  const sandbox = await deps.createSandbox({
+    branch: options.branch,
     cwd: options.projectPath,
-    promptFile,
-    branchStrategy: { type: "branch", branch: options.branch },
-    maxIterations: resolveMaxIterations(
-      options.phase,
-      options.tddMaxIterations ?? DEFAULT_TDD_MAX_ITERATIONS,
-    ),
-    completionSignal: PHASE_COMPLETE_SIGNAL,
-    signal: options.signal,
-    name: options.name,
+    sandbox: sandboxProvider,
   });
 
-  const handoff = await deps.readHandoff(
-    resolveHandoffRoot(options.projectPath, runResult),
-  );
+  try {
+    const runResult = await sandbox.run({
+      agent: deps.cursor("auto"),
+      promptFile,
+      maxIterations: resolveMaxIterations(
+        options.phase,
+        options.tddMaxIterations ?? DEFAULT_TDD_MAX_ITERATIONS,
+      ),
+      completionSignal: PHASE_COMPLETE_SIGNAL,
+      signal: options.signal,
+      name: options.name,
+    });
 
-  return {
-    commits: runResult.commits,
-    branch: runResult.branch,
-    completionSignal: runResult.completionSignal,
-    logFilePath: runResult.logFilePath,
-    handoff,
-  };
+    const handoff = await deps.readHandoff(sandbox.worktreePath);
+
+    return {
+      commits: runResult.commits,
+      branch: sandbox.branch,
+      completionSignal: runResult.completionSignal,
+      logFilePath: runResult.logFilePath,
+      handoff,
+    };
+  } finally {
+    await sandbox.close();
+  }
 }

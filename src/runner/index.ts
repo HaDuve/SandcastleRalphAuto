@@ -1,5 +1,6 @@
 /** Sandcastle run invoker — one cold agent per phase. */
 export {
+  CURSOR_TRUST_SETUP,
   DEFAULT_TDD_MAX_ITERATIONS,
   PHASE_COMPLETE_SIGNAL,
   resolveOrchestratorRoot,
@@ -7,6 +8,8 @@ export {
   type RunPhaseDeps,
   type RunPhaseOptions,
   type RunPhaseResult,
-  type SandcastleRunOptions,
-  type SandcastleRunResult,
+  type SandcastleCreateSandboxOptions,
+  type SandcastleSandboxHandle,
+  type SandcastleSandboxRunOptions,
+  type SandcastleSandboxRunResult,
 } from "./runPhase.js";

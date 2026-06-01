@@ -4,13 +4,15 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Handoff, writeHandoff } from "../src/handoff/index.js";
 import {
+  CURSOR_TRUST_SETUP,
   DEFAULT_TDD_MAX_ITERATIONS,
   PHASE_COMPLETE_SIGNAL,
   resolveOrchestratorRoot,
   runPhase,
   type RunPhaseDeps,
-  type SandcastleRunOptions,
-  type SandcastleRunResult,
+  type SandcastleCreateSandboxOptions,
+  type SandcastleSandboxRunOptions,
+  type SandcastleSandboxRunResult,
 } from "../src/runner/index.js";
 
 const sampleHandoff: Handoff = {
@@ -36,11 +38,36 @@ function mockSandbox(name = "none"): ReturnType<RunPhaseDeps["noSandbox"]> {
   >;
 }
 
+type MockSandboxConfig = {
+  worktreePath: string;
+  branch?: string;
+  runImpl: (
+    options: SandcastleSandboxRunOptions,
+  ) => Promise<SandcastleSandboxRunResult>;
+  onClose?: () => void;
+};
+
 function createMockDeps(
-  runImpl: (options: SandcastleRunOptions) => Promise<SandcastleRunResult>,
+  config: MockSandboxConfig,
+  createSandboxCalls: SandcastleCreateSandboxOptions[] = [],
+  runCalls: SandcastleSandboxRunOptions[] = [],
 ): RunPhaseDeps {
   return {
-    run: runImpl,
+    createSandbox: async (options) => {
+      createSandboxCalls.push(options);
+      return {
+        branch: config.branch ?? options.branch,
+        worktreePath: config.worktreePath,
+        run: async (runOptions) => {
+          runCalls.push(runOptions);
+          return config.runImpl(runOptions);
+        },
+        close: async () => {
+          config.onClose?.();
+          return {};
+        },
+      };
+    },
     cursor: () => mockAgent(),
     noSandbox: () => mockSandbox(),
     readHandoff: async (rootDir) => {
@@ -51,25 +78,30 @@ function createMockDeps(
 }
 
 describe("runPhase", () => {
-  it("invokes Sandcastle run with cursor auto, noSandbox, branch strategy, and phase completion signal", async () => {
-    const runCalls: SandcastleRunOptions[] = [];
+  it("invokes createSandbox and sandbox.run with cursor auto, noSandbox, and phase completion signal", async () => {
+    const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
+    const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, projectPath);
+    await writeHandoff(sampleHandoff, worktreePath);
 
-    const deps = createMockDeps(async (options) => {
-      runCalls.push(options);
-      return {
-        commits: [{ sha: "abc123" }],
-        branch: "issue-6-runner",
-        completionSignal: PHASE_COMPLETE_SIGNAL,
-        logFilePath: join(projectPath, "run.log"),
-        iterations: [],
-        stdout: "",
-      };
-    });
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [{ sha: "abc123" }],
+          completionSignal: PHASE_COMPLETE_SIGNAL,
+          logFilePath: join(projectPath, "run.log"),
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      createSandboxCalls,
+      runCalls,
+    );
 
     await runPhase(
       {
@@ -81,36 +113,76 @@ describe("runPhase", () => {
       deps,
     );
 
+    expect(createSandboxCalls).toEqual([
+      {
+        branch: "issue-6-runner",
+        cwd: projectPath,
+        sandbox: mockSandbox(),
+      },
+    ]);
     expect(runCalls).toHaveLength(1);
     expect(runCalls[0]?.agent).toEqual(mockAgent());
-    expect(runCalls[0]?.sandbox).toEqual(mockSandbox());
-    expect(runCalls[0]?.branchStrategy).toEqual({
-      type: "branch",
-      branch: "issue-6-runner",
-    });
     expect(runCalls[0]?.completionSignal).toBe(PHASE_COMPLETE_SIGNAL);
-    expect(runCalls[0]?.cwd).toBe(projectPath);
     expect(runCalls[0]?.promptFile).toBe(promptFile);
     expect(runCalls[0]?.maxIterations).toBe(1);
   });
 
-  it("uses tddMaxIterations for tdd and single-shot for other phases", async () => {
-    const runCalls: SandcastleRunOptions[] = [];
+  it("resolves promptFile from orchestrator prompts when not overridden", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    await writeHandoff(sampleHandoff, worktreePath);
+    const orchestratorRoot = resolveOrchestratorRoot();
+
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [],
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      [],
+      runCalls,
+    );
+
+    await runPhase(
+      {
+        phase: "review-pr",
+        branch: "issue-6-runner",
+        projectPath,
+        orchestratorRoot,
+      },
+      deps,
+    );
+
+    expect(runCalls[0]?.promptFile).toBe(
+      join(orchestratorRoot, "prompts", "review-pr.md"),
+    );
+  });
+
+  it("uses tddMaxIterations for tdd and single-shot for other phases", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
     const promptFile = join(projectPath, "prompts", "tdd.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# tdd\n");
-    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, projectPath);
+    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, worktreePath);
 
-    const deps = createMockDeps(async (options) => {
-      runCalls.push(options);
-      return {
-        commits: [],
-        branch: "issue-6-runner",
-        iterations: [],
-        stdout: "",
-      };
-    });
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [],
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      [],
+      runCalls,
+    );
 
     await runPhase(
       {
@@ -126,7 +198,6 @@ describe("runPhase", () => {
     expect(runCalls[0]?.maxIterations).toBe(7);
 
     runCalls.length = 0;
-    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, projectPath);
 
     await runPhase(
       {
@@ -141,7 +212,7 @@ describe("runPhase", () => {
     expect(runCalls[0]?.maxIterations).toBe(DEFAULT_TDD_MAX_ITERATIONS);
 
     runCalls.length = 0;
-    await writeHandoff({ ...sampleHandoff, phase: "merge" }, projectPath);
+    await writeHandoff({ ...sampleHandoff, phase: "merge" }, worktreePath);
 
     await runPhase(
       {
@@ -157,25 +228,29 @@ describe("runPhase", () => {
     expect(runCalls[0]?.maxIterations).toBe(1);
   });
 
-  it("threads AbortSignal to Sandcastle run for the kill switch", async () => {
+  it("threads AbortSignal to sandbox.run for the kill switch", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, projectPath);
+    await writeHandoff(sampleHandoff, worktreePath);
 
     const controller = new AbortController();
-    const runCalls: SandcastleRunOptions[] = [];
 
-    const deps = createMockDeps(async (options) => {
-      runCalls.push(options);
-      return {
-        commits: [],
-        branch: "issue-6-runner",
-        iterations: [],
-        stdout: "",
-      };
-    });
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [],
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      [],
+      runCalls,
+    );
 
     await runPhase(
       {
@@ -191,7 +266,7 @@ describe("runPhase", () => {
     expect(runCalls[0]?.signal).toBe(controller.signal);
   });
 
-  it("returns run metadata and reads handoff from the preserved worktree", async () => {
+  it("reads handoff from the worktree before sandbox teardown on a clean success path", async () => {
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
@@ -199,15 +274,21 @@ describe("runPhase", () => {
     await writeFile(promptFile, "# create-pr\n");
     await writeHandoff(sampleHandoff, worktreePath);
 
-    const deps = createMockDeps(async () => ({
-      commits: [{ sha: "deadbeef" }],
-      branch: "issue-6-runner",
-      completionSignal: PHASE_COMPLETE_SIGNAL,
-      logFilePath: join(projectPath, "run.log"),
-      preservedWorktreePath: worktreePath,
-      iterations: [],
-      stdout: "",
-    }));
+    let closed = false;
+
+    const deps = createMockDeps({
+      worktreePath,
+      onClose: () => {
+        closed = true;
+      },
+      runImpl: async () => ({
+        commits: [{ sha: "deadbeef" }],
+        completionSignal: PHASE_COMPLETE_SIGNAL,
+        logFilePath: join(projectPath, "run.log"),
+        iterations: [],
+        stdout: "",
+      }),
+    });
 
     const result = await runPhase(
       {
@@ -226,27 +307,31 @@ describe("runPhase", () => {
       logFilePath: join(projectPath, "run.log"),
       handoff: sampleHandoff,
     });
+    expect(closed).toBe(true);
   });
 
   it("accepts a configurable sandbox provider", async () => {
+    const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, projectPath);
+    await writeHandoff(sampleHandoff, worktreePath);
 
     const customSandbox = mockSandbox("custom");
-    const runCalls: SandcastleRunOptions[] = [];
 
-    const deps = createMockDeps(async (options) => {
-      runCalls.push(options);
-      return {
-        commits: [],
-        branch: "issue-6-runner",
-        iterations: [],
-        stdout: "",
-      };
-    });
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [],
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      createSandboxCalls,
+    );
 
     await runPhase(
       {
@@ -259,7 +344,7 @@ describe("runPhase", () => {
       deps,
     );
 
-    expect(runCalls[0]?.sandbox).toBe(customSandbox);
+    expect(createSandboxCalls[0]?.sandbox).toBe(customSandbox);
   });
 });
 
@@ -268,5 +353,11 @@ describe("resolveOrchestratorRoot", () => {
     const root = resolveOrchestratorRoot();
 
     await expect(access(join(root, "prompts", "tdd.md"))).resolves.toBeUndefined();
+  });
+});
+
+describe("CURSOR_TRUST_SETUP", () => {
+  it("documents operator trust setup deferred until Sandcastle adds --trust", () => {
+    expect(CURSOR_TRUST_SETUP).toMatch(/trust/i);
   });
 });
