@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p dashboard/tsconfig.json",
     "test": "vitest run",
+    "build:dashboard": "vite build --config dashboard/vite.config.ts",
+    "dev:dashboard": "vite --config dashboard/vite.config.ts",
     "start": "tsx src/cli/main.ts",
     "dashboard": "tsx src/server/main.ts",
     "sync-skills": "tsx scripts/sync-skills.ts"
@@ -15,9 +17,19 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
+    "vite": "^7.3.3",
     "vitest": "^3.2.4"
   }
 }

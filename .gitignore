@@ -1,4 +1,5 @@
 node_modules/
+dashboard/dist/
 logs/
 /state/
 projects.json

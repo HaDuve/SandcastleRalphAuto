@@ -15,6 +15,14 @@ Pick `ready-for-agent` issue → `/tdd` → `/create-pr` → `/review-pr` → `/
 - [`docs/adr/`](./docs/adr/) — key decision records
 - Phase prompts live in [`prompts/`](./prompts/); after editing `~/.cursor/skills/*/SKILL.md`, run `npm run sync-skills` to refresh committed snapshots.
 
+## Dashboard (M2)
+
+```bash
+npm run build:dashboard   # output → dashboard/dist (served by the API)
+npm run dashboard         # http://127.0.0.1:4173
+npm run dev:dashboard     # Vite dev server with /api proxy to :4173
+```
+
 ## Status
 
 **M1 scaffold** (TypeScript layout, handoff schema, module stubs). Work tracked in [issues](https://github.com/HaDuve/SandcastleRalphAuto/issues): **M1** = CLI engine, **M2** = dashboard.
