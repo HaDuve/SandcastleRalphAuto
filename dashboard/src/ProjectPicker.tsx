@@ -1,6 +1,6 @@
 import type { Project } from "./types.js";
 import type { WorkerStatus } from "./workerStatus.js";
-import { isControlReady } from "./workerStatus.js";
+import { canHideProject, isControlReady } from "./workerStatus.js";
 
 export type ProjectPickerProps = {
   projects: Project[];
@@ -39,7 +39,7 @@ export function ProjectPicker({
   return (
     <section aria-label="Projects">
       {hasHiddenProjects ? (
-        <button type="button" onClick={onShowAll}>
+        <button type="button" aria-label="Show all hidden projects" onClick={onShowAll}>
           Show all
         </button>
       ) : null}
@@ -52,7 +52,7 @@ export function ProjectPicker({
           const pauseDisabled = !controlsReady || status !== "running";
           const resumeDisabled = !controlsReady || status !== "paused";
           const killDisabled = !controlsReady || status === "idle";
-          const hideDisabled = status === "running";
+          const hideDisabled = !canHideProject(status);
 
           return (
             <li key={project.id}>

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   HIDDEN_IDS_STORAGE_KEY,
+  pruneHiddenIds,
   readHiddenIds,
   writeHiddenIds,
 } from "../../dashboard/src/hiddenProjects.js";
@@ -45,5 +46,11 @@ describe("hiddenProjects", () => {
 
   it("returns an empty set when nothing is stored", () => {
     expect(readHiddenIds(storage)).toEqual(new Set());
+  });
+
+  it("drops hidden ids that are not in the loaded project list", () => {
+    const pruned = pruneHiddenIds(new Set(["portfolio", "removed"]), new Set(["portfolio", "other"]));
+
+    expect(pruned).toEqual(new Set(["portfolio"]));
   });
 });

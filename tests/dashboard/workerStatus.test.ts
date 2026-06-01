@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyWorkerEvent } from "../../dashboard/src/workerStatus.js";
+import { applyWorkerEvent, canHideProject } from "../../dashboard/src/workerStatus.js";
 
 describe("applyWorkerEvent", () => {
   it("marks a project worker as running when it starts", () => {
@@ -37,5 +37,14 @@ describe("applyWorkerEvent", () => {
   it("ignores unrelated dashboard events", () => {
     expect(applyWorkerEvent("running", { type: "phase-log" })).toBe("running");
     expect(applyWorkerEvent(undefined, { type: "phase-log" })).toBe("unknown");
+  });
+});
+
+describe("canHideProject", () => {
+  it("blocks hide only while the worker is running", () => {
+    expect(canHideProject("running")).toBe(false);
+    expect(canHideProject("unknown")).toBe(true);
+    expect(canHideProject("idle")).toBe(true);
+    expect(canHideProject("paused")).toBe(true);
   });
 });

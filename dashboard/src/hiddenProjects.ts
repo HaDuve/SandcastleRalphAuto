@@ -19,3 +19,10 @@ export function readHiddenIds(storage: Storage = localStorage): Set<string> {
 export function writeHiddenIds(ids: Set<string>, storage: Storage = localStorage): void {
   storage.setItem(HIDDEN_IDS_STORAGE_KEY, JSON.stringify([...ids]));
 }
+
+export function pruneHiddenIds(
+  hiddenIds: Set<string>,
+  knownProjectIds: ReadonlySet<string>,
+): Set<string> {
+  return new Set([...hiddenIds].filter((id) => knownProjectIds.has(id)));
+}

@@ -546,6 +546,20 @@ describe("App", () => {
     ).toBe(true);
   });
 
+  it("prunes stale hidden ids when projects load", async () => {
+    localStorage.setItem(
+      HIDDEN_IDS_STORAGE_KEY,
+      JSON.stringify(["portfolio", "removed-from-config"]),
+    );
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
+
+    render(<App />);
+
+    await screen.findByRole("checkbox", { name: /other/i });
+    expect(screen.queryByRole("checkbox", { name: /portfolio/i })).not.toBeInTheDocument();
+    expect(localStorage.getItem(HIDDEN_IDS_STORAGE_KEY)).toBe(JSON.stringify(["portfolio"]));
+  });
+
   it("keeps hidden projects out of the sidebar after reload", async () => {
     localStorage.setItem(HIDDEN_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
@@ -562,9 +576,9 @@ describe("App", () => {
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
 
     render(<App />);
-    await screen.findByRole("button", { name: /show all/i });
+    await screen.findByRole("button", { name: /show all hidden projects/i });
 
-    await user.click(screen.getByRole("button", { name: /show all/i }));
+    await user.click(screen.getByRole("button", { name: /show all hidden projects/i }));
 
     expect(await screen.findByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
     expect(localStorage.getItem(HIDDEN_IDS_STORAGE_KEY)).toBe(JSON.stringify([]));

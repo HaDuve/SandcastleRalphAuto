@@ -187,7 +187,7 @@ describe("ProjectPicker", () => {
     const onShowAll = vi.fn();
     renderPicker({ hasHiddenProjects: true, onShowAll });
 
-    await user.click(screen.getByRole("button", { name: /show all/i }));
+    await user.click(screen.getByRole("button", { name: /show all hidden projects/i }));
 
     expect(onShowAll).toHaveBeenCalled();
   });

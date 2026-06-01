@@ -18,8 +18,8 @@ import { HistoryPanel } from "./HistoryPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
 import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
-import { readHiddenIds, writeHiddenIds } from "./hiddenProjects.js";
-import { applyWorkerEvent, type WorkerStatus } from "./workerStatus.js";
+import { pruneHiddenIds, readHiddenIds, writeHiddenIds } from "./hiddenProjects.js";
+import { applyWorkerEvent, canHideProject, type WorkerStatus } from "./workerStatus.js";
 import "./app.css";
 
 function PanelPlaceholder({ title, projectId }: { title: string; projectId: string | null }) {
@@ -59,6 +59,15 @@ export function App() {
         if (!cancelled) {
           setProjects(loaded);
           setLoadError(null);
+          const knownProjectIds = new Set(loaded.map((project) => project.id));
+          setHiddenIds((current) => {
+            const next = pruneHiddenIds(current, knownProjectIds);
+            if (next.size === current.size) {
+              return current;
+            }
+            writeHiddenIds(next);
+            return next;
+          });
         }
       })
       .catch((error: unknown) => {
@@ -151,6 +160,10 @@ export function App() {
   }, [focusedProjectId]);
 
   const handleHide = useCallback((projectId: string) => {
+    const status = workerStatuses[projectId] ?? "unknown";
+    if (!canHideProject(status)) {
+      return;
+    }
     setHiddenIds((current) => {
       const next = new Set(current);
       next.add(projectId);
@@ -166,7 +179,7 @@ export function App() {
       return next;
     });
     setFocusedProjectId((current) => (current === projectId ? null : current));
-  }, []);
+  }, [workerStatuses]);
 
   const handleShowAll = useCallback(() => {
     setHiddenIds(() => {
