@@ -4,6 +4,7 @@ import { type ActiveState } from "../state/index.js";
 import {
   type MergeGateBlockKind,
 } from "./blockKinds.js";
+import { MERGE_GATE_NO_APPROVE_REASON } from "./mergeGateBlockReason.js";
 
 /** Pre-flight input for the host merge gate (D3/D4). */
 export type RunMergeGateInput = {
@@ -187,7 +188,7 @@ export async function runMergeGate(
   if (handoff.verdict !== "approve") {
     return blocked(
       "no-approve-verdict",
-      "Merge gate requires a clean Approve verdict",
+      MERGE_GATE_NO_APPROVE_REASON,
     );
   }
 

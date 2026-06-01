@@ -4,12 +4,20 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   isHandoffSchemaBlockReason,
+  tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
 } from "../src/handoff/reconcileBlockedHandoff.js";
-import { readHostHandoff } from "../src/handoff/hostStore.js";
+import { readHostHandoff, writeHostHandoff } from "../src/handoff/hostStore.js";
 import { readHandoff } from "../src/handoff/io.js";
-import { writeActive, type ActiveState } from "../src/state/index.js";
+import { MERGE_GATE_NO_APPROVE_REASON } from "../src/merge/index.js";
+import {
+  readActive,
+  resolveActivePath,
+  writeActive,
+  type ActiveState,
+} from "../src/state/index.js";
+import { access } from "node:fs/promises";
 
 describe("reconcileBlockedHandoff", () => {
   let rootDir = "";
@@ -245,5 +253,52 @@ describe("reconcileBlockedHandoff", () => {
 
     expect(reconciled?.phase).toBe("review-tdd");
     expect(reconciled?.status).toBe("active");
+  });
+
+  it("resumes merge gate + next when blocked on no-approve but PR is merged", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-merge-gate-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/FantasyEconomySim";
+    const handoff = {
+      project: projectId,
+      issue: 32,
+      branch: "issue-32",
+      pr: 43,
+      phase: "merge",
+      acceptanceState: "done",
+      verdict: "n/a",
+      blockers: [],
+      mergeReady: true,
+      nextSkill: "/next",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    };
+    await writeHostHandoff({ stateRoot, projectId, handoff });
+    const active: ActiveState = {
+      issue: 32,
+      phase: "merge",
+      branch: "issue-32",
+      pr: 43,
+      status: "blocked",
+      reason: MERGE_GATE_NO_APPROVE_REASON,
+      resumeSkill: "/merge",
+    };
+    await writeActive(projectId, active, stateRoot);
+
+    const resumed = await tryReconcileMergeGateBlockedHandoff({
+      project: { autoMerge: true, remote: projectId },
+      stateRoot,
+      projectId,
+      active,
+      gh: async (args) => {
+        if (args[0] === "pr" && args[1] === "view" && args.includes("state")) {
+          return JSON.stringify({ state: "MERGED" });
+        }
+        return "";
+      },
+    });
+
+    expect(resumed).toEqual({ issue: 32, pr: 43 });
+    await expect(access(resolveActivePath(stateRoot, projectId))).rejects.toThrow();
   });
 });

@@ -18,3 +18,7 @@ export {
   type RunMergeGateResult,
   type RunMergeGateSuccess,
 } from "./gate.js";
+export {
+  isMergeGateNoApproveBlockReason,
+  MERGE_GATE_NO_APPROVE_REASON,
+} from "./mergeGateBlockReason.js";
