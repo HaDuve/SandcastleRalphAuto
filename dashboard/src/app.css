@@ -11,15 +11,18 @@
 
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 .app-root {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .app-header {
+  flex-shrink: 0;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid #2a3441;
 }
@@ -40,25 +43,23 @@ body {
   border-right: 1px solid #2a3441;
   padding: 1rem;
   overflow: auto;
-}
-
-.dashboard-main {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 1px;
-  background: #2a3441;
   min-height: 0;
 }
 
-.dashboard-panel {
-  background: #0f1419;
-  padding: 1rem;
+.dashboard-main {
+  display: flex;
+  flex-direction: column;
   overflow: auto;
   min-height: 0;
 }
 
-.dashboard-panel h2 {
+.dashboard-section {
+  padding: 1rem;
+  border-bottom: 1px solid #2a3441;
+  flex-shrink: 0;
+}
+
+.dashboard-section h2 {
   margin: 0 0 0.5rem;
   font-size: 0.875rem;
   text-transform: uppercase;

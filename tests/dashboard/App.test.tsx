@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../dashboard/src/App.js";
@@ -104,6 +104,29 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
+  it("renders every project in the sidebar when many are configured", async () => {
+    const manyProjects = Array.from({ length: 13 }, (_, index) => ({
+      ...portfolio,
+      id: `project-${index}`,
+      path: `/tmp/project-${index}`,
+      remote: `HaDuve/Project${index}`,
+    }));
+    vi.stubGlobal("fetch", stubProjectsFetch(manyProjects));
+
+    render(<App />);
+
+    const sidebar = await screen.findByRole("region", { name: /projects/i });
+    const checkboxes = within(sidebar).getAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(13);
+    for (const project of manyProjects) {
+      expect(
+        checkboxes.some((checkbox) =>
+          checkbox.closest("label")?.textContent?.includes(project.id),
+        ),
+      ).toBe(true);
+    }
+  });
+
   it("loads projects from the local API and renders the dashboard shell", async () => {
     vi.stubGlobal(
       "fetch",
@@ -121,10 +144,37 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /queue/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /run outcome/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /phase stepper/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /active/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /stream/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /^log$/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /queue/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /history/i })).toBeInTheDocument();
+  });
+
+  it("orders focused-project regions in the main column", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole("checkbox", { name: /portfolio/i });
+
+    const regions = within(screen.getByRole("main")).getAllByRole("region");
+    expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual([
+      "Run outcome",
+      "Phase stepper",
+      "Active",
+      "Log",
+      "Queue",
+      "History",
+    ]);
   });
 
   it("starts a checked project through the API", async () => {

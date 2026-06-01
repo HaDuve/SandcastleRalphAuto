@@ -1,22 +1,29 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DashboardLayout } from "../../dashboard/src/DashboardLayout.js";
 
 describe("DashboardLayout", () => {
-  it("exposes shell regions for queue, active, stream, and history", () => {
+  it("orders focused-project regions banner, stepper, active, log, queue, then history", () => {
     render(
       <DashboardLayout
         picker={<div>picker</div>}
-        queue={<div>queue body</div>}
+        runOutcome={<div>banner</div>}
+        phaseStepper={<div>stepper</div>}
         active={<div>active body</div>}
-        stream={<div>stream body</div>}
+        log={<div>log body</div>}
+        queue={<div>queue body</div>}
         history={<div>history body</div>}
       />,
     );
 
-    expect(screen.getByRole("region", { name: /queue/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /active/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /stream/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /history/i })).toBeInTheDocument();
+    const regions = within(screen.getByRole("main")).getAllByRole("region");
+    expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual([
+      "Run outcome",
+      "Phase stepper",
+      "Active",
+      "Log",
+      "Queue",
+      "History",
+    ]);
   });
 });
