@@ -74,6 +74,39 @@ describe("advanceSlice", () => {
     branch: "issue-7-pipeline",
   };
 
+  it("advances review-pr to review-tdd when verdict omitted but nextSkill routes", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "review-pr",
+      result: phaseResult("review-pr", "/review-tdd", {
+        pr: 99,
+        blockers: ["CI failing on lint"],
+      }),
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.active.phase).toBe("review-tdd");
+    }
+  });
+
+  it("blocks when review-pr approves but blockers remain", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "review-pr",
+      result: phaseResult("review-pr", "/review-tdd", {
+        pr: 99,
+        verdict: "approve",
+        blockers: ["should not bypass"],
+      }),
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.reason).toMatch(/blockers/);
+    }
+  });
+
   it("advances review-pr to review-tdd when request-changes lists findings in blockers", () => {
     const outcome = advanceSlice({
       ...base,

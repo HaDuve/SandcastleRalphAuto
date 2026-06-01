@@ -1,12 +1,15 @@
 import type { Handoff } from "./schema.js";
 
-/** review-pr finished with request-changes → host runs review-tdd (findings may live in `blockers`). */
+/**
+ * review-pr routed to review-tdd (findings may live in `blockers`).
+ * `verdict` is optional; `approve` with open blockers is not a bypass.
+ */
 export function isReviewPrRequestChangesToReviewTdd(handoff: Handoff): boolean {
   return (
     handoff.phase === "review-pr" &&
-    handoff.verdict === "request-changes" &&
+    handoff.acceptanceState === "done" &&
     handoff.nextSkill === "/review-tdd" &&
-    handoff.acceptanceState === "done"
+    handoff.verdict !== "approve"
   );
 }
 

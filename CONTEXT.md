@@ -58,4 +58,4 @@ _Avoid_: remove (implies deleting from the registry), skip (skip = issue exclusi
 > **Dev:** When a worker finishes a slice, does it reuse the same agent for `/next`?
 > **Expert:** No. Every phase is a fresh agent invocation. The worker advances the slice by starting a new cold run; the new run reads the handoff and GitHub, nothing else. The worker persists across phases; the agent does not.
 > **Dev:** And if review finds a blocker?
-> **Expert:** The slice stops — it doesn't reach `merge`, and `/next` never fires. The worker marks the slice blocked and the dashboard shows it red. The mutex is still held by that project until an operator clears or skips it.
+> **Expert:** Findings go in the handoff `blockers` field and the slice advances to `/review-tdd` to fix them (ADR 0009). The pipeline only halts on real orchestration failures (wrong `nextSkill`, missing completion signal, merge gate with no Approve). If CI is still red after review-tdd, merge runs and the host may try `/babysit` once before blocking for a human.

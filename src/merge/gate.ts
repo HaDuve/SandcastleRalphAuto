@@ -8,9 +8,9 @@ import {
 /** Pre-flight input for the host merge gate (D3/D4). */
 export type RunMergeGateInput = {
   /**
-   * Handoff snapshot for pre-flight. Per D3, `verdict` must be `approve` from
-   * `/review-pr`. Callers should pass the review handoff or preserve that
-   * verdict through the slice — a merge-phase handoff with `n/a` will block.
+   * Handoff snapshot for pre-flight. Per D3, `verdict` must be `approve` before
+   * merge. Callers should pass the latest host handoff after `/review-tdd` when
+   * available (ADR 0009) — a merge-phase handoff with `n/a` will block.
    */
   handoff: Handoff;
   project: Pick<Project, "autoMerge" | "remote">;

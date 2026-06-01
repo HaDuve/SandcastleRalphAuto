@@ -5,6 +5,7 @@ import { readHostHandoff, writeHostHandoff } from "./hostStore.js";
 import { readHandoff, writeHandoff } from "./io.js";
 import type { Handoff } from "./schema.js";
 import {
+  formatReviewFindingsNote,
   isReviewPrBlockersStallReason,
   isReviewPrRequestChangesToReviewTdd,
 } from "./reviewPrRoute.js";
@@ -149,6 +150,8 @@ export async function tryReconcileReviewPrBlockedHandoff(input: {
     return null;
   }
 
+  const note = formatReviewFindingsNote(handoff.blockers);
+
   return {
     issue: input.active.issue,
     branch: input.active.branch,
@@ -156,5 +159,6 @@ export async function tryReconcileReviewPrBlockedHandoff(input: {
     phase: "review-tdd",
     status: "active",
     startedAt: input.active.startedAt,
+    ...(note !== null ? { reason: note } : {}),
   };
 }

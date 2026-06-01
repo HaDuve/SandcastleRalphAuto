@@ -188,6 +188,62 @@ describe("reconcileBlockedHandoff", () => {
       pr: 55,
       status: "active",
       startedAt: reviewPrActive.startedAt,
+      reason:
+        "Review findings (addressed in review-tdd): Required check lint failed",
     });
+  });
+
+  it("resumes without verdict when nextSkill routes to review-tdd", async () => {
+    const { projectPath, stateRoot, active } =
+      await setupWorktreeHandoff("done");
+    const branch = active.branch;
+    const handoffDir = join(
+      projectPath,
+      ".sandcastle",
+      "worktrees",
+      branch,
+      ".sandcastle-ralph",
+      "handoff",
+    );
+    await writeFile(
+      join(handoffDir, "current.json"),
+      JSON.stringify(
+        {
+          project: "HaDuve/FantasyEconomySim",
+          issue: 29,
+          branch,
+          phase: "review-pr",
+          acceptanceState: "done",
+          blockers: ["missing test"],
+          mergeReady: false,
+          nextSkill: "/review-tdd",
+          pr: 55,
+          startedAt: "2026-06-01T00:00:00.000Z",
+          endedAt: "2026-06-01T01:00:00.000Z",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const reconciled = await tryReconcileReviewPrBlockedHandoff({
+      projectPath,
+      branch,
+      stateRoot,
+      projectId: "proj",
+      active: {
+        issue: 29,
+        phase: "review-pr",
+        branch,
+        pr: 55,
+        status: "blocked",
+        reason: "Handoff has blockers: missing test",
+        resumeSkill: "/review-pr",
+        startedAt: active.startedAt,
+      },
+    });
+
+    expect(reconciled?.phase).toBe("review-tdd");
+    expect(reconciled?.status).toBe("active");
   });
 });
