@@ -1,5 +1,5 @@
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
-import { type Server } from "node:http";
+import { request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -282,6 +282,33 @@ describe("dashboard server", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("Dashboard");
+  });
+
+  it("rejects static paths outside the build directory", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const staticDir = join(rootDir, "dashboard", "dist");
+    await mkdir(staticDir, { recursive: true });
+    await writeFile(join(staticDir, "index.html"), "<!doctype html><title>Dashboard</title>");
+    await writeFile(join(rootDir, "secret.txt"), "nope");
+
+    const started = await startServer(rootDir, { staticDir });
+    server = started.server;
+    const address = started.server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+
+    const statusCode = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        { host: "127.0.0.1", port, path: "/../../secret.txt", method: "GET" },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 500);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+
+    expect(statusCode).toBe(404);
   });
 
   it("binds to localhost only", async () => {

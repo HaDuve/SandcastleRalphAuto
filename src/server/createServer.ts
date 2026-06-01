@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { join, extname } from "node:path";
+import { join, extname, resolve } from "node:path";
 import { findProjectById, type RunProjectDeps } from "../cli/index.js";
 import { listHandoffHistory } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
@@ -24,7 +24,6 @@ export type DashboardServerOptions = {
   rootDir: string;
   stateRoot?: string;
   staticDir?: string;
-  host?: string;
   loadRegistry?: (rootDir: string) => Promise<Project[]>;
   readActive?: typeof readActive;
   readSkips?: typeof readSkips;
@@ -36,6 +35,11 @@ export type DashboardServerOptions = {
   eventBus?: EventBus;
   runProjectDeps?: RunProjectDeps;
 };
+
+function requestPathname(req: IncomingMessage): string {
+  const raw = req.url ?? "/";
+  return raw.split("?")[0]?.split("#")[0] ?? "/";
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -67,7 +71,13 @@ async function serveStaticFile(
   res: ServerResponse,
 ): Promise<boolean> {
   const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
-  const filePath = join(staticDir, relativePath);
+  if (relativePath.includes("..")) {
+    return false;
+  }
+  const filePath = resolve(staticDir, relativePath);
+  if (!filePath.startsWith(resolve(staticDir))) {
+    return false;
+  }
 
   try {
     const fileStat = await stat(filePath);
@@ -109,7 +119,6 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
   const rootDir = options.rootDir;
   const stateRoot = options.stateRoot ?? join(rootDir, "state");
   const staticDir = options.staticDir ?? join(rootDir, "dashboard", "dist");
-  const host = options.host ?? "127.0.0.1";
   const loadRegistry = options.loadRegistry ?? loadRegistryFromRoot;
   const readActiveFn = options.readActive ?? readActive;
   const readSkipsFn = options.readSkips ?? readSkips;
@@ -128,15 +137,15 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
 
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
-      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? host}`);
+      const pathname = requestPathname(req);
 
-      if (req.method === "GET" && url.pathname === "/api/projects") {
+      if (req.method === "GET" && pathname === "/api/projects") {
         const projects = await loadRegistry(rootDir);
         sendJson(res, 200, { projects });
         return;
       }
 
-      const projectRoute = matchProjectRoute(url.pathname);
+      const projectRoute = matchProjectRoute(pathname);
       if (projectRoute) {
         const project = await resolveProject(projectRoute.projectId);
 
@@ -222,8 +231,8 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         }
       }
 
-      if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-        const served = await serveStaticFile(staticDir, url.pathname, res);
+      if (req.method === "GET" && !pathname.startsWith("/api/")) {
+        const served = await serveStaticFile(staticDir, pathname, res);
         if (served) {
           return;
         }

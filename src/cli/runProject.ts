@@ -13,7 +13,7 @@ import {
   seedTddHandoff,
   type RunNextResult,
 } from "../next/index.js";
-import { selectNextIssue, type GhIssue } from "../next/select.js";
+import { selectNextIssue, parseGhIssueList, type GhIssue } from "../next/select.js";
 import {
   loadRegistryFromRoot,
   type Project,
@@ -131,12 +131,7 @@ export function findProjectById(
 }
 
 function parseIssueList(raw: string): GhIssue[] | null {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as GhIssue[]) : null;
-  } catch {
-    return null;
-  }
+  return parseGhIssueList(raw);
 }
 
 export async function bootstrapFirstIssue(
@@ -550,6 +545,10 @@ async function resolveLoopStart(
   };
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export async function loopProject(
   input: LoopProjectInput,
   deps: RunProjectDeps = {},
@@ -676,8 +675,8 @@ export async function loopProject(
       fromPhase = "create-pr";
     }
   } catch (error) {
-    if (error instanceof CliError) {
-      throw error;
+    if (isAbortError(error)) {
+      await mutex.release(project.remote);
     }
     throw error;
   }

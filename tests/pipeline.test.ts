@@ -288,6 +288,29 @@ describe("runLinearSlice", () => {
     }
   });
 
+  it("rethrows abort errors instead of marking the slice blocked", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+
+    await expect(
+      runLinearSlice(
+        {
+          projectId,
+          issue: 7,
+          branch: "issue-7-pipeline",
+          projectPath,
+          stateRoot,
+        },
+        {
+          runPhase: async () => {
+            throw new DOMException("Aborted", "AbortError");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("stops without re-running phases when active slice is awaiting-human", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
     const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));

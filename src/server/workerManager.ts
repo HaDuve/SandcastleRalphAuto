@@ -1,17 +1,11 @@
 import {
   loopProject,
-  findProjectById,
   type LoopProjectResult,
   type RunProjectDeps,
+  type WorkerControl,
 } from "../cli/index.js";
 import { type Project } from "../registry/index.js";
 import { type EventBus } from "./eventBus.js";
-
-export type WorkerControl = {
-  signal: AbortSignal;
-  isPaused: () => boolean;
-  waitIfPaused: () => Promise<void>;
-};
 
 export type WorkerManagerDeps = {
   loopProject?: typeof loopProject;
@@ -34,7 +28,7 @@ type WorkerEntry = {
   projectId: string;
   abortController: AbortController;
   paused: boolean;
-  promise: Promise<LoopProjectResult>;
+  promise: Promise<LoopProjectResult | undefined>;
 };
 
 function createWorkerControl(entry: WorkerEntry): WorkerControl {
@@ -52,6 +46,10 @@ function createWorkerControl(entry: WorkerEntry): WorkerControl {
   };
 }
 
+function workerStopReason(error: unknown): string {
+  return error instanceof Error ? error.message : "worker error";
+}
+
 export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
   const loopProjectFn = deps.loopProject ?? loopProject;
   const workers = new Map<string, WorkerEntry>();
@@ -67,7 +65,7 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
         projectId: project.id,
         abortController,
         paused: false,
-        promise: Promise.resolve({ status: "queue-empty", slicesCompleted: 0 }),
+        promise: Promise.resolve(undefined),
       };
       workers.set(project.id, entry);
 
@@ -100,6 +98,14 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
             reason: result.status,
           });
           return result;
+        })
+        .catch((error: unknown) => {
+          deps.eventBus.emit({
+            type: "worker-stopped",
+            projectId: project.id,
+            reason: workerStopReason(error),
+          });
+          return undefined;
         })
         .finally(() => {
           workers.delete(project.id);

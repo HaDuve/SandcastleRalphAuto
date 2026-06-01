@@ -44,3 +44,12 @@ export function selectNextIssue(
     current.number < lowest.number ? current : lowest,
   ).number;
 }
+
+export function parseGhIssueList(raw: string): GhIssue[] | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as GhIssue[]) : null;
+  } catch {
+    return null;
+  }
+}

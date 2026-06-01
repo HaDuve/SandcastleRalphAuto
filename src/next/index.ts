@@ -1,6 +1,7 @@
 /** Host-side `/next`: merge verify, archive handoff, pick next issue. */
 export {
   filterEligibleIssues,
+  parseGhIssueList,
   selectNextIssue,
   type GhIssue,
 } from "./select.js";

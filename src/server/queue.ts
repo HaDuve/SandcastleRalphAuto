@@ -1,5 +1,4 @@
-import { type GhIssue } from "../next/select.js";
-import { filterEligibleIssues } from "../next/select.js";
+import { filterEligibleIssues, parseGhIssueList } from "../next/select.js";
 import { type Project } from "../registry/index.js";
 import { readSkips } from "../state/index.js";
 import { type GhRunner } from "../merge/index.js";
@@ -10,15 +9,6 @@ export type QueueIssue = {
   skipped: boolean;
   eligible: boolean;
 };
-
-function parseIssueList(raw: string): GhIssue[] | null {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as GhIssue[]) : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function fetchProjectQueue(
   project: Project,
@@ -38,7 +28,7 @@ export async function fetchProjectQueue(
     "--json",
     "number,labels,state",
   ]);
-  const issues = parseIssueList(issuesRaw) ?? [];
+  const issues = parseGhIssueList(issuesRaw) ?? [];
   const skips = await readSkipsFn(project.remote, stateRoot);
   const skipSet = new Set(skips);
   const eligible = filterEligibleIssues(issues, project, skips);
