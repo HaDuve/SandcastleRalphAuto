@@ -1,0 +1,120 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  line-height: 1.5;
+  background: #0f1419;
+  color: #e7ecf3;
+}
+
+body {
+  margin: 0;
+}
+
+.app-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #2a3441;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.dashboard {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  min-height: 0;
+}
+
+.dashboard-sidebar {
+  border-right: 1px solid #2a3441;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.dashboard-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  background: #2a3441;
+  min-height: 0;
+}
+
+.dashboard-panel {
+  background: #0f1419;
+  padding: 1rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.dashboard-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9aa7b5;
+}
+
+.panel-placeholder p {
+  margin: 0;
+  color: #9aa7b5;
+}
+
+.dashboard-sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dashboard-sidebar li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dashboard-sidebar label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.project-remote {
+  color: #9aa7b5;
+  font-size: 0.875rem;
+}
+
+.dashboard-sidebar button {
+  align-self: flex-start;
+}
+
+button {
+  background: #1b4fd8;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+[role="alert"] {
+  color: #f87171;
+}
