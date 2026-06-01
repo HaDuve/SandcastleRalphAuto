@@ -1,4 +1,4 @@
-import type { Project } from "./types.js";
+import type { ActiveSlice, Project, QueueIssue } from "./types.js";
 
 type ControlStatusBody = { status?: string; error?: string };
 
@@ -43,6 +43,31 @@ export async function pauseProject(
 ): Promise<{ status: "paused" } | { status: "not-running" }> {
   const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/pause`, {
     method: "POST",
+  });
+  return parseJson(response);
+}
+
+export async function fetchQueue(projectId: string): Promise<QueueIssue[]> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/queue`);
+  const body = await parseJson<{ queue: QueueIssue[] }>(response);
+  return body.queue;
+}
+
+export async function fetchActive(projectId: string): Promise<ActiveSlice | null> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/active`);
+  const body = await parseJson<{ active: ActiveSlice | null }>(response);
+  return body.active;
+}
+
+export async function setIssueSkip(
+  projectId: string,
+  issue: number,
+  skipped: boolean,
+): Promise<{ status: "skipped" | "unskipped"; issue: number }> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/skip`, {
+    method: skipped ? "POST" : "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ issue }),
   });
   return parseJson(response);
 }

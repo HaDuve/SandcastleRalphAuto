@@ -212,6 +212,7 @@ export async function bootstrapFirstIssue(
       phase: "tdd",
       branch,
       status: "active",
+      startedAt: handoff.startedAt,
     },
     stateRoot,
   );

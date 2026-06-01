@@ -241,6 +241,21 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
           sendJson(res, 200, { status: "skipped", issue: body.issue });
           return;
         }
+
+        if (req.method === "DELETE" && projectRoute.action === "skip") {
+          const body = (await readJsonBody(req)) as { issue?: number };
+          if (typeof body.issue !== "number") {
+            sendJson(res, 400, { error: "issue number required" });
+            return;
+          }
+          const skips = await readSkipsFn(project.remote, stateRoot);
+          const nextSkips = skips.filter((n) => n !== body.issue);
+          if (nextSkips.length !== skips.length) {
+            await writeSkipsFn(project.remote, nextSkips, stateRoot);
+          }
+          sendJson(res, 200, { status: "unskipped", issue: body.issue });
+          return;
+        }
       }
 
       if (req.method === "GET" && !pathname.startsWith("/api/")) {

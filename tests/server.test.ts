@@ -224,6 +224,29 @@ describe("dashboard server", () => {
     expect(skips).toEqual([15]);
   });
 
+  it("removes operator skip for an issue", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const skipsDir = join(stateRoot, project.remote);
+    await mkdir(skipsDir, { recursive: true });
+    await writeFile(join(skipsDir, "skips.json"), JSON.stringify([10, 15], null, 2) + "\n");
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/skip`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ issue: 15 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "unskipped", issue: 15 });
+
+    const skipsPath = join(stateRoot, project.remote, "skips.json");
+    const skips = JSON.parse(await (await import("node:fs/promises")).readFile(skipsPath, "utf8"));
+    expect(skips).toEqual([10]);
+  });
+
   it("starts, pauses, and kills a project worker", async () => {
     const { rootDir, stateRoot } = await setupProjectRoot();
     const eventBus = createEventBus();

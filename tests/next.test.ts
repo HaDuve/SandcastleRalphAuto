@@ -321,6 +321,7 @@ describe("runNext", () => {
       phase: "tdd",
       branch: "issue-9",
       status: "active",
+      startedAt: "2026-06-01T12:00:00.000Z",
     });
     expect(ghCalls).toContainEqual([
       "pr",

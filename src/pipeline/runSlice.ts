@@ -108,6 +108,11 @@ export async function runLinearSlice(
     throw new Error(`Unknown fromPhase: ${fromPhase}`);
   }
 
+  const sliceStartedAt =
+    existing?.issue === issue && existing.startedAt
+      ? existing.startedAt
+      : new Date().toISOString();
+
   for (const phase of CANONICAL_PHASES.slice(phaseStartIndex)) {
     const activeBeforeRun: ActiveState = {
       issue,
@@ -115,6 +120,7 @@ export async function runLinearSlice(
       branch,
       pr,
       status: "active",
+      startedAt: sliceStartedAt,
     };
     await writeActive(projectId, activeBeforeRun, stateRoot);
 
@@ -140,6 +146,7 @@ export async function runLinearSlice(
         status: "blocked",
         reason,
         resumeSkill: skillForPhase(phase),
+        startedAt: sliceStartedAt,
       };
       await writeActive(projectId, blocked, stateRoot);
       return { status: "blocked", active: blocked, phasesCompleted };
@@ -154,7 +161,11 @@ export async function runLinearSlice(
     });
 
     if (!outcome.ok) {
-      await writeActive(projectId, outcome.active, stateRoot);
+      await writeActive(
+        projectId,
+        { ...outcome.active, startedAt: sliceStartedAt },
+        stateRoot,
+      );
       return {
         status: "blocked",
         active: outcome.active,
@@ -176,7 +187,11 @@ export async function runLinearSlice(
       };
     }
 
-    await writeActive(projectId, outcome.active, stateRoot);
+    await writeActive(
+      projectId,
+      { ...outcome.active, startedAt: sliceStartedAt },
+      stateRoot,
+    );
   }
 
   await clearActive(projectId, stateRoot);
