@@ -186,6 +186,45 @@ describe("ProjectPicker", () => {
     expect(screen.getByRole("button", { name: /hide portfolio/i })).toBeDisabled();
   });
 
+  it("does not color-code the sidebar while the worker is running", () => {
+    renderPicker({
+      workerStates: {
+        portfolio: {
+          status: "running",
+          lastOutcome: {
+            outcome: "blocked",
+            reason: "CI failed",
+            phase: "review-pr",
+            stoppedAt: "2026-06-01T12:00:00.000Z",
+          },
+        },
+      },
+    });
+
+    const card = screen.getByRole("checkbox", { name: /portfolio/i }).closest("li");
+    expect(card).toHaveClass("project-card");
+    expect(card).not.toHaveClass("project-card--blocked");
+  });
+
+  it("color-codes the sidebar card from the last run outcome", () => {
+    renderPicker({
+      workerStates: {
+        portfolio: {
+          status: "idle",
+          lastOutcome: {
+            outcome: "blocked",
+            reason: "CI failed",
+            phase: "review-pr",
+            stoppedAt: "2026-06-01T12:00:00.000Z",
+          },
+        },
+      },
+    });
+
+    const card = screen.getByRole("checkbox", { name: /portfolio/i }).closest("li");
+    expect(card).toHaveClass("project-card--blocked");
+  });
+
   it("restores hidden projects when Show all is clicked", async () => {
     const user = userEvent.setup();
     const onShowAll = vi.fn();

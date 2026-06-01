@@ -93,12 +93,21 @@ export function canHideProject(status: WorkerStatus): boolean {
   return status !== "running";
 }
 
+export function stoppedRunOutcome(state: WorkerState | undefined): RunOutcome | null {
+  if (!state || state.status === "running") {
+    return null;
+  }
+  return state.lastOutcome;
+}
+
 export function workerStateFromSnapshot(input: {
   workerStatus?: "idle" | "running" | "paused";
   lastRunOutcome?: RunOutcome | null;
 }): WorkerState {
+  const status = input.workerStatus ?? "unknown";
   return {
-    status: input.workerStatus ?? "unknown",
-    lastOutcome: input.lastRunOutcome ?? null,
+    status,
+    lastOutcome:
+      status === "running" ? null : (input.lastRunOutcome ?? null),
   };
 }

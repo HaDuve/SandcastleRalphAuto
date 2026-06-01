@@ -30,7 +30,7 @@ import {
   writeFocusedProjectId,
   writeSelectedIds,
 } from "./selectedProjects.js";
-import { applyWorkerEvent, canHideProject, type WorkerState } from "./workerStatus.js";
+import { applyWorkerEvent, canHideProject, stoppedRunOutcome, type WorkerState } from "./workerStatus.js";
 import "./app.css";
 
 function PanelPlaceholder({ title, projectId }: { title: string; projectId: string | null }) {
@@ -58,7 +58,7 @@ export function App() {
 
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
   const focusedLastOutcome =
-    focusedProjectId === null ? null : (workerStates[focusedProjectId]?.lastOutcome ?? null);
+    focusedProjectId === null ? null : stoppedRunOutcome(workerStates[focusedProjectId]);
   const visibleProjects = projects.filter((project) => !hiddenIds.has(project.id));
 
   useEffect(() => {

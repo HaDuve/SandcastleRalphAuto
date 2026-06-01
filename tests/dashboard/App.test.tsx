@@ -658,7 +658,7 @@ describe("App", () => {
     const checkbox = await screen.findByRole("checkbox", { name: /portfolio/i });
     expect(checkbox).toBeChecked();
     expect(screen.getByText(/CI failed/i)).toBeInTheDocument();
-    expect(screen.getByText(/review-pr/i)).toBeInTheDocument();
+    expect(screen.getByText("review-pr", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
     expect(await screen.findByText(/#10/)).toBeInTheDocument();
     expect(screen.getByText(/#11/)).toBeInTheDocument();
 
@@ -670,6 +670,49 @@ describe("App", () => {
     });
     expect(controlCalls).toHaveLength(0);
     expect(eventSourceUrls).toContain("/api/projects/portfolio/events");
+  });
+
+  it("hides run-outcome banner while the worker is running after reload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  lastRunOutcome: {
+                    outcome: "blocked",
+                    reason: "CI failed",
+                    phase: "review-pr",
+                    stoppedAt: "2026-06-01T12:00:00.000Z",
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole("checkbox", { name: /portfolio/i });
+
+    expect(screen.queryByText(/CI failed/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("blocks Hide while the project worker is running", async () => {

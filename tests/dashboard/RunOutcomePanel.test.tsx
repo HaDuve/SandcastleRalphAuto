@@ -38,9 +38,80 @@ describe("RunOutcomePanel", () => {
   it("surfaces the last run outcome for the focused project", () => {
     render(<RunOutcomePanel project={portfolio} lastOutcome={blockedOutcome} />);
 
+    expect(screen.getByRole("status")).toHaveClass("run-outcome-banner--blocked");
     expect(screen.getByText(/blocked/i)).toBeInTheDocument();
     expect(screen.getByText(/CI failed/i)).toBeInTheDocument();
-    expect(screen.getByText(/review-pr/i)).toBeInTheDocument();
-    expect(screen.getByText(/2026-06-01/i)).toBeInTheDocument();
+    expect(screen.getByText("review-pr", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
+  });
+
+  it("links to the phase log endpoint for the stopped phase", () => {
+    render(<RunOutcomePanel project={portfolio} lastOutcome={blockedOutcome} />);
+
+    const logLink = screen.getByRole("link", { name: /review-pr log/i });
+    expect(logLink).toHaveAttribute(
+      "href",
+      "/api/projects/portfolio/log?phase=review-pr",
+    );
+  });
+
+  it.each([
+    {
+      label: "queue-empty",
+      lastOutcome: {
+        outcome: "queue-empty" as const,
+        stoppedAt: "2026-06-01T12:00:00.000Z",
+      },
+      className: "run-outcome-banner--queue-empty",
+      text: /queue empty/i,
+    },
+    {
+      label: "awaiting-human",
+      lastOutcome: {
+        outcome: "awaiting-human" as const,
+        reason: "Needs approval",
+        phase: "merge",
+        stoppedAt: "2026-06-01T12:00:00.000Z",
+      },
+      className: "run-outcome-banner--awaiting-human",
+      text: /awaiting human/i,
+      logHref: "/api/projects/portfolio/log?phase=merge",
+    },
+    {
+      label: "killed",
+      lastOutcome: {
+        outcome: "killed" as const,
+        stoppedAt: "2026-06-01T12:00:00.000Z",
+      },
+      className: "run-outcome-banner--killed",
+      text: /killed/i,
+    },
+  ])("renders a $label outcome banner", ({ lastOutcome, className, text, logHref }) => {
+    render(<RunOutcomePanel project={portfolio} lastOutcome={lastOutcome} />);
+
+    expect(screen.getByRole("status")).toHaveClass(className);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    if (logHref) {
+      expect(screen.getByRole("link", { name: /merge log/i })).toHaveAttribute("href", logHref);
+    }
+  });
+
+  it('shows crash copy with a log link instead of the raw error reason', () => {
+    const errorOutcome: RunOutcome = {
+      outcome: "error",
+      reason: "TypeError: Cannot read properties of undefined (reading 'map')",
+      phase: "tdd",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    };
+    render(<RunOutcomePanel project={portfolio} lastOutcome={errorOutcome} />);
+
+    expect(screen.getByText(/run crashed/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /see log/i })).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Cannot read properties of undefined/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /see log/i })).toHaveAttribute(
+      "href",
+      "/api/projects/portfolio/log?phase=tdd",
+    );
   });
 });
