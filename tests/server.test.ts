@@ -419,9 +419,9 @@ describe("dashboard server", () => {
           completionSignal: PHASE_COMPLETE_SIGNAL,
           handoff:
             options.phase === "review-pr"
-              ? reviewHandoff(options.issue)
+              ? reviewHandoff(12)
               : {
-                  ...reviewHandoff(options.issue),
+                  ...reviewHandoff(12),
                   phase: options.phase,
                   pr: undefined,
                 },
