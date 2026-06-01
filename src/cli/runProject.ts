@@ -651,13 +651,15 @@ async function resolveLoopStart(
   deps: RunProjectDeps,
   resolved: ResolvedRunProjectDeps,
 ): Promise<LoopStart> {
-  if (issue !== undefined) {
-    return { kind: "ready", issue };
-  }
-
   const readActiveFn = deps.readActive ?? readActive;
   const active = await readActiveFn(project.remote, stateRoot);
   if (active?.status === "blocked") {
+    if (issue !== undefined && active.issue !== issue) {
+      return {
+        status: "blocked",
+        reason: active.reason ?? "Slice is blocked",
+      };
+    }
     const reconciled =
       (await tryReconcileSchemaBlockedHandoff({
         projectPath,
@@ -708,6 +710,22 @@ async function resolveLoopStart(
       reason: active.reason ?? "Slice is blocked",
     };
   }
+
+  if (issue !== undefined) {
+    if (
+      active?.status === "active" &&
+      active.issue === issue &&
+      isRunnablePhase(active.phase)
+    ) {
+      return {
+        kind: "ready",
+        issue,
+        fromPhase: active.phase,
+      };
+    }
+    return { kind: "ready", issue };
+  }
+
   if (active?.status === "awaiting-human") {
     return {
       status: "awaiting-human",

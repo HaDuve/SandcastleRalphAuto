@@ -2,7 +2,12 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Handoff, writeHostHandoff } from "../src/handoff/index.js";
+import {
+  type Handoff,
+  writeHostHandoff,
+} from "../src/handoff/index.js";
+import { MERGE_GATE_NO_APPROVE_REASON } from "../src/merge/index.js";
+import { readActive, writeActive } from "../src/state/index.js";
 import {
   CliError,
   loopProject,
@@ -20,6 +25,10 @@ import {
   type RunPhaseOptions,
   type RunPhaseResult,
 } from "../src/runner/index.js";
+
+const readNoActive = {
+  readActive: async () => null,
+};
 
 const portfolio: Project = {
   id: "portfolio",
@@ -367,6 +376,7 @@ describe("loopProject", () => {
     const result = await loopProject(
       { projectId: "portfolio", issue: 10, rootDir: "/tmp/root" },
       {
+        ...readNoActive,
         loadRegistry: async () => [portfolio],
         runLinearSlice: async (_options, sliceDeps) => {
           await sliceDeps!.runPhase({
@@ -413,6 +423,7 @@ describe("loopProject", () => {
     await loopProject(
       { projectId: "portfolio", issue: 10 },
       {
+        ...readNoActive,
         loadRegistry: async () => [portfolio],
         runLinearSlice: async (options, sliceDeps) => {
           sliceOptions.push(options);
@@ -605,6 +616,7 @@ describe("loopProject", () => {
       loopProject(
         { projectId: "portfolio", issue: 10 },
         {
+          ...readNoActive,
           loadRegistry: async () => [portfolio],
           control: {
             signal: abortController.signal,
@@ -630,12 +642,93 @@ describe("loopProject", () => {
     expect(events).toEqual(["acquire", "release"]);
   });
 
+  it("reconciles merge-gate block on Start without re-running linear slice", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "cli-merge-reconcile-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/FantasyEconomySim";
+    const feProject: Project = {
+      ...portfolio,
+      id: "fantasy",
+      remote: projectId,
+      path: "/tmp/fantasy",
+    };
+    await writeHostHandoff({
+      stateRoot,
+      projectId,
+      handoff: {
+        project: projectId,
+        issue: 32,
+        branch: "issue-32",
+        pr: 43,
+        phase: "merge",
+        acceptanceState: "done",
+        verdict: "n/a",
+        blockers: [],
+        mergeReady: true,
+        nextSkill: "/next",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        endedAt: "2026-06-01T01:00:00.000Z",
+      } satisfies Handoff,
+    });
+    await writeActive(
+      projectId,
+      {
+        issue: 32,
+        phase: "merge",
+        branch: "issue-32",
+        pr: 43,
+        status: "blocked",
+        reason: MERGE_GATE_NO_APPROVE_REASON,
+        resumeSkill: "/merge",
+      },
+      stateRoot,
+    );
+
+    let linearSliceCalls = 0;
+    const nextPrs: number[] = [];
+
+    const result = await loopProject(
+      { projectId: "fantasy", rootDir, stateRoot },
+      {
+        loadRegistry: async () => [feProject],
+        gh: async (args) => {
+          if (args[0] === "pr" && args[1] === "view" && args.includes("state")) {
+            return JSON.stringify({ state: "MERGED" });
+          }
+          if (args[0] === "issue" && args[1] === "list") {
+            return JSON.stringify([]);
+          }
+          return "";
+        },
+        runLinearSlice: async () => {
+          linearSliceCalls += 1;
+          return sliceSuccess(32, 43);
+        },
+        waitForMergedPr: async () => {},
+        runNext: async (input) => {
+          nextPrs.push(input.pr);
+          return { status: QUEUE_EMPTY };
+        },
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(linearSliceCalls).toBe(0);
+    expect(nextPrs).toEqual([43]);
+    expect(result).toEqual({ status: "queue-empty", slicesCompleted: 1 });
+    await expect(readActive(projectId, stateRoot)).resolves.toBeNull();
+  });
+
   it("keeps the mutex when the slice is blocked", async () => {
     const events: string[] = [];
 
     const result = await loopProject(
       { projectId: "portfolio", issue: 10 },
       {
+        ...readNoActive,
         loadRegistry: async () => [portfolio],
         runLinearSlice: async () => ({
           status: "blocked" as const,

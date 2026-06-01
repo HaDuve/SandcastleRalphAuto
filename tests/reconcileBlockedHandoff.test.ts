@@ -10,9 +10,9 @@ import {
 } from "../src/handoff/reconcileBlockedHandoff.js";
 import { readHostHandoff, writeHostHandoff } from "../src/handoff/hostStore.js";
 import { readHandoff } from "../src/handoff/io.js";
+import type { Handoff } from "../src/handoff/schema.js";
 import { MERGE_GATE_NO_APPROVE_REASON } from "../src/merge/index.js";
 import {
-  readActive,
   resolveActivePath,
   writeActive,
   type ActiveState,
@@ -272,7 +272,7 @@ describe("reconcileBlockedHandoff", () => {
       nextSkill: "/next",
       startedAt: "2026-06-01T00:00:00.000Z",
       endedAt: "2026-06-01T01:00:00.000Z",
-    };
+    } satisfies Handoff;
     await writeHostHandoff({ stateRoot, projectId, handoff });
     const active: ActiveState = {
       issue: 32,
