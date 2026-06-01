@@ -113,7 +113,7 @@ export function subscribeProjectEvents(
 ): () => void {
   const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`);
   const handler = (event: Event) => {
-    const message = event as MessageEvent<string>;
+    const message = event as MessageEvent;
     try {
       onEvent(JSON.parse(message.data) as ProjectEvent);
     } catch {

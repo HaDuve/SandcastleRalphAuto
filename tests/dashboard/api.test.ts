@@ -132,7 +132,9 @@ describe("dashboard API client", () => {
     expect(listeners.has("worker-started")).toBe(true);
 
     listeners.get("worker-started")!.forEach((handler) =>
-      handler({ data: JSON.stringify({ type: "worker-started", projectId: "portfolio" }) }),
+      handler({
+        data: JSON.stringify({ type: "worker-started", projectId: "portfolio" }),
+      } as unknown as Event),
     );
     expect(onEvent).toHaveBeenCalledWith({
       type: "worker-started",

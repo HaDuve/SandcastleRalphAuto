@@ -43,7 +43,7 @@ class MockEventSource {
       return;
     }
     for (const handler of handlers) {
-      handler({ data: JSON.stringify(data) } as Event);
+      handler({ data: JSON.stringify(data) } as unknown as Event);
     }
   }
 }
