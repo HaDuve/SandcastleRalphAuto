@@ -105,15 +105,134 @@ describe("dashboard server", () => {
     server = undefined;
   });
 
-  it("lists registered projects", async () => {
-    const { rootDir, project } = await setupProjectRoot();
-    const started = await startServer(rootDir);
+  it("lists registered projects with status enrichment", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const activeDir = join(stateRoot, project.remote);
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(
+      join(activeDir, "active.json"),
+      JSON.stringify(
+        {
+          issue: 11,
+          phase: "tdd",
+          branch: "issue-11",
+          status: "active",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    await writeFile(
+      join(activeDir, "run.json"),
+      JSON.stringify(
+        {
+          outcome: "blocked",
+          reason: "CI failed",
+          phase: "review-pr",
+          stoppedAt: "2026-06-01T12:00:00.000Z",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const started = await startServer(rootDir, { stateRoot });
     server = started.server;
 
     const response = await fetch(`${started.baseUrl}/api/projects`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ projects: [project] });
+    expect(await response.json()).toEqual({
+      projects: [
+        {
+          ...project,
+          workerStatus: "idle",
+          lastRunOutcome: {
+            outcome: "blocked",
+            reason: "CI failed",
+            phase: "review-pr",
+            stoppedAt: "2026-06-01T12:00:00.000Z",
+          },
+          active: { issue: 11, phase: "tdd", status: "active" },
+        },
+      ],
+    });
+  });
+
+  it("returns the active issue phase log and available phases", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const activeDir = join(stateRoot, project.remote);
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(
+      join(activeDir, "active.json"),
+      JSON.stringify(
+        {
+          issue: 7,
+          phase: "review-pr",
+          branch: "issue-7",
+          status: "active",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const logsDir = join(project.path, ".sandcastle", "logs");
+    await mkdir(logsDir, { recursive: true });
+    await writeFile(join(logsDir, "issue-7-tdd.log"), "tdd output\n");
+    await writeFile(join(logsDir, "issue-7-review-pr.log"), "review output\n");
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/log`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      issue: 7,
+      phase: "review-pr",
+      log: "review output\n",
+      phases: ["tdd", "review-pr"],
+    });
+  });
+
+  it("returns a specific phase log when phase query is set", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const activeDir = join(stateRoot, project.remote);
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(
+      join(activeDir, "active.json"),
+      JSON.stringify(
+        {
+          issue: 7,
+          phase: "review-pr",
+          branch: "issue-7",
+          status: "active",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const logsDir = join(project.path, ".sandcastle", "logs");
+    await mkdir(logsDir, { recursive: true });
+    await writeFile(join(logsDir, "issue-7-tdd.log"), "tdd output\n");
+    await writeFile(join(logsDir, "issue-7-review-pr.log"), "review output\n");
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(
+      `${started.baseUrl}/api/projects/portfolio/log?phase=tdd`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      issue: 7,
+      phase: "tdd",
+      log: "tdd output\n",
+      phases: ["tdd", "review-pr"],
+    });
   });
 
   it("returns active slice state for a project", async () => {

@@ -4,8 +4,16 @@ import { join, extname, resolve } from "node:path";
 import { findProjectById, type RunProjectDeps } from "../cli/index.js";
 import { listHandoffHistory } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
+import { listPhaseLogs, readPhaseLog } from "../phaseLogs/index.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
-import { readActive, readSkips, writeSkips } from "../state/index.js";
+import {
+  PhaseSchema,
+  readActive,
+  readRunOutcome,
+  readSkips,
+  writeSkips,
+} from "../state/index.js";
+import { toActiveSummary, workerStatusFor } from "./projectSnapshot.js";
 import { createEventBus, type EventBus } from "./eventBus.js";
 import { fetchProjectQueue } from "./queue.js";
 import { createWorkerManager, type WorkerManager } from "./workerManager.js";
@@ -26,9 +34,12 @@ export type DashboardServerOptions = {
   staticDir?: string;
   loadRegistry?: (rootDir: string) => Promise<Project[]>;
   readActive?: typeof readActive;
+  readRunOutcome?: typeof readRunOutcome;
   readSkips?: typeof readSkips;
   writeSkips?: typeof writeSkips;
   fetchQueue?: typeof fetchProjectQueue;
+  listPhaseLogs?: typeof listPhaseLogs;
+  readPhaseLog?: typeof readPhaseLog;
   listHistory?: typeof listHandoffHistory;
   gh?: GhRunner;
   workerManager?: WorkerManager;
@@ -39,6 +50,13 @@ export type DashboardServerOptions = {
 function requestPathname(req: IncomingMessage): string {
   const raw = req.url ?? "/";
   return raw.split("?")[0]?.split("#")[0] ?? "/";
+}
+
+function requestSearchParams(req: IncomingMessage): URLSearchParams {
+  const raw = req.url ?? "/";
+  const queryStart = raw.indexOf("?");
+  const query = queryStart === -1 ? "" : raw.slice(queryStart);
+  return new URL(query || "?", "http://localhost").searchParams;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -133,9 +151,12 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
     ((rootDir: string) =>
       loadRegistryFromRoot(rootDir, { checkGhAuth: async () => {} }));
   const readActiveFn = options.readActive ?? readActive;
+  const readRunOutcomeFn = options.readRunOutcome ?? readRunOutcome;
   const readSkipsFn = options.readSkips ?? readSkips;
   const writeSkipsFn = options.writeSkips ?? writeSkips;
   const fetchQueueFn = options.fetchQueue ?? fetchProjectQueue;
+  const listPhaseLogsFn = options.listPhaseLogs ?? listPhaseLogs;
+  const readPhaseLogFn = options.readPhaseLog ?? readPhaseLog;
   const listHistoryFn = options.listHistory ?? listHandoffHistory;
   const eventBus = options.eventBus ?? createEventBus();
   const workerManager =
@@ -153,7 +174,21 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
 
       if (req.method === "GET" && pathname === "/api/projects") {
         const projects = await loadRegistry(rootDir);
-        sendJson(res, 200, { projects });
+        const enriched = await Promise.all(
+          projects.map(async (project) => {
+            const [active, lastRunOutcome] = await Promise.all([
+              readActiveFn(project.remote, stateRoot),
+              readRunOutcomeFn(project.remote, stateRoot),
+            ]);
+            return {
+              ...project,
+              workerStatus: workerStatusFor(workerManager, project.id),
+              lastRunOutcome,
+              active: toActiveSummary(active),
+            };
+          }),
+        );
+        sendJson(res, 200, { projects: enriched });
         return;
       }
 
@@ -164,6 +199,34 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         if (req.method === "GET" && projectRoute.action === "active") {
           const active = await readActiveFn(project.remote, stateRoot);
           sendJson(res, 200, { active });
+          return;
+        }
+
+        if (req.method === "GET" && projectRoute.action === "log") {
+          const active = await readActiveFn(project.remote, stateRoot);
+          if (!active) {
+            sendJson(res, 404, { error: "No active slice" });
+            return;
+          }
+
+          const phaseParam = requestSearchParams(req).get("phase");
+          let phase = active.phase;
+          if (phaseParam !== null) {
+            const parsed = PhaseSchema.safeParse(phaseParam);
+            if (!parsed.success) {
+              sendJson(res, 400, { error: "Invalid phase" });
+              return;
+            }
+            phase = parsed.data;
+          }
+
+          const phases = await listPhaseLogsFn(project.remote, active.issue, {
+            rootDir,
+          });
+          const log = await readPhaseLogFn(project.remote, active.issue, phase, {
+            rootDir,
+          });
+          sendJson(res, 200, { issue: active.issue, phase, log, phases });
           return;
         }
 
