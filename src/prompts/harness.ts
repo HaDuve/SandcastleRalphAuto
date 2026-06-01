@@ -1,3 +1,4 @@
+import { renderHandoffContract } from "../handoff/contract.js";
 import type { RunnablePhase } from "./phases.js";
 
 function renderBranchPin(phase: RunnablePhase): string {
@@ -23,7 +24,7 @@ function renderOutputs(): string {
     "## Outputs (in order)",
     "",
     "1. **Commit** — stage only the paths you changed in this phase (not blind `git add -A` unless the skill explicitly requires it). Commit with a message matching repo style (1–2 sentences, focus on **why**). **Do not create an empty commit**; if there are no file changes from this phase, skip this step.",
-    "2. **Handoff** — write an updated handoff to `.sandcastle-ralph/handoff/current.json` (valid per host schema: phase, acceptanceState, blockers, mergeReady, nextSkill, timestamps).",
+    "2. **Handoff** — write `.sandcastle-ralph/handoff/current.json` per the **Handoff contract** above.",
     "3. **Signal** — emit `<promise>PHASE_COMPLETE</promise>` as the final line of your response.",
   ].join("\n");
 }
@@ -40,6 +41,8 @@ export function renderHarness(phase: RunnablePhase): string {
     "2. Load the linked GitHub issue (`project` + `issue` from the handoff).",
     "",
     renderBranchPin(phase),
+    "",
+    renderHandoffContract(),
     "",
     renderOutputs(),
     "",
