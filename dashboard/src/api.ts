@@ -9,6 +9,7 @@ export type ProjectEvent = {
   type: string;
   projectId?: string;
   workerStatus?: WorkerStatus;
+  reason?: string;
 };
 
 const WORKER_EVENT_TYPES = [

@@ -1,3 +1,11 @@
+export type RunOutcome = {
+  outcome: "queue-empty" | "blocked" | "awaiting-human" | "killed" | "error";
+  reason?: string;
+  phase?: string;
+  stoppedAt: string;
+  logRef?: string;
+};
+
 export type Project = {
   id: string;
   path: string;
@@ -8,6 +16,13 @@ export type Project = {
   autoMerge: boolean;
   concurrency: "single";
   sandbox: "none";
+  workerStatus?: "idle" | "running" | "paused";
+  lastRunOutcome?: RunOutcome | null;
+  active?: {
+    issue: number;
+    phase: string;
+    status: "active" | "blocked" | "awaiting-human";
+  } | null;
 };
 
 export type QueueIssue = {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   fetchActive,
   fetchHistory,
@@ -17,9 +18,19 @@ import { DashboardLayout } from "./DashboardLayout.js";
 import { HistoryPanel } from "./HistoryPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
+import { RunOutcomePanel } from "./RunOutcomePanel.js";
 import type { ActiveSlice, HistoryEntry, Project, QueueIssue } from "./types.js";
 import { pruneHiddenIds, readHiddenIds, writeHiddenIds } from "./hiddenProjects.js";
-import { applyWorkerEvent, canHideProject, type WorkerStatus } from "./workerStatus.js";
+import { workerStatesFromProjects } from "./rehydrateProjects.js";
+import {
+  pruneSelectedIds,
+  readFocusedProjectId,
+  readSelectedIds,
+  resolveFocusedProjectId,
+  writeFocusedProjectId,
+  writeSelectedIds,
+} from "./selectedProjects.js";
+import { applyWorkerEvent, canHideProject, type WorkerState } from "./workerStatus.js";
 import "./app.css";
 
 function PanelPlaceholder({ title, projectId }: { title: string; projectId: string | null }) {
@@ -34,8 +45,8 @@ function PanelPlaceholder({ title, projectId }: { title: string; projectId: stri
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => readHiddenIds());
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [workerStatuses, setWorkerStatuses] = useState<Record<string, WorkerStatus>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => readSelectedIds());
+  const [workerStates, setWorkerStates] = useState<Record<string, WorkerState>>({});
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueIssue[]>([]);
   const [active, setActive] = useState<ActiveSlice | null>(null);
@@ -46,6 +57,8 @@ export function App() {
   const focusedProjectIdRef = useRef(focusedProjectId);
 
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
+  const focusedLastOutcome =
+    focusedProjectId === null ? null : (workerStates[focusedProjectId]?.lastOutcome ?? null);
   const visibleProjects = projects.filter((project) => !hiddenIds.has(project.id));
 
   useEffect(() => {
@@ -68,6 +81,20 @@ export function App() {
             writeHiddenIds(next);
             return next;
           });
+          let nextSelectedIds!: Set<string>;
+          flushSync(() => {
+            setSelectedIds((current) => {
+              nextSelectedIds = pruneSelectedIds(current, knownProjectIds);
+              if (nextSelectedIds.size !== current.size) {
+                writeSelectedIds(nextSelectedIds);
+              }
+              return nextSelectedIds;
+            });
+          });
+          setWorkerStates(workerStatesFromProjects(loaded, nextSelectedIds));
+          setFocusedProjectId(
+            resolveFocusedProjectId(nextSelectedIds, readFocusedProjectId()),
+          );
         }
       })
       .catch((error: unknown) => {
@@ -85,7 +112,7 @@ export function App() {
     for (const projectId of selectedIds) {
       unsubscribes.push(
         subscribeProjectEvents(projectId, (event) => {
-          setWorkerStatuses((current) => ({
+          setWorkerStates((current) => ({
             ...current,
             [projectId]: applyWorkerEvent(current[projectId], event),
           }));
@@ -160,7 +187,7 @@ export function App() {
   }, [focusedProjectId]);
 
   const handleHide = useCallback((projectId: string) => {
-    const status = workerStatuses[projectId] ?? "unknown";
+    const status = workerStates[projectId]?.status ?? "unknown";
     if (!canHideProject(status)) {
       return;
     }
@@ -176,10 +203,15 @@ export function App() {
       }
       const next = new Set(current);
       next.delete(projectId);
+      writeSelectedIds(next);
       return next;
     });
-    setFocusedProjectId((current) => (current === projectId ? null : current));
-  }, [workerStatuses]);
+    setFocusedProjectId((current) => {
+      const next = current === projectId ? null : current;
+      writeFocusedProjectId(next);
+      return next;
+    });
+  }, [workerStates]);
 
   const handleShowAll = useCallback(() => {
     setHiddenIds(() => {
@@ -190,6 +222,15 @@ export function App() {
   }, []);
 
   const handleSelectedChange = useCallback((projectId: string, selected: boolean) => {
+    if (selected) {
+      const project = projects.find((entry) => entry.id === projectId);
+      if (project) {
+        setWorkerStates((current) => ({
+          ...current,
+          [projectId]: workerStatesFromProjects([project], new Set([projectId]))[projectId]!,
+        }));
+      }
+    }
     setSelectedIds((current) => {
       const next = new Set(current);
       if (selected) {
@@ -197,21 +238,21 @@ export function App() {
       } else {
         next.delete(projectId);
       }
+      writeSelectedIds(next);
       return next;
     });
     setFocusedProjectId((current) => {
-      if (selected) {
-        return projectId;
-      }
-      if (current === projectId) {
-        return null;
-      }
-      return current;
+      const next = selected ? projectId : current === projectId ? null : current;
+      writeFocusedProjectId(next);
+      return next;
     });
-  }, []);
+  }, [projects]);
 
-  const setWorkerStatus = useCallback((projectId: string, status: WorkerStatus) => {
-    setWorkerStatuses((current) => ({ ...current, [projectId]: status }));
+  const setWorkerStatus = useCallback((projectId: string, status: WorkerState["status"]) => {
+    setWorkerStates((current) => ({
+      ...current,
+      [projectId]: { status, lastOutcome: current[projectId]?.lastOutcome ?? null },
+    }));
   }, []);
 
   const runControl = useCallback(
@@ -295,7 +336,7 @@ export function App() {
           <ProjectPicker
             projects={visibleProjects}
             selectedIds={selectedIds}
-            workerStatuses={workerStatuses}
+            workerStates={workerStates}
             hasHiddenProjects={hiddenIds.size > 0}
             onSelectedChange={handleSelectedChange}
             onStart={(projectId) => void runControl("start", projectId)}
@@ -306,7 +347,9 @@ export function App() {
             onShowAll={handleShowAll}
           />
         }
-        runOutcome={<PanelPlaceholder title="Run outcome" projectId={focusedProjectId} />}
+        runOutcome={
+          <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
+        }
         phaseStepper={<PanelPlaceholder title="Phase stepper" projectId={focusedProjectId} />}
         active={<ActivePanel project={focusedProject} active={active} />}
         log={<PanelPlaceholder title="Log" projectId={focusedProjectId} />}
