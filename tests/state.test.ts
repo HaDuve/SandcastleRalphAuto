@@ -62,6 +62,24 @@ describe("writeActive / readActive", () => {
     expect(JSON.parse(raw)).toEqual(sampleActive);
   });
 
+  it("persists awaiting-human state when autoMerge is disabled", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
+    const awaitingHuman: ActiveState = {
+      issue: 4,
+      phase: "merge",
+      branch: "issue-4-state-store",
+      pr: 17,
+      status: "awaiting-human",
+      reason: "autoMerge is disabled for this project",
+    };
+
+    await writeActive("HaDuve/SandcastleRalphAuto", awaitingHuman, stateRoot);
+
+    await expect(
+      readActive("HaDuve/SandcastleRalphAuto", stateRoot),
+    ).resolves.toEqual(awaitingHuman);
+  });
+
   it("persists blocked state with reason and resume skill", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "state-test-"));
     const blocked: ActiveState = {
