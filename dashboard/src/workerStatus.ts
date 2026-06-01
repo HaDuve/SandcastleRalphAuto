@@ -34,11 +34,17 @@ export function applyWorkerEvent(
   const state = normalizeCurrent(current);
 
   switch (event.type) {
-    case "connected":
+    case "connected": {
+      const nextStatus = event.workerStatus ?? state.status ?? "unknown";
+      if (state.status === "idle" && state.lastOutcome !== null && nextStatus === "running") {
+        return state;
+      }
       return {
         ...state,
-        status: event.workerStatus ?? state.status ?? "unknown",
+        status: nextStatus,
+        lastOutcome: nextStatus === "running" ? null : state.lastOutcome,
       };
+    }
     case "worker-started":
       return { status: "running", lastOutcome: null };
     case "worker-paused":

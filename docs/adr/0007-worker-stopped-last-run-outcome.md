@@ -17,8 +17,9 @@ only `reason: string` on `worker-stopped`, so the dashboard synthesized a thin
    server tests and operator dashboard only.
 3. **Dashboard.** Apply `lastRunOutcome` in the worker reducer; patch `projects[]` on
    stop so re-selecting a project is not stale; defer SSE subscription until initial
-   `fetchProjects` completes; if `lastRunOutcome` is absent on a malformed event, set
-   `idle` but **keep** the prior `lastOutcome`.
+   `fetchProjects` completes (if catalog fetch fails, SSE stays off — acceptable while
+   the project list is unavailable); if `lastRunOutcome` is absent on a malformed event,
+   set `idle` but **keep** the prior `lastOutcome`.
 
 ## Consequences
 

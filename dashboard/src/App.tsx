@@ -289,10 +289,17 @@ export function App() {
     if (selected) {
       const project = projects.find((entry) => entry.id === projectId);
       if (project) {
-        setWorkerStates((current) => ({
-          ...current,
-          [projectId]: workerStatesFromProjects([project], new Set([projectId]))[projectId]!,
-        }));
+        setWorkerStates((current) => {
+          const fromCatalog = workerStatesFromProjects([project], new Set([projectId]))[projectId]!;
+          const existing = current[projectId];
+          const nextState =
+            fromCatalog.lastOutcome === null &&
+            existing?.status === "idle" &&
+            existing.lastOutcome !== null
+              ? existing
+              : fromCatalog;
+          return { ...current, [projectId]: nextState };
+        });
         setActiveSummaries((current) => ({
           ...current,
           [projectId]: project.active ?? null,

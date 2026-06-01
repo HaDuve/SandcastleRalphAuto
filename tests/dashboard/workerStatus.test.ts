@@ -69,6 +69,20 @@ describe("applyWorkerEvent", () => {
     });
   });
 
+  it("ignores stale running on connected when idle with a terminal outcome", () => {
+    const idleWithOutcome = {
+      status: "idle" as const,
+      lastOutcome: {
+        outcome: "blocked" as const,
+        reason: "CI failed",
+        stoppedAt: "2026-06-01T12:00:00.000Z",
+      },
+    };
+    expect(
+      applyWorkerEvent(idleWithOutcome, { type: "connected", workerStatus: "running" }),
+    ).toEqual(idleWithOutcome);
+  });
+
   it("applies connected events that carry orchestrator status", () => {
     expect(applyWorkerEvent(undefined, { type: "connected", workerStatus: "idle" }).status).toBe(
       "idle",
