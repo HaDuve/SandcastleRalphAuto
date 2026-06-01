@@ -667,9 +667,9 @@ export async function loopProject(
             const { readSkips } = await import("../state/index.js");
             return readSkips(projectId, skipsRoot);
           },
-          archiveHandoff: async (handoffRoot) => {
-            const { archiveHandoff } = await import("../handoff/index.js");
-            return archiveHandoff(handoffRoot);
+          archiveHandoff: async (projectId) => {
+            const { archiveHostHandoff } = await import("../handoff/index.js");
+            return archiveHostHandoff({ stateRoot, projectId });
           },
           writeActive,
           startTdd: async (startInput) => {

@@ -2,7 +2,7 @@ import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Handoff, writeHandoff } from "../src/handoff/index.js";
+import { type Handoff, writeHandoff, writeHostHandoff } from "../src/handoff/index.js";
 import {
   CURSOR_TRUST_SETUP,
   DEFAULT_TDD_MAX_ITERATIONS,
@@ -15,8 +15,10 @@ import {
   type SandcastleSandboxRunResult,
 } from "../src/runner/index.js";
 
+const PROJECT_ID = "HaDuve/SandcastleRalphAuto";
+
 const sampleHandoff: Handoff = {
-  project: "HaDuve/SandcastleRalphAuto",
+  project: PROJECT_ID,
   issue: 6,
   branch: "issue-6-runner",
   phase: "create-pr",
@@ -83,10 +85,11 @@ describe("runPhase", () => {
     const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, worktreePath);
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
 
     const deps = createMockDeps(
       {
@@ -108,6 +111,8 @@ describe("runPhase", () => {
         phase: "create-pr",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
       },
       deps,
@@ -131,12 +136,13 @@ describe("runPhase", () => {
     const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "tdd.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# tdd\n");
 
     const seedHandoff: Handoff = {
-      project: "HaDuve/SandcastleRalphAuto",
+      project: PROJECT_ID,
       issue: 9,
       branch: "issue-9",
       phase: "tdd",
@@ -180,6 +186,8 @@ describe("runPhase", () => {
         phase: "tdd",
         branch: "issue-9",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
         seedHandoff,
       },
@@ -197,7 +205,8 @@ describe("runPhase", () => {
     const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
-    await writeHandoff(sampleHandoff, worktreePath);
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
     const orchestratorRoot = resolveOrchestratorRoot();
 
     const deps = createMockDeps(
@@ -218,6 +227,8 @@ describe("runPhase", () => {
         phase: "review-pr",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         orchestratorRoot,
       },
       deps,
@@ -232,10 +243,15 @@ describe("runPhase", () => {
     const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "tdd.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# tdd\n");
-    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, worktreePath);
+    await writeHostHandoff({
+      stateRoot,
+      projectId: PROJECT_ID,
+      handoff: { ...sampleHandoff, phase: "tdd" },
+    });
 
     const deps = createMockDeps(
       {
@@ -255,6 +271,8 @@ describe("runPhase", () => {
         phase: "tdd",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
         tddMaxIterations: 7,
       },
@@ -270,6 +288,8 @@ describe("runPhase", () => {
         phase: "tdd",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
       },
       deps,
@@ -278,13 +298,19 @@ describe("runPhase", () => {
     expect(runCalls[0]?.maxIterations).toBe(DEFAULT_TDD_MAX_ITERATIONS);
 
     runCalls.length = 0;
-    await writeHandoff({ ...sampleHandoff, phase: "merge" }, worktreePath);
+    await writeHostHandoff({
+      stateRoot,
+      projectId: PROJECT_ID,
+      handoff: { ...sampleHandoff, phase: "merge" },
+    });
 
     await runPhase(
       {
         phase: "merge",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile: join(projectPath, "prompts", "merge.md"),
         tddMaxIterations: 7,
       },
@@ -298,10 +324,11 @@ describe("runPhase", () => {
     const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, worktreePath);
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
 
     const controller = new AbortController();
 
@@ -323,6 +350,8 @@ describe("runPhase", () => {
         phase: "create-pr",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
         signal: controller.signal,
       },
@@ -335,10 +364,11 @@ describe("runPhase", () => {
   it("reads handoff from the worktree before sandbox teardown on a clean success path", async () => {
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, worktreePath);
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
 
     let closed = false;
 
@@ -361,6 +391,8 @@ describe("runPhase", () => {
         phase: "create-pr",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
       },
       deps,
@@ -381,10 +413,15 @@ describe("runPhase", () => {
     const forwarded: unknown[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "tdd.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# tdd\n");
-    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, worktreePath);
+    await writeHostHandoff({
+      stateRoot,
+      projectId: PROJECT_ID,
+      handoff: { ...sampleHandoff, phase: "tdd" },
+    });
 
     const textEvent = {
       type: "text" as const,
@@ -429,6 +466,8 @@ describe("runPhase", () => {
         phase: "tdd",
         branch: "issue-12-stream",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
         onAgentStreamEvent: (event) => {
           forwarded.push(event);
@@ -444,10 +483,15 @@ describe("runPhase", () => {
     const runCalls: SandcastleSandboxRunOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "tdd.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# tdd\n");
-    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, worktreePath);
+    await writeHostHandoff({
+      stateRoot,
+      projectId: PROJECT_ID,
+      handoff: { ...sampleHandoff, phase: "tdd" },
+    });
 
     const deps = createMockDeps(
       {
@@ -467,6 +511,8 @@ describe("runPhase", () => {
         phase: "tdd",
         branch: "feature/foo@bar",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
         onAgentStreamEvent: () => {},
       },
@@ -483,10 +529,11 @@ describe("runPhase", () => {
     const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
     const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
     await writeFile(promptFile, "# create-pr\n");
-    await writeHandoff(sampleHandoff, worktreePath);
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
 
     const customSandbox = mockSandbox("custom");
 
@@ -507,6 +554,8 @@ describe("runPhase", () => {
         phase: "create-pr",
         branch: "issue-6-runner",
         projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
         promptFile,
         sandbox: customSandbox,
       },

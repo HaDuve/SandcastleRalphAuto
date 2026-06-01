@@ -9,10 +9,18 @@ export class HandoffError extends Error {
   }
 }
 
+/**
+ * Worktree path (agent-facing).
+ * This stays in-repo so the sandboxed agent can read/write it.
+ */
 export function resolveCurrentHandoffPath(rootDir: string): string {
   return join(rootDir, ".sandcastle-ralph", "handoff", "current.json");
 }
 
+/**
+ * Worktree history path (agent-facing).
+ * Note: archival is now host-owned; this remains for backwards compat/tests.
+ */
 export function resolveHandoffHistoryDir(rootDir: string): string {
   return join(rootDir, ".sandcastle-ralph", "handoff", "history");
 }
