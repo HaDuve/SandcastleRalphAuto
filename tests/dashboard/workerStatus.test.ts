@@ -26,16 +26,16 @@ describe("applyWorkerEvent", () => {
   });
 
   it("returns the worker to idle when it stops", () => {
-    expect(applyWorkerEvent({ status: "running" }, { type: "worker-stopped" }).status).toBe(
+    expect(applyWorkerEvent({ status: "running", lastOutcome: null }, { type: "worker-stopped" }).status).toBe(
       "idle",
     );
-    expect(applyWorkerEvent({ status: "paused" }, { type: "worker-stopped" }).status).toBe(
+    expect(applyWorkerEvent({ status: "paused", lastOutcome: null }, { type: "worker-stopped" }).status).toBe(
       "idle",
     );
   });
 
   it("carries lastOutcome from worker-stopped reason", () => {
-    const next = applyWorkerEvent({ status: "running" }, {
+    const next = applyWorkerEvent({ status: "running", lastOutcome: null }, {
       type: "worker-stopped",
       reason: "queue-empty",
     });
