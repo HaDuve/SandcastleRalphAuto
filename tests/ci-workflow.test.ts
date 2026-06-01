@@ -33,6 +33,14 @@ describe("CI workflow contract", () => {
     expect(jobBody).toContain("runs-on:");
   });
 
+  it("checks out the repository before installing dependencies", () => {
+    const content = workflowContent();
+    expect(content).toContain("actions/checkout@v4");
+    expect(content.indexOf("actions/checkout@v4")).toBeLessThan(
+      content.indexOf("actions/setup-node@v4"),
+    );
+  });
+
   it("installs node 22 and runs typecheck plus test", () => {
     const content = workflowContent();
     expect(content).toContain("actions/setup-node@v4");
@@ -41,5 +49,10 @@ describe("CI workflow contract", () => {
     expect(content).toContain("npm ci");
     expect(content).toContain("npm run typecheck");
     expect(content).toContain("npm test");
+  });
+
+  it("fails the job when typecheck or test steps exit non-zero", () => {
+    const jobBody = ciJobBody(workflowContent());
+    expect(jobBody).not.toContain("continue-on-error: true");
   });
 });
