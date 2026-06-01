@@ -18,14 +18,13 @@ function renderBranchPin(phase: CanonicalPhase): string {
   return lines.join("\n");
 }
 
-function renderCommitStep(): string {
+function renderOutputs(): string {
   return [
-    "## Git commit (required)",
+    "## Outputs (in order)",
     "",
-    "Before updating the handoff or emitting the completion signal:",
-    "",
-    "1. Stage only the paths you changed in this phase (not blind `git add -A` unless the skill explicitly requires it).",
-    "2. Commit with a message matching repo style (1–2 sentences, focus on **why**). **Do not create an empty commit** — if there are no file changes from this phase, skip the commit step.",
+    "1. **Commit** — stage only the paths you changed in this phase (not blind `git add -A` unless the skill explicitly requires it). Commit with a message matching repo style (1–2 sentences, focus on **why**). **Do not create an empty commit**; if there are no file changes from this phase, skip this step.",
+    "2. **Handoff** — write an updated handoff to `.sandcastle-ralph/handoff/current.json` (valid per host schema: phase, acceptanceState, blockers, mergeReady, nextSkill, timestamps).",
+    "3. **Signal** — emit `<promise>PHASE_COMPLETE</promise>` as the final line of your response.",
   ].join("\n");
 }
 
@@ -42,12 +41,7 @@ export function renderHarness(phase: CanonicalPhase): string {
     "",
     renderBranchPin(phase),
     "",
-    renderCommitStep(),
-    "",
-    "## Outputs (in order)",
-    "",
-    "1. When the phase work is complete, write an updated handoff to `.sandcastle-ralph/handoff/current.json` (valid per host schema: phase, acceptanceState, blockers, mergeReady, nextSkill, timestamps).",
-    "2. Emit `<promise>PHASE_COMPLETE</promise>` as the final line of your response when done.",
+    renderOutputs(),
     "",
   ].join("\n");
 }

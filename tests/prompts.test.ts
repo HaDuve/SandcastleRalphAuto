@@ -27,15 +27,21 @@ describe("canonical phase prompts", () => {
 });
 
 describe("renderHarness", () => {
-  it("requires committing phase work before the completion signal", () => {
+  it("lists commit, handoff, and completion signal in order under Outputs", () => {
     const harness = renderHarness("tdd");
+    const outputsStart = harness.indexOf("## Outputs (in order)");
+    expect(outputsStart).toBeGreaterThan(-1);
 
-    expect(harness).toMatch(/commit/i);
-    expect(harness).toMatch(/empty commit/i);
-    const commitIndex = harness.indexOf("commit");
-    const signalIndex = harness.indexOf("<promise>PHASE_COMPLETE</promise>");
-    expect(commitIndex).toBeGreaterThan(-1);
-    expect(signalIndex).toBeGreaterThan(commitIndex);
+    const outputsSection = harness.slice(outputsStart);
+    const commitStep = outputsSection.indexOf("1. **Commit**");
+    const handoffStep = outputsSection.indexOf("2. **Handoff**");
+    const signalStep = outputsSection.indexOf("3. **Signal**");
+
+    expect(commitStep).toBeGreaterThan(-1);
+    expect(handoffStep).toBeGreaterThan(commitStep);
+    expect(signalStep).toBeGreaterThan(handoffStep);
+    expect(outputsSection).toMatch(/empty commit/i);
+    expect(outputsSection).toContain("<promise>PHASE_COMPLETE</promise>");
   });
 
   it("pins every phase to handoff.branch (issue-<n>)", () => {
