@@ -2,8 +2,13 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Handoff } from "../src/handoff/index.js";
-import { runNext, selectNextIssue, type GhIssue } from "../src/next/index.js";
+import { HandoffError, type Handoff } from "../src/handoff/index.js";
+import {
+  QUEUE_EMPTY,
+  runNext,
+  selectNextIssue,
+  type GhIssue,
+} from "../src/next/index.js";
 import { type Project } from "../src/registry/index.js";
 
 const project: Pick<Project, "afkLabel" | "blockedLabels"> = {
@@ -113,6 +118,19 @@ function mergeHandoff(overrides: Partial<Handoff> = {}): Handoff {
   };
 }
 
+function runNextDeps(
+  overrides: Partial<Parameters<typeof runNext>[1]> = {},
+): Parameters<typeof runNext>[1] {
+  return {
+    gh: async () => "[]",
+    readSkips: async () => [],
+    archiveHandoff: async () => "archived",
+    writeActive: async () => {},
+    startTdd: async () => {},
+    ...overrides,
+  };
+}
+
 describe("runNext", () => {
   it("blocks when the prior PR is not merged", async () => {
     const ghCalls: string[][] = [];
@@ -124,7 +142,7 @@ describe("runNext", () => {
         stateRoot: "/tmp/state",
         pr: 42,
       },
-      {
+      runNextDeps({
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
@@ -132,12 +150,7 @@ describe("runNext", () => {
           }
           return "[]";
         },
-        readSkips: async () => [],
-        archiveHandoff: async () => "unused",
-        writeHandoff: async () => {},
-        writeActive: async () => {},
-        startTdd: async () => {},
-      },
+      }),
     );
 
     expect(result).toEqual({
@@ -145,6 +158,84 @@ describe("runNext", () => {
       reason: "PR #42 is not merged (state: OPEN)",
     });
     expect(ghCalls.some((args) => args[0] === "issue")).toBe(false);
+  });
+
+  it("blocks when gh returns malformed PR state JSON", async () => {
+    const result = await runNext(
+      {
+        project: fullProject,
+        projectPath: "/tmp/sandcastle",
+        stateRoot: "/tmp/state",
+        pr: 42,
+      },
+      runNextDeps({
+        gh: async (args) => {
+          if (args[0] === "pr" && args[1] === "view") {
+            return "not json";
+          }
+          return "[]";
+        },
+      }),
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      reason: "Could not parse PR state from gh",
+    });
+  });
+
+  it("blocks when archiveHandoff fails", async () => {
+    const result = await runNext(
+      {
+        project: fullProject,
+        projectPath: "/tmp/sandcastle",
+        stateRoot: "/tmp/state",
+        pr: 42,
+      },
+      runNextDeps({
+        gh: async (args) => {
+          if (args[0] === "pr" && args[1] === "view") {
+            return JSON.stringify({ state: "MERGED" });
+          }
+          return "[]";
+        },
+        archiveHandoff: async () => {
+          throw new HandoffError("Handoff not found");
+        },
+      }),
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      reason: "Handoff not found",
+    });
+  });
+
+  it("blocks when gh returns malformed issue list JSON", async () => {
+    const result = await runNext(
+      {
+        project: fullProject,
+        projectPath: "/tmp/sandcastle",
+        stateRoot: "/tmp/state",
+        pr: 42,
+      },
+      runNextDeps({
+        gh: async (args) => {
+          if (args[0] === "pr" && args[1] === "view") {
+            return JSON.stringify({ state: "MERGED" });
+          }
+          if (args[0] === "issue" && args[1] === "list") {
+            return "not json";
+          }
+          return "";
+        },
+      }),
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      reason: "Could not parse issues from gh",
+    });
   });
 
   it("archives handoff and starts tdd for the lowest eligible issue", async () => {
@@ -159,8 +250,7 @@ describe("runNext", () => {
 
     const ghCalls: string[][] = [];
     let archived = false;
-    let startedTdd: { issue: number; branch: string } | undefined;
-    let writtenHandoff: Handoff | undefined;
+    let startedTdd: { issue: number; branch: string; handoff: Handoff } | undefined;
     let writtenActive: unknown;
 
     const result = await runNext(
@@ -171,7 +261,7 @@ describe("runNext", () => {
         pr: 42,
         handoffRoot: rootDir,
       },
-      {
+      runNextDeps({
         gh: async (args) => {
           ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
@@ -193,23 +283,19 @@ describe("runNext", () => {
           }
           return "";
         },
-        readSkips: async () => [],
         archiveHandoff: async (dir) => {
           archived = true;
           expect(dir).toBe(rootDir);
           return join(dir, ".sandcastle-ralph/handoff/history/42.json");
         },
-        writeHandoff: async (handoff) => {
-          writtenHandoff = handoff;
-        },
         writeActive: async (_projectId, active) => {
           writtenActive = active;
         },
-        startTdd: async ({ issue, branch }) => {
-          startedTdd = { issue, branch };
+        startTdd: async ({ issue, branch, handoff }) => {
+          startedTdd = { issue, branch, handoff };
         },
         now: () => new Date("2026-06-01T12:00:00.000Z"),
-      },
+      }),
     );
 
     expect(result).toEqual({
@@ -218,14 +304,17 @@ describe("runNext", () => {
       branch: "issue-9",
     });
     expect(archived).toBe(true);
-    expect(startedTdd).toEqual({ issue: 9, branch: "issue-9" });
-    expect(writtenHandoff).toMatchObject({
-      project: "HaDuve/SandcastleRalphAuto",
+    expect(startedTdd).toMatchObject({
       issue: 9,
       branch: "issue-9",
-      phase: "tdd",
-      acceptanceState: "in-progress",
-      nextSkill: "/create-pr",
+      handoff: {
+        project: "HaDuve/SandcastleRalphAuto",
+        issue: 9,
+        branch: "issue-9",
+        phase: "tdd",
+        acceptanceState: "in-progress",
+        nextSkill: "/create-pr",
+      },
     });
     expect(writtenActive).toEqual({
       issue: 9,
@@ -257,7 +346,7 @@ describe("runNext", () => {
   });
 
   it("returns queue-empty when no eligible issues remain", async () => {
-    const ghCalls: string[][] = [];
+    let archived = false;
     let startTddCalled = false;
 
     const result = await runNext(
@@ -267,9 +356,8 @@ describe("runNext", () => {
         stateRoot: "/tmp/state",
         pr: 42,
       },
-      {
+      runNextDeps({
         gh: async (args) => {
-          ghCalls.push(args);
           if (args[0] === "pr" && args[1] === "view") {
             return JSON.stringify({ state: "MERGED" });
           }
@@ -287,17 +375,18 @@ describe("runNext", () => {
           }
           return "";
         },
-        readSkips: async () => [],
-        archiveHandoff: async () => "archived",
-        writeHandoff: async () => {},
-        writeActive: async () => {},
+        archiveHandoff: async () => {
+          archived = true;
+          return "archived";
+        },
         startTdd: async () => {
           startTddCalled = true;
         },
-      },
+      }),
     );
 
-    expect(result).toEqual({ status: "queue-empty" });
+    expect(result).toEqual({ status: QUEUE_EMPTY });
+    expect(archived).toBe(true);
     expect(startTddCalled).toBe(false);
   });
 
@@ -311,7 +400,7 @@ describe("runNext", () => {
         stateRoot: "/tmp/state",
         pr: 42,
       },
-      {
+      runNextDeps({
         gh: async (args) => {
           if (args[0] === "pr" && args[1] === "view") {
             return JSON.stringify({ state: "MERGED" });
@@ -333,13 +422,10 @@ describe("runNext", () => {
           return "";
         },
         readSkips: async () => [9],
-        archiveHandoff: async () => "archived",
-        writeHandoff: async () => {},
-        writeActive: async () => {},
         startTdd: async ({ issue }) => {
           startedTdd = { issue };
         },
-      },
+      }),
     );
 
     expect(result).toEqual({

@@ -6,6 +6,7 @@ export {
 } from "./select.js";
 export {
   branchForIssue,
+  QUEUE_EMPTY,
   runNext,
   seedTddHandoff,
   startTddViaRunPhase,

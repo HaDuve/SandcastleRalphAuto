@@ -1,10 +1,12 @@
-import { type Handoff } from "../handoff/index.js";
+import { HandoffError, type Handoff } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
 import { type Project } from "../registry/index.js";
 import { runPhase } from "../runner/index.js";
 import { type ActiveState } from "../state/index.js";
-import { type GhIssue } from "./select.js";
-import { selectNextIssue } from "./select.js";
+import { selectNextIssue, type GhIssue } from "./select.js";
+
+/** Dashboard idle signal (PRD §4); host result uses this as `RunNextQueueEmpty.status`. */
+export const QUEUE_EMPTY = "queue-empty" as const;
 
 export type RunNextInput = {
   project: Project;
@@ -21,7 +23,7 @@ export type RunNextStarted = {
 };
 
 export type RunNextQueueEmpty = {
-  status: "queue-empty";
+  status: typeof QUEUE_EMPTY;
 };
 
 export type RunNextBlocked = {
@@ -40,13 +42,13 @@ export type StartTddInput = {
   branch: string;
   projectPath: string;
   stateRoot: string;
+  handoff: Handoff;
 };
 
 export type RunNextDeps = {
   gh: GhRunner;
   readSkips: (projectId: string, stateRoot: string) => Promise<number[]>;
   archiveHandoff: (rootDir: string) => Promise<string>;
-  writeHandoff: (handoff: Handoff, rootDir: string) => Promise<void>;
   writeActive: (
     projectId: string,
     active: ActiveState,
@@ -144,7 +146,15 @@ export async function runNext(
     return blocked(`PR #${pr} is not merged (state: ${prState})`);
   }
 
-  await deps.archiveHandoff(handoffRoot);
+  try {
+    await deps.archiveHandoff(handoffRoot);
+  } catch (error) {
+    const reason =
+      error instanceof HandoffError
+        ? error.message
+        : "Could not archive handoff";
+    return blocked(reason);
+  }
 
   const issuesRaw = await deps.gh([
     "issue",
@@ -166,14 +176,12 @@ export async function runNext(
   const skips = await deps.readSkips(project.remote, stateRoot);
   const nextIssue = selectNextIssue(parsedIssues, project, skips);
   if (nextIssue === null) {
-    return { status: "queue-empty" };
+    return { status: QUEUE_EMPTY };
   }
 
   const branch = branchForIssue(nextIssue);
   const handoff = seedTddHandoff(project, nextIssue, branch, now());
-  const handoffRootDir = handoffRoot;
 
-  await deps.writeHandoff(handoff, handoffRootDir);
   await deps.writeActive(
     project.remote,
     {
@@ -190,6 +198,7 @@ export async function runNext(
     branch,
     projectPath,
     stateRoot,
+    handoff,
   });
 
   return { status: "started", issue: nextIssue, branch };
@@ -200,5 +209,6 @@ export async function startTddViaRunPhase(input: StartTddInput): Promise<void> {
     phase: "tdd",
     branch: input.branch,
     projectPath: input.projectPath,
+    seedHandoff: input.handoff,
   });
 }
