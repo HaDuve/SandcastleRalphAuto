@@ -18,13 +18,14 @@ import {
   loadRegistryFromRoot,
   type Project,
 } from "../registry/index.js";
-import { CANONICAL_PHASES } from "../prompts/phases.js";
+import { CANONICAL_PHASES, type CanonicalPhase } from "../prompts/phases.js";
 import {
   runLinearSlice,
   type RunLinearSliceResult,
 } from "../pipeline/index.js";
 import {
   runPhase,
+  type AgentStreamEvent,
   type RunPhaseOptions,
   type RunPhaseResult,
 } from "../runner/index.js";
@@ -80,6 +81,12 @@ export type BootstrapFirstIssueResult =
   | { status: typeof QUEUE_EMPTY }
   | { status: "blocked"; reason: string };
 
+export type AgentStreamEnvelope = {
+  issue: number;
+  phase: CanonicalPhase;
+  event: AgentStreamEvent;
+};
+
 export type RunProjectDeps = {
   loadRegistry?: (
     rootDir: string,
@@ -95,6 +102,7 @@ export type RunProjectDeps = {
   }) => Promise<void>;
   readLogFile?: (path: string) => Promise<string>;
   onPhaseLog?: (chunk: string) => void;
+  onAgentStream?: (envelope: AgentStreamEnvelope) => void;
   mutex?: ProjectMutex;
   readActive?: (projectId: string, stateRoot: string) => Promise<ActiveState | null>;
   bootstrapFirstIssue?: (
@@ -288,6 +296,7 @@ async function streamPhaseLog(
 
 function createSliceRunner(
   deps: RunProjectDeps,
+  issue: number,
 ): {
   runPhase: (options: RunPhaseOptions) => Promise<RunPhaseResult>;
   getReviewHandoff: () => Handoff | undefined;
@@ -300,6 +309,11 @@ function createSliceRunner(
       const result = await runPhaseFn({
         ...options,
         signal: options.signal ?? deps.control?.signal,
+        onAgentStreamEvent: deps.onAgentStream
+          ? (event) => {
+              deps.onAgentStream!({ issue, phase: options.phase, event });
+            }
+          : options.onAgentStreamEvent,
       });
       if (options.phase === "review-pr") {
         reviewHandoff = result.handoff;
@@ -389,7 +403,7 @@ export async function runProjectSlice(
   await mutex.acquire(project.remote);
 
   try {
-    const sliceRunner = createSliceRunner(deps);
+    const sliceRunner = createSliceRunner(deps, input.issue);
     const slice = await runLinearSliceFn(
       {
         projectId: project.remote,
@@ -591,7 +605,7 @@ export async function loopProject(
         }
       }
 
-      const sliceRunner = createSliceRunner(deps);
+      const sliceRunner = createSliceRunner(deps, currentIssue);
       const runLinearSliceFn = deps.runLinearSlice ?? resolved.runLinearSlice;
       const slice = await runLinearSliceFn(
         {

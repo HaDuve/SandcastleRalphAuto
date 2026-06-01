@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Handoff } from "../src/handoff/index.js";
 import { type Project } from "../src/registry/index.js";
-import { createEventBus } from "../src/server/eventBus.js";
+import { createEventBus, type DashboardEvent } from "../src/server/eventBus.js";
 import { createDashboardServer, type DashboardServerOptions } from "../src/server/index.js";
 import { createWorkerManager } from "../src/server/workerManager.js";
 
@@ -268,6 +268,108 @@ describe("dashboard server", () => {
       projectId: "portfolio",
       chunk: "hello",
     });
+  });
+
+  it("streams agent events tagged with issue and phase over SSE", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    const started = await startServer(rootDir, { eventBus });
+    server = started.server;
+
+    const events: unknown[] = [];
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/events`);
+    expect(response.status).toBe(200);
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    eventBus.emit({
+      type: "stream",
+      projectId: "portfolio",
+      issue: 12,
+      phase: "tdd",
+      event: {
+        type: "text",
+        message: "planning tests",
+        iteration: 1,
+        timestamp: new Date("2026-06-01T12:00:00.000Z"),
+      },
+    });
+
+    while (events.length < 2) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      const chunk = decoder.decode(value);
+      for (const block of chunk.split("\n\n")) {
+        if (!block.includes("data:")) {
+          continue;
+        }
+        const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
+        if (dataLine) {
+          events.push(JSON.parse(dataLine.slice("data: ".length)));
+        }
+      }
+    }
+    reader.cancel();
+
+    expect(events[0]).toEqual({ type: "connected", projectId: "portfolio" });
+    expect(events[1]).toEqual({
+      type: "stream",
+      projectId: "portfolio",
+      issue: 12,
+      phase: "tdd",
+      event: {
+        type: "text",
+        message: "planning tests",
+        iteration: 1,
+        timestamp: "2026-06-01T12:00:00.000Z",
+      },
+    });
+  });
+
+  it("keeps publishing when an SSE client disconnects", async () => {
+    const { rootDir } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    const started = await startServer(rootDir, { eventBus });
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/events`);
+    expect(response.status).toBe(200);
+    await response.body!.cancel();
+
+    expect(() => {
+      eventBus.emit({
+        type: "stream",
+        projectId: "portfolio",
+        issue: 12,
+        phase: "tdd",
+        event: {
+          type: "toolCall",
+          name: "read_file",
+          formattedArgs: "path=src/foo.ts",
+          iteration: 1,
+          timestamp: new Date("2026-06-01T12:00:00.000Z"),
+        },
+      });
+    }).not.toThrow();
+
+    const delivered: DashboardEvent[] = [];
+    eventBus.subscribe("portfolio", (event) => {
+      delivered.push(event);
+    });
+    eventBus.emit({
+      type: "phase-log",
+      projectId: "portfolio",
+      chunk: "after-disconnect",
+    });
+
+    await new Promise<void>((resolve) => {
+      queueMicrotask(() => resolve());
+    });
+    expect(delivered).toEqual([
+      { type: "phase-log", projectId: "portfolio", chunk: "after-disconnect" },
+    ]);
   });
 
   it("serves the built Vite app from the static directory", async () => {

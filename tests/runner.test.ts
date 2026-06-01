@@ -376,6 +376,70 @@ describe("runPhase", () => {
     expect(closed).toBe(true);
   });
 
+  it("forwards onAgentStreamEvent through file logging on sandbox.run", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
+    const forwarded: unknown[] = [];
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const promptFile = join(projectPath, "prompts", "tdd.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# tdd\n");
+    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, worktreePath);
+
+    const textEvent = {
+      type: "text" as const,
+      message: "planning tests",
+      iteration: 1,
+      timestamp: new Date("2026-06-01T12:00:00.000Z"),
+    };
+    const toolEvent = {
+      type: "toolCall" as const,
+      name: "read_file",
+      formattedArgs: "path=src/foo.ts",
+      iteration: 1,
+      timestamp: new Date("2026-06-01T12:00:01.000Z"),
+    };
+
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async (runOptions) => {
+          expect(runOptions.logging?.type).toBe("file");
+          if (runOptions.logging?.type !== "file") {
+            throw new Error("expected file logging");
+          }
+          expect(runOptions.logging.onAgentStreamEvent).toEqual(
+            expect.any(Function),
+          );
+          runOptions.logging.onAgentStreamEvent?.(textEvent);
+          runOptions.logging.onAgentStreamEvent?.(toolEvent);
+          return {
+            commits: [],
+            iterations: [],
+            stdout: "",
+          };
+        },
+      },
+      [],
+      runCalls,
+    );
+
+    await runPhase(
+      {
+        phase: "tdd",
+        branch: "issue-12-stream",
+        projectPath,
+        promptFile,
+        onAgentStreamEvent: (event) => {
+          forwarded.push(event);
+        },
+      },
+      deps,
+    );
+
+    expect(forwarded).toEqual([textEvent, toolEvent]);
+  });
+
   it("accepts a configurable sandbox provider", async () => {
     const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));

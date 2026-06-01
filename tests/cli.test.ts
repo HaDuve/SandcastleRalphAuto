@@ -228,6 +228,67 @@ describe("runProjectSlice", () => {
     expect(logs).toEqual(["phase log line\n"]);
   });
 
+  it("forwards live agent stream events tagged with issue and phase", async () => {
+    const envelopes: Array<{ issue: number; phase: string; event: { type: string } }> =
+      [];
+    let capturedRunPhaseOptions: RunPhaseOptions | undefined;
+
+    await runProjectSlice(
+      { projectId: "portfolio", issue: 12 },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (_options, sliceDeps) => {
+          await sliceDeps!.runPhase({
+            phase: "tdd",
+            branch: "issue-12",
+            projectPath: "/tmp/portfolio",
+          });
+          return sliceSuccess();
+        },
+        runPhase: async (options) => {
+          capturedRunPhaseOptions = options;
+          options.onAgentStreamEvent?.({
+            type: "text",
+            message: "writing tests",
+            iteration: 1,
+            timestamp: new Date("2026-06-01T12:00:00.000Z"),
+          });
+          return {
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: reviewHandoff(),
+          };
+        },
+        onAgentStream: (envelope) => {
+          envelopes.push(envelope);
+        },
+        runMergeGate: async () => ({ status: "auto-merge-queued" }),
+        waitForMergedPr: async () => {},
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(capturedRunPhaseOptions?.onAgentStreamEvent).toEqual(
+      expect.any(Function),
+    );
+    expect(envelopes).toEqual([
+      {
+        issue: 12,
+        phase: "tdd",
+        event: {
+          type: "text",
+          message: "writing tests",
+          iteration: 1,
+          timestamp: new Date("2026-06-01T12:00:00.000Z"),
+        },
+      },
+    ]);
+  });
+
   it("waits for the PR to merge before releasing the mutex", async () => {
     const events: string[] = [];
 

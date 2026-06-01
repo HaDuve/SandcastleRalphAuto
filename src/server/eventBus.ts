@@ -1,10 +1,19 @@
+import { type CanonicalPhase } from "../prompts/phases.js";
+import { type AgentStreamEvent } from "../runner/index.js";
+
 export type DashboardEvent =
   | { type: "worker-started"; projectId: string }
   | { type: "worker-stopped"; projectId: string; reason: string }
   | { type: "worker-paused"; projectId: string }
   | { type: "worker-resumed"; projectId: string }
   | { type: "phase-log"; projectId: string; chunk: string }
-  | { type: "stream"; projectId: string; payload: unknown };
+  | {
+      type: "stream";
+      projectId: string;
+      issue: number;
+      phase: CanonicalPhase;
+      event: AgentStreamEvent;
+    };
 
 export type EventListener = (event: DashboardEvent) => void;
 
@@ -23,7 +32,13 @@ export function createEventBus(): EventBus {
         return;
       }
       for (const listener of projectListeners) {
-        listener(event);
+        queueMicrotask(() => {
+          try {
+            listener(event);
+          } catch {
+            // A broken subscriber must not kill the publisher or other listeners.
+          }
+        });
       }
     },
     subscribe(projectId, listener) {

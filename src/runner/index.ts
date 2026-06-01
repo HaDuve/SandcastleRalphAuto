@@ -13,3 +13,5 @@ export {
   type SandcastleSandboxRunOptions,
   type SandcastleSandboxRunResult,
 } from "./runPhase.js";
+
+export type { AgentStreamEvent } from "@ai-hero/sandcastle";
