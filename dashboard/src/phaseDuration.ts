@@ -3,7 +3,7 @@ export function formatPhaseDuration(startedAt: string, endedAt: string): string 
   if (ms < 0 || Number.isNaN(ms)) {
     return "—";
   }
-  const totalMinutes = Math.round(ms / 60_000);
+  const totalMinutes = Math.floor(ms / 60_000);
   if (totalMinutes < 1) {
     return "<1m";
   }
