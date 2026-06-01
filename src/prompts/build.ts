@@ -1,5 +1,7 @@
 import { renderHarness } from "./harness.js";
-import type { CanonicalPhase } from "./phases.js";
+import { CANONICAL_PHASES, type CanonicalPhase } from "./phases.js";
+
+const CANONICAL_PHASE_SET = new Set<string>(CANONICAL_PHASES);
 
 const HARNESS_START = "<!-- sandcastle-ralph:harness -->";
 const HARNESS_END = "<!-- /sandcastle-ralph:harness -->";
@@ -39,7 +41,10 @@ export function parsePrompt(content: string): ParsedPrompt {
   if (!phaseMatch) {
     throw new Error("missing skill-snapshot marker");
   }
-  const phase = phaseMatch[1] as CanonicalPhase;
+  const phase = phaseMatch[1];
+  if (!CANONICAL_PHASE_SET.has(phase)) {
+    throw new Error(`unknown phase: ${phase}`);
+  }
 
   const harnessMatch = content.match(
     /<!-- sandcastle-ralph:harness -->\n([\s\S]*?)<!-- \/sandcastle-ralph:harness -->/,
@@ -56,7 +61,7 @@ export function parsePrompt(content: string): ParsedPrompt {
   }
 
   return {
-    phase,
+    phase: phase as CanonicalPhase,
     harness: harnessMatch[1].trimEnd(),
     skillSnapshot: skillMatch[1].trimEnd(),
   };

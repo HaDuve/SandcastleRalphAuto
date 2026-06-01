@@ -1,5 +1,4 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -47,14 +46,22 @@ describe("buildPrompt", () => {
     expect(parsed.skillSnapshot).toBe(skill.trim());
     expect(parsed.harness).toMatch(/current\.json/);
   });
+
+  it("rejects prompts with an unknown phase in the snapshot marker", () => {
+    const bad = buildPrompt("tdd", "---\nname: tdd\n---\n").replace(
+      "skills/tdd/SKILL.md",
+      "skills/evil/SKILL.md",
+    );
+    expect(() => parsePrompt(bad)).toThrow(/unknown phase/i);
+  });
 });
 
 describe("committed prompts/*.md", () => {
   it.each(CANONICAL_PHASES.map((phase) => [phase]))(
     "%s exists with harness, skill snapshot, and completion signal",
-    (phase) => {
+    async (phase) => {
       const path = resolve(PROMPTS_DIR, `${phase}.md`);
-      const content = readFileSync(path, "utf8");
+      const content = await readFile(path, "utf8");
       const parsed = parsePrompt(content);
 
       expect(parsed.phase).toBe(phase);
