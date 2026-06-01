@@ -1,8 +1,12 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type AgentStreamEnvelope, createInMemoryProjectMutex, loopProject, type RunProjectDeps } from "../src/cli/index.js";
 import { type Project } from "../src/registry/index.js";
 import { createEventBus, type DashboardEvent } from "../src/server/eventBus.js";
 import { createWorkerManager } from "../src/server/workerManager.js";
+import { readRunOutcome, writeActive } from "../src/state/index.js";
 
 const portfolio: Project = {
   id: "portfolio",
@@ -15,6 +19,17 @@ const portfolio: Project = {
   concurrency: "single",
   sandbox: "none",
 };
+
+async function waitForWorkerToFinish(
+  manager: ReturnType<typeof createWorkerManager>,
+  projectId: string,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (manager.isRunning(projectId) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  expect(manager.isRunning(projectId)).toBe(false);
+}
 
 describe("createWorkerManager", () => {
   it("emits worker-stopped when loopProject rejects", async () => {
@@ -33,7 +48,7 @@ describe("createWorkerManager", () => {
       rootDir: "/tmp",
       stateRoot: "/tmp/state",
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForWorkerToFinish(manager, "portfolio");
 
     expect(events).toContainEqual({
       type: "worker-stopped",
@@ -72,7 +87,7 @@ describe("createWorkerManager", () => {
       rootDir: "/tmp",
       stateRoot: "/tmp/state",
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForWorkerToFinish(manager, "portfolio");
 
     expect(events).toContainEqual({
       type: "stream",
@@ -137,7 +152,7 @@ describe("createWorkerManager", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(manager.kill("portfolio")).toEqual({ status: "killed" });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await waitForWorkerToFinish(manager, "portfolio");
     expect(manager.isRunning("portfolio")).toBe(false);
 
     const secondStart = await manager.start(portfolio, {
@@ -146,5 +161,189 @@ describe("createWorkerManager", () => {
       deps: runDeps,
     });
     expect(secondStart).toEqual({ status: "started" });
+  });
+
+  it("persists queue-empty run outcome when the loop drains the queue", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async () => ({ status: "queue-empty", slicesCompleted: 2 }),
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, { rootDir: "/tmp", stateRoot });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
+      outcome: "queue-empty",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    });
+  });
+
+  it("persists blocked run outcome with reason, phase, and logRef", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async () => {
+        await writeActive(
+          portfolio.remote,
+          {
+            issue: 7,
+            phase: "review-tdd",
+            branch: "issue-7",
+            status: "blocked",
+            reason: "Required check ci failed",
+            resumeSkill: "/review-tdd",
+          },
+          stateRoot,
+        );
+        return { status: "blocked", reason: "Required check ci failed" };
+      },
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, { rootDir: "/tmp", stateRoot });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
+      outcome: "blocked",
+      reason: "Required check ci failed",
+      phase: "review-tdd",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+      logRef: join(
+        portfolio.path,
+        ".sandcastle",
+        "logs",
+        "issue-7-review-tdd.log",
+      ),
+    });
+  });
+
+  it("persists awaiting-human run outcome with reason, phase, and logRef", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async () => {
+        await writeActive(
+          portfolio.remote,
+          {
+            issue: 7,
+            phase: "merge",
+            branch: "issue-7",
+            pr: 42,
+            status: "awaiting-human",
+            reason: "autoMerge is disabled for this project",
+          },
+          stateRoot,
+        );
+        return {
+          status: "awaiting-human",
+          reason: "autoMerge is disabled for this project",
+        };
+      },
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, { rootDir: "/tmp", stateRoot });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
+      outcome: "awaiting-human",
+      reason: "autoMerge is disabled for this project",
+      phase: "merge",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+      logRef: join(
+        portfolio.path,
+        ".sandcastle",
+        "logs",
+        "issue-7-merge.log",
+      ),
+    });
+  });
+
+  it("persists error run outcome when loopProject rejects", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async () => {
+        throw new Error("Project HaDuve/Portfolio is already running");
+      },
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, { rootDir: "/tmp", stateRoot });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
+      outcome: "error",
+      reason: "Project HaDuve/Portfolio is already running",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    });
+  });
+
+  it("persists killed run outcome when the operator kills the worker", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "worker-run-outcome-"));
+    const eventBus = createEventBus();
+    const mutex = createInMemoryProjectMutex();
+    const runDeps: RunProjectDeps = {
+      mutex,
+      loadRegistry: async () => [portfolio],
+      runLinearSlice: async (options, sliceDeps) => {
+        await sliceDeps!.runPhase({
+          phase: "tdd",
+          branch: options.branch,
+          projectPath: options.projectPath,
+          projectId: options.projectId,
+          stateRoot: options.stateRoot,
+        });
+        return {
+          status: "ready-for-next",
+          issue: options.issue,
+          branch: options.branch,
+          pr: 42,
+          phasesCompleted: ["tdd"],
+        };
+      },
+      runPhase: async (options) => {
+        await new Promise<void>((_, reject) => {
+          if (options.signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          options.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+        throw new Error("unreachable");
+      },
+      runMergeGate: async () => ({ status: "auto-merge-queued" }),
+      waitForMergedPr: async () => {},
+    };
+
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: (input, deps) =>
+        loopProject({ ...input, issue: 10 }, deps),
+      now: () => new Date("2026-06-01T12:00:00.000Z"),
+    });
+
+    await manager.start(portfolio, {
+      rootDir: "/tmp",
+      stateRoot,
+      deps: runDeps,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(manager.kill("portfolio")).toEqual({ status: "killed" });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    await expect(readRunOutcome(portfolio.remote, stateRoot)).resolves.toEqual({
+      outcome: "killed",
+      stoppedAt: "2026-06-01T12:00:00.000Z",
+    });
   });
 });

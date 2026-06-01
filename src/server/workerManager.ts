@@ -6,11 +6,16 @@ import {
   type WorkerControl,
 } from "../cli/index.js";
 import { type Project } from "../registry/index.js";
+import {
+  persistRunOutcomeFromLoopResult,
+  persistRunOutcomeFromWorkerError,
+} from "../state/runOutcomeFromWorker.js";
 import { type EventBus } from "./eventBus.js";
 
 export type WorkerManagerDeps = {
   loopProject?: typeof loopProject;
   eventBus: EventBus;
+  now?: () => Date;
 };
 
 export type WorkerManager = {
@@ -53,6 +58,7 @@ function workerStopReason(error: unknown): string {
 
 export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
   const loopProjectFn = deps.loopProject ?? loopProject;
+  const now = deps.now ?? (() => new Date());
   const workers = new Map<string, WorkerEntry>();
 
   return {
@@ -102,7 +108,12 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
         { projectId: project.id, rootDir: input.rootDir, stateRoot: input.stateRoot },
         runDeps,
       )
-        .then((result) => {
+        .then(async (result) => {
+          await persistRunOutcomeFromLoopResult(result, {
+            project,
+            stateRoot: input.stateRoot,
+            stoppedAt: now().toISOString(),
+          });
           deps.eventBus.emit({
             type: "worker-stopped",
             projectId: project.id,
@@ -110,7 +121,12 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
           });
           return result;
         })
-        .catch((error: unknown) => {
+        .catch(async (error: unknown) => {
+          await persistRunOutcomeFromWorkerError(error, {
+            project,
+            stateRoot: input.stateRoot,
+            stoppedAt: now().toISOString(),
+          });
           deps.eventBus.emit({
             type: "worker-stopped",
             projectId: project.id,
