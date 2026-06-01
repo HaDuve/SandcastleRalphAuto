@@ -9,3 +9,12 @@ export {
   resolveHandoffHistoryDir,
   writeHandoff,
 } from "./io.js";
+export {
+  archiveHostHandoff,
+  readHostHandoff,
+  resolveHostArchiveHandoffPath,
+  resolveHostCurrentHandoffPath,
+  resolveHostHandoffDir,
+  resolveHostHandoffHistoryDir,
+  writeHostHandoff,
+} from "./hostStore.js";

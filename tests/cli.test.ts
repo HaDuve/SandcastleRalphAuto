@@ -90,6 +90,8 @@ describe("runProjectSlice", () => {
             phase: "review-pr",
             branch: "issue-10",
             projectPath: "/tmp/portfolio",
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
           });
           return sliceSuccess();
         },
@@ -153,6 +155,8 @@ describe("runProjectSlice", () => {
             phase: "review-pr",
             branch: "issue-10",
             projectPath: "/tmp/portfolio",
+            projectId: _options.projectId,
+            stateRoot: _options.stateRoot,
           });
           return sliceSuccess();
         },
@@ -202,6 +206,8 @@ describe("runProjectSlice", () => {
             phase: "tdd",
             branch: "issue-10",
             projectPath: "/tmp/portfolio",
+            projectId: _options.projectId,
+            stateRoot: _options.stateRoot,
           });
           return sliceSuccess();
         },
@@ -242,6 +248,8 @@ describe("runProjectSlice", () => {
             phase: "tdd",
             branch: "issue-12",
             projectPath: "/tmp/portfolio",
+            projectId: _options.projectId,
+            stateRoot: _options.stateRoot,
           });
           return sliceSuccess();
         },
@@ -301,6 +309,8 @@ describe("runProjectSlice", () => {
             phase: "review-pr",
             branch: "issue-10",
             projectPath: "/tmp/portfolio",
+            projectId: _options.projectId,
+            stateRoot: _options.stateRoot,
           });
           return sliceSuccess();
         },
@@ -363,6 +373,8 @@ describe("loopProject", () => {
             phase: "review-pr",
             branch: _options.branch,
             projectPath: _options.projectPath,
+            projectId: _options.projectId,
+            stateRoot: _options.stateRoot,
           });
           sliceCount += 1;
           return sliceSuccess(10 + sliceCount - 1, 40 + sliceCount);
@@ -408,6 +420,8 @@ describe("loopProject", () => {
             phase: "review-pr",
             branch: options.branch,
             projectPath: options.projectPath,
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
           });
           return sliceSuccess(
             options.issue,
@@ -458,6 +472,8 @@ describe("loopProject", () => {
             phase: "review-pr",
             branch: options.branch,
             projectPath: options.projectPath,
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
           });
           return sliceSuccess(9, 41);
         },

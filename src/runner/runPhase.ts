@@ -10,7 +10,14 @@ import {
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readHandoff, writeHandoff, type Handoff } from "../handoff/index.js";
+import {
+  readHostHandoff,
+  writeHostHandoff,
+  readHandoff,
+  writeHandoff,
+  type Handoff,
+  HandoffError,
+} from "../handoff/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 import { type CanonicalPhase } from "../prompts/phases.js";
 
@@ -34,6 +41,8 @@ export type RunPhaseOptions = {
   phase: CanonicalPhase;
   branch: string;
   projectPath: string;
+  projectId: string;
+  stateRoot: string;
   promptFile?: string;
   orchestratorRoot?: string;
   tddMaxIterations?: number;
@@ -122,8 +131,26 @@ export async function runPhase(
   });
 
   try {
-    if (options.seedHandoff !== undefined) {
-      await writeHandoff(options.seedHandoff, sandbox.worktreePath);
+    // Seed the agent-facing worktree handoff from host store, unless explicitly overridden.
+    let hostHandoff: Handoff | undefined;
+    try {
+      hostHandoff = await readHostHandoff({
+        stateRoot: options.stateRoot,
+        projectId: options.projectId,
+      });
+    } catch (error) {
+      if (!(error instanceof HandoffError)) {
+        throw error;
+      }
+    }
+    const seed = options.seedHandoff ?? hostHandoff;
+    if (seed !== undefined) {
+      await writeHandoff(seed, sandbox.worktreePath);
+      await writeHostHandoff({
+        stateRoot: options.stateRoot,
+        projectId: options.projectId,
+        handoff: seed,
+      });
     }
 
     const baseRunOptions = {
@@ -155,7 +182,33 @@ export async function runPhase(
         : baseRunOptions,
     );
 
-    const handoff = await deps.readHandoff(sandbox.worktreePath);
+    // Prefer the handoff written by the phase; if none was written, carry over host-owned handoff.
+    let handoff: Handoff;
+    try {
+      handoff = await deps.readHandoff(sandbox.worktreePath);
+    } catch (error) {
+      if (
+        error instanceof HandoffError &&
+        error.message.startsWith("Handoff not found:")
+      ) {
+        const carried =
+          options.seedHandoff ??
+          hostHandoff ??
+          (await readHostHandoff({
+            stateRoot: options.stateRoot,
+            projectId: options.projectId,
+          }));
+        handoff = carried;
+      } else {
+        throw error;
+      }
+    }
+
+    await writeHostHandoff({
+      stateRoot: options.stateRoot,
+      projectId: options.projectId,
+      handoff,
+    });
 
     return {
       commits: runResult.commits,

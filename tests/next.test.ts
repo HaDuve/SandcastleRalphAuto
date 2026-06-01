@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -241,12 +241,6 @@ describe("runNext", () => {
   it("archives handoff and starts tdd for the lowest eligible issue", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "next-test-"));
     const stateRoot = await mkdtemp(join(tmpdir(), "next-state-"));
-    const handoffDir = join(rootDir, ".sandcastle-ralph/handoff");
-    await mkdir(handoffDir, { recursive: true });
-    await writeFile(
-      join(handoffDir, "current.json"),
-      JSON.stringify(mergeHandoff(), null, 2),
-    );
 
     const ghCalls: string[][] = [];
     let archived = false;
@@ -259,7 +253,6 @@ describe("runNext", () => {
         projectPath: rootDir,
         stateRoot,
         pr: 42,
-        handoffRoot: rootDir,
       },
       runNextDeps({
         gh: async (args) => {
@@ -283,10 +276,10 @@ describe("runNext", () => {
           }
           return "";
         },
-        archiveHandoff: async (dir) => {
+        archiveHandoff: async (projectId) => {
           archived = true;
-          expect(dir).toBe(rootDir);
-          return join(dir, ".sandcastle-ralph/handoff/history/42.json");
+          expect(projectId).toBe(fullProject.remote);
+          return "archived";
         },
         writeActive: async (_projectId, active) => {
           writtenActive = active;

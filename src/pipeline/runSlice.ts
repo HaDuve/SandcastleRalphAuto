@@ -130,6 +130,8 @@ export async function runLinearSlice(
         phase,
         branch,
         projectPath,
+        projectId,
+        stateRoot,
         ...options.runPhaseOptions,
       });
     } catch (error) {

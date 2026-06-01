@@ -13,7 +13,6 @@ export type RunNextInput = {
   projectPath: string;
   stateRoot: string;
   pr: number;
-  handoffRoot?: string;
 };
 
 export type RunNextStarted = {
@@ -48,7 +47,7 @@ export type StartTddInput = {
 export type RunNextDeps = {
   gh: GhRunner;
   readSkips: (projectId: string, stateRoot: string) => Promise<number[]>;
-  archiveHandoff: (rootDir: string) => Promise<string>;
+  archiveHandoff: (projectId: string) => Promise<string>;
   writeActive: (
     projectId: string,
     active: ActiveState,
@@ -125,7 +124,6 @@ export async function runNext(
     projectPath,
     stateRoot,
     pr,
-    handoffRoot = projectPath,
   } = input;
   const now = deps.now ?? (() => new Date());
 
@@ -147,7 +145,7 @@ export async function runNext(
   }
 
   try {
-    await deps.archiveHandoff(handoffRoot);
+    await deps.archiveHandoff(project.remote);
   } catch (error) {
     const reason =
       error instanceof HandoffError
@@ -210,6 +208,8 @@ export async function startTddViaRunPhase(input: StartTddInput): Promise<void> {
     phase: "tdd",
     branch: input.branch,
     projectPath: input.projectPath,
+    projectId: input.project.remote,
+    stateRoot: input.stateRoot,
     seedHandoff: input.handoff,
   });
 }
