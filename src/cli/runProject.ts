@@ -6,6 +6,7 @@ import {
 } from "../handoff/index.js";
 import {
   activeStateFromMergeGate,
+  classifyMergeTailBlock,
   runMergeGate,
   type GhRunner,
   type RunMergeGateResult,
@@ -358,14 +359,34 @@ export async function resolveHandoffForMergeGate(
   }
 }
 
+export type ApplyMergeGateResult =
+  | { source: "merge-gate"; result: RunMergeGateResult }
+  | {
+      source: "recovery-slice";
+      result: Extract<
+        RunLinearSliceResult,
+        { status: "blocked" | "awaiting-human" }
+      >;
+    };
+
+type ApplyMergeGateContext = {
+  project: Project;
+  slice: Extract<RunLinearSliceResult, { status: "ready-for-next" }>;
+  reviewHandoff: Handoff | undefined;
+  stateRoot: string;
+  deps: RunProjectDeps;
+  gh: GhRunner;
+  runLinearSliceFn: typeof runLinearSlice;
+  sliceRunner: ReturnType<typeof createSliceRunner>;
+  babysitAttempted: boolean;
+};
+
 async function applyMergeGate(
-  project: Project,
-  slice: Extract<RunLinearSliceResult, { status: "ready-for-next" }>,
-  reviewHandoff: Handoff | undefined,
-  stateRoot: string,
-  deps: RunProjectDeps,
-  gh: GhRunner,
-): Promise<RunMergeGateResult> {
+  ctx: ApplyMergeGateContext,
+): Promise<ApplyMergeGateResult> {
+  const { project, slice, stateRoot, deps, gh } = ctx;
+  let reviewHandoff = ctx.reviewHandoff;
+
   if (!reviewHandoff || slice.pr === undefined) {
     const reason = "Missing review handoff or PR for merge gate";
     await writeActive(
@@ -382,10 +403,13 @@ async function applyMergeGate(
       stateRoot,
     );
     return {
-      status: "blocked",
-      kind: "missing-merge-prerequisites",
-      reason,
-      resumeSkill: "/merge",
+      source: "merge-gate",
+      result: {
+        status: "blocked",
+        kind: "missing-merge-prerequisites",
+        reason,
+        resumeSkill: "/merge",
+      },
     };
   }
 
@@ -410,7 +434,45 @@ async function applyMergeGate(
     await writeActive(project.remote, active, stateRoot);
   }
 
-  return mergeResult;
+  if (
+    mergeResult.status === "blocked" &&
+    !ctx.babysitAttempted &&
+    classifyMergeTailBlock(mergeResult, reviewHandoff) === "babysit-able"
+  ) {
+    const recovery = await ctx.runLinearSliceFn(
+      {
+        projectId: project.remote,
+        issue: slice.issue,
+        branch: slice.branch,
+        projectPath: project.path,
+        stateRoot,
+        fromPhase: "babysit",
+      },
+      { runPhase: ctx.sliceRunner.runPhase },
+    );
+
+    if (
+      recovery.status === "blocked" ||
+      recovery.status === "awaiting-human"
+    ) {
+      return { source: "recovery-slice", result: recovery };
+    }
+
+    reviewHandoff = await resolveHandoffForMergeGate(
+      project,
+      stateRoot,
+      ctx.sliceRunner.getReviewHandoff(),
+      deps.readHostHandoff,
+    );
+
+    return applyMergeGate({
+      ...ctx,
+      reviewHandoff,
+      babysitAttempted: true,
+    });
+  }
+
+  return { source: "merge-gate", result: mergeResult };
 }
 
 function sliceBlockedResult(
@@ -469,15 +531,23 @@ export async function runProjectSlice(
       deps.readHostHandoff,
     );
 
-    const mergeResult = await applyMergeGate(
+    const mergeOutcome = await applyMergeGate({
       project,
-      sliceForMerge,
-      mergeHandoff,
+      slice: sliceForMerge,
+      reviewHandoff: mergeHandoff,
       stateRoot,
       deps,
-      deps.gh ?? resolved.gh,
-    );
+      gh: deps.gh ?? resolved.gh,
+      runLinearSliceFn: runLinearSliceFn,
+      sliceRunner,
+      babysitAttempted: false,
+    });
 
+    if (mergeOutcome.source === "recovery-slice") {
+      return sliceBlockedResult(mergeOutcome.result);
+    }
+
+    const mergeResult = mergeOutcome.result;
     if (mergeResult.status === "blocked") {
       return {
         status: "blocked",
@@ -692,15 +762,27 @@ export async function loopProject(
         deps.readHostHandoff,
       );
 
-      const mergeResult = await applyMergeGate(
+      const mergeOutcome = await applyMergeGate({
         project,
-        sliceForMerge,
-        mergeHandoff,
+        slice: sliceForMerge,
+        reviewHandoff: mergeHandoff,
         stateRoot,
         deps,
-        deps.gh ?? resolved.gh,
-      );
+        gh: deps.gh ?? resolved.gh,
+        runLinearSliceFn,
+        sliceRunner,
+        babysitAttempted: false,
+      });
 
+      if (mergeOutcome.source === "recovery-slice") {
+        return {
+          status: mergeOutcome.result.status,
+          reason:
+            mergeOutcome.result.active.reason ?? mergeOutcome.result.status,
+        };
+      }
+
+      const mergeResult = mergeOutcome.result;
       if (mergeResult.status === "blocked") {
         return mergeBlocked(mergeResult);
       }
