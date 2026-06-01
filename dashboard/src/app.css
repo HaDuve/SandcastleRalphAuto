@@ -114,27 +114,63 @@ body {
 }
 
 .active-details,
-.run-outcome-details {
-  display: grid;
-  gap: 0.5rem;
+.run-outcome-banner {
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  border: 1px solid #2a3441;
 }
 
-.active-details div,
-.run-outcome-details div {
-  display: grid;
-  grid-template-columns: 5rem 1fr;
-  gap: 0.5rem;
-}
-
-.active-details dt,
-.run-outcome-details dt {
-  color: #9aa7b5;
-  font-size: 0.875rem;
-}
-
-.active-details dd,
-.run-outcome-details dd {
+.run-outcome-banner-summary {
   margin: 0;
+}
+
+.run-outcome-banner a {
+  color: #60a5fa;
+}
+
+.run-outcome-banner--queue-empty {
+  border-color: #4b5563;
+  background: #1a2330;
+}
+
+.run-outcome-banner--blocked {
+  border-color: #b45309;
+  background: #2a1f12;
+}
+
+.run-outcome-banner--awaiting-human {
+  border-color: #ca8a04;
+  background: #2a2410;
+}
+
+.run-outcome-banner--killed {
+  border-color: #6b7280;
+  background: #1f2430;
+}
+
+.run-outcome-banner--error {
+  border-color: #dc2626;
+  background: #2a1418;
+}
+
+.project-card--queue-empty {
+  border-left: 4px solid #6b7280;
+}
+
+.project-card--blocked {
+  border-left: 4px solid #f59e0b;
+}
+
+.project-card--awaiting-human {
+  border-left: 4px solid #eab308;
+}
+
+.project-card--killed {
+  border-left: 4px solid #9ca3af;
+}
+
+.project-card--error {
+  border-left: 4px solid #ef4444;
 }
 
 .active-details a {
@@ -155,6 +191,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.project-card {
+  padding-left: 0.5rem;
 }
 
 .dashboard-sidebar label {

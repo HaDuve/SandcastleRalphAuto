@@ -658,7 +658,7 @@ describe("App", () => {
     const checkbox = await screen.findByRole("checkbox", { name: /portfolio/i });
     expect(checkbox).toBeChecked();
     expect(screen.getByText(/CI failed/i)).toBeInTheDocument();
-    expect(screen.getByText(/review-pr/i)).toBeInTheDocument();
+    expect(screen.getByText("review-pr", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
     expect(await screen.findByText(/#10/)).toBeInTheDocument();
     expect(screen.getByText(/#11/)).toBeInTheDocument();
 
