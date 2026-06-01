@@ -6,13 +6,8 @@ import { listHandoffHistory } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
 import { listPhaseLogs, readPhaseLog } from "../phaseLogs/index.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
-import {
-  PhaseSchema,
-  readActive,
-  readRunOutcome,
-  readSkips,
-  writeSkips,
-} from "../state/index.js";
+import { parseCanonicalPhase } from "../prompts/phases.js";
+import { readActive, readRunOutcome, readSkips, writeSkips } from "../state/index.js";
 import { toActiveSummary, workerStatusFor } from "./projectSnapshot.js";
 import { createEventBus, type EventBus } from "./eventBus.js";
 import { fetchProjectQueue } from "./queue.js";
@@ -210,14 +205,10 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
           }
 
           const phaseParam = requestSearchParams(req).get("phase");
-          let phase = active.phase;
-          if (phaseParam !== null) {
-            const parsed = PhaseSchema.safeParse(phaseParam);
-            if (!parsed.success) {
-              sendJson(res, 400, { error: "Invalid phase" });
-              return;
-            }
-            phase = parsed.data;
+          const phase = parseCanonicalPhase(phaseParam ?? active.phase);
+          if (!phase) {
+            sendJson(res, 400, { error: "Invalid phase" });
+            return;
           }
 
           const phases = await listPhaseLogsFn(project.remote, active.issue, {
@@ -259,15 +250,10 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
             "Cache-Control": "no-cache",
             Connection: "keep-alive",
           });
-          const workerStatus = workerManager.isRunning(project.id)
-            ? workerManager.isPaused(project.id)
-              ? "paused"
-              : "running"
-            : "idle";
           writeSseEvent(res, "connected", {
             type: "connected",
             projectId: project.id,
-            workerStatus,
+            workerStatus: workerStatusFor(workerManager, project.id),
           });
           const unsubscribe = eventBus.subscribe(project.id, (event) => {
             writeSseEvent(res, event.type, event);
