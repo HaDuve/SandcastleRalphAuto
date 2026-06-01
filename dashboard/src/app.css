@@ -284,6 +284,44 @@ body {
   font-size: 0.875rem;
 }
 
+.project-status-indicator {
+  font-size: 0.8125rem;
+  color: #9aa7b5;
+  letter-spacing: 0.01em;
+}
+
+.phase-stepper-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.phase-stepper-step {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #2a3441;
+  font-size: 0.8125rem;
+  color: #9aa7b5;
+}
+
+.phase-stepper-step[data-state="done"] {
+  color: #6ee7b7;
+  border-color: #14532d;
+}
+
+.phase-stepper-step[data-state="current"] {
+  color: #e7ecf3;
+  border-color: #60a5fa;
+  background: #1a2330;
+}
+
+.phase-stepper-step[data-state="pending"] {
+  opacity: 0.7;
+}
+
 .dashboard-sidebar button {
   align-self: flex-start;
 }

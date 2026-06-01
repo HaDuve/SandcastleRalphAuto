@@ -6,6 +6,12 @@ export type RunOutcome = {
   logRef?: string;
 };
 
+export type ProjectActiveSummary = {
+  issue: number;
+  phase: string;
+  status: "active" | "blocked" | "awaiting-human";
+};
+
 export type Project = {
   id: string;
   path: string;
@@ -18,11 +24,7 @@ export type Project = {
   sandbox: "none";
   workerStatus?: "idle" | "running" | "paused";
   lastRunOutcome?: RunOutcome | null;
-  active?: {
-    issue: number;
-    phase: string;
-    status: "active" | "blocked" | "awaiting-human";
-  } | null;
+  active?: ProjectActiveSummary | null;
 };
 
 export type QueueIssue = {

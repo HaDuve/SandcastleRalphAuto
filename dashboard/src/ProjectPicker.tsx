@@ -1,5 +1,6 @@
+import { formatProjectStatusIndicator } from "./projectStatus.js";
 import { projectCardClass } from "./runOutcomeUi.js";
-import type { Project } from "./types.js";
+import type { Project, ProjectActiveSummary } from "./types.js";
 import type { WorkerState, WorkerStatus } from "./workerStatus.js";
 import { canHideProject, isControlReady, stoppedRunOutcome } from "./workerStatus.js";
 
@@ -7,6 +8,7 @@ export type ProjectPickerProps = {
   projects: Project[];
   selectedIds: Set<string>;
   workerStates: Record<string, WorkerState>;
+  activeSummaries: Record<string, ProjectActiveSummary | null>;
   hasHiddenProjects: boolean;
   onSelectedChange: (projectId: string, selected: boolean) => void;
   onStart: (projectId: string) => void;
@@ -25,6 +27,7 @@ export function ProjectPicker({
   projects,
   selectedIds,
   workerStates,
+  activeSummaries,
   hasHiddenProjects,
   onSelectedChange,
   onStart,
@@ -52,9 +55,16 @@ export function ProjectPicker({
           const killDisabled = !controlsReady || status === "idle";
           const hideDisabled = !canHideProject(status);
           const cardClass = projectCardClass(stoppedRunOutcome(workerStates[project.id]));
+          const statusLabel = formatProjectStatusIndicator(
+            status,
+            activeSummaries[project.id],
+          );
 
           return (
             <li key={project.id} className={cardClass}>
+              <span className="project-status-indicator" role="status">
+                {statusLabel}
+              </span>
               <label>
                 <input
                   type="checkbox"

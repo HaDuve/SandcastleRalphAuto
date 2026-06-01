@@ -12,6 +12,7 @@ export type ProjectEvent = {
   reason?: string;
   chunk?: string;
   phase?: string;
+  issue?: number;
 };
 
 const PROJECT_EVENT_TYPES = [
