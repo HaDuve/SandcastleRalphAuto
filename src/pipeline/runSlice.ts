@@ -16,6 +16,7 @@ import {
   writeActive,
   type ActiveState,
 } from "../state/index.js";
+import { tryReconcileSchemaBlockedHandoff } from "../handoff/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
 
 function isAbortError(error: unknown): boolean {
@@ -235,9 +236,18 @@ export async function runLinearSlice(
 
   const existing = await readActive(projectId, stateRoot);
   if (existing?.status === "blocked") {
-    return { status: "blocked", active: existing, phasesCompleted };
-  }
-  if (existing?.status === "awaiting-human") {
+    const reconciled = await tryReconcileSchemaBlockedHandoff({
+      projectPath,
+      branch,
+      stateRoot,
+      projectId,
+      active: existing,
+    });
+    if (reconciled === null) {
+      return { status: "blocked", active: existing, phasesCompleted };
+    }
+    await writeActive(projectId, reconciled, stateRoot);
+  } else if (existing?.status === "awaiting-human") {
     return { status: "awaiting-human", active: existing, phasesCompleted };
   }
 

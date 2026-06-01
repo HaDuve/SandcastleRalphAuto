@@ -21,7 +21,7 @@ The Cursor skill definition (`~/.cursor/skills/<name>/SKILL.md`) that specifies 
 _Avoid_: prompt (a prompt is the runtime artifact, not the spec)
 
 **Handoff**:
-The on-disk record written at the end of every phase and read by the next phase. The **only** carry-over between phases besides GitHub state — never prior agent stdout.
+The on-disk record written at the end of every phase and read by the next phase. The **only** carry-over between phases besides GitHub state — never prior agent stdout. Host-side schema normalizes agent synonyms (e.g. `complete` → `done`). A slice blocked only for invalid handoff schema can be reconciled on **Start** from the worktree file (ADR 0008).
 
 **Worker**:
 An active execution of the pipeline for one project — holds the project's concurrency slot (mutex) and advances one slice at a time.

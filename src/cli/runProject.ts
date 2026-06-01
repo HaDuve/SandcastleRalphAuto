@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
   HandoffError,
   readHostHandoff,
+  tryReconcileSchemaBlockedHandoff,
   type Handoff,
 } from "../handoff/index.js";
 import {
@@ -635,6 +636,28 @@ async function resolveLoopStart(
   const readActiveFn = deps.readActive ?? readActive;
   const active = await readActiveFn(project.remote, stateRoot);
   if (active?.status === "blocked") {
+    const writeActiveFn = deps.writeActive ?? writeActive;
+    const reconciled = await tryReconcileSchemaBlockedHandoff({
+      projectPath,
+      branch: branchForIssue(active.issue),
+      stateRoot,
+      projectId: project.remote,
+      active,
+    });
+    if (reconciled !== null) {
+      await writeActiveFn(project.remote, reconciled, stateRoot);
+      if (!isRunnablePhase(reconciled.phase)) {
+        return {
+          status: "blocked",
+          reason: `Cannot resume unknown phase: ${reconciled.phase}`,
+        };
+      }
+      return {
+        kind: "ready",
+        issue: reconciled.issue,
+        fromPhase: reconciled.phase,
+      };
+    }
     return {
       status: "blocked",
       reason: active.reason ?? "Slice is blocked",

@@ -67,7 +67,7 @@ Path: `.sandcastle-ralph/handoff/current.json`; archived to `handoff/history/<pr
 
 ## 6. State
 
-`state/<projectId>/active.json` (survives restart): current slice + phase. `state/<projectId>/skips.json`: operator-skipped issue numbers. On failure → `blocked` with `reason` + `resumeSkill`; no `/next` until cleared/skipped.
+`state/<projectId>/active.json` (survives restart): current slice + phase. `state/<projectId>/skips.json`: operator-skipped issue numbers. On failure → `blocked` with `reason` + `resumeSkill`; no `/next` until cleared/skipped. If blocked only because the worktree handoff failed schema validation (e.g. agent wrote `acceptanceState: "complete"`), **Start** re-reads the worktree handoff, normalizes synonyms, and resumes at the phase from `nextSkill` (ADR 0008).
 
 ## 7. Milestones
 

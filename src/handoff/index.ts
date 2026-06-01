@@ -19,6 +19,10 @@ export {
   writeHandoff,
 } from "./io.js";
 export {
+  isHandoffSchemaBlockReason,
+  tryReconcileSchemaBlockedHandoff,
+} from "./reconcileBlockedHandoff.js";
+export {
   archiveHostHandoff,
   readHostHandoff,
   resolveHostArchiveHandoffPath,
