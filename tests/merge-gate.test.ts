@@ -242,6 +242,32 @@ describe("runMergeGate", () => {
     expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
   });
 
+  it("blocks with a human parse-error kind when mergeability JSON is invalid", async () => {
+    const ghCalls: string[][] = [];
+
+    const result = await runMergeGate(
+      { handoff: mergeHandoff(), project, pr: 42 },
+      {
+        gh: async (args) => {
+          ghCalls.push(args);
+          if (args[0] === "pr" && args[1] === "view") {
+            return "not json";
+          }
+          return "";
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: "blocked",
+      kind: "mergeability-parse-error",
+      reason: "Could not read PR mergeability from gh",
+      resumeSkill: "/merge",
+    });
+    expect(ghCalls.some((args) => args[1] === "checks")).toBe(false);
+    expect(ghCalls.some((args) => args[1] === "merge")).toBe(false);
+  });
+
   it("blocks when gh returns malformed checks JSON", async () => {
     const ghCalls: string[][] = [];
 

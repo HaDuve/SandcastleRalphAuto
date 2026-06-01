@@ -352,7 +352,7 @@ async function applyMergeGate(
     );
     return {
       status: "blocked",
-      kind: "open-blockers",
+      kind: "missing-merge-prerequisites",
       reason,
       resumeSkill: "/merge",
     };

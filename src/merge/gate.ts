@@ -81,14 +81,14 @@ function parsePrMergeability(
       typeof (parsed as PrMergeability).mergeStateStatus !== "string"
     ) {
       return blocked(
-        "pr-not-mergeable",
+        "mergeability-parse-error",
         "Could not read PR mergeability from gh",
       );
     }
     return parsed as PrMergeability;
   } catch {
     return blocked(
-      "pr-not-mergeable",
+      "mergeability-parse-error",
       "Could not read PR mergeability from gh",
     );
   }

@@ -27,6 +27,8 @@ describe("classifyMergeTailBlock", () => {
     "no-approve-verdict",
     "open-blockers",
     "checks-parse-error",
+    "mergeability-parse-error",
+    "missing-merge-prerequisites",
   ] as const)("classifies %s as human", (kind) => {
     expect(classifyMergeTailBlock(blocked(kind), handoff("/merge"))).toBe(
       "human",
