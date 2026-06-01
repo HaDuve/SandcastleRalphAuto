@@ -75,10 +75,67 @@ body {
 .queue-panel,
 .active-panel,
 .run-outcome-panel,
-.history-panel {
+.history-panel,
+.log-panel {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-height: 0;
+}
+
+.log-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.log-panel-header h2 {
+  margin: 0;
+}
+
+.log-phase-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #9aa7b5;
+}
+
+.log-phase-select {
+  background: #1a2330;
+  color: #e7ecf3;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+
+.log-body {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #1a2330;
+  border: 1px solid #2a3441;
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.log-body--preview {
+  max-height: calc(1.5em * 5 + 1.5rem);
+  overflow: hidden;
+}
+
+.log-body--expanded {
+  max-height: min(24rem, 40vh);
+  overflow: auto;
+  min-height: 0;
+}
+
+.log-idle {
+  margin: 0;
+  color: #9aa7b5;
 }
 
 .queue-list,

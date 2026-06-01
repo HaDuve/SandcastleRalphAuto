@@ -16,6 +16,7 @@ import {
 import { ActivePanel } from "./ActivePanel.js";
 import { DashboardLayout } from "./DashboardLayout.js";
 import { HistoryPanel } from "./HistoryPanel.js";
+import { LogPanel } from "./LogPanel.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { QueuePanel } from "./QueuePanel.js";
 import { RunOutcomePanel } from "./RunOutcomePanel.js";
@@ -55,6 +56,7 @@ export function App() {
   const [controlError, setControlError] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
   const focusedProjectIdRef = useRef(focusedProjectId);
+  const logPhaseLogHandlerRef = useRef<((chunk: string) => void) | null>(null);
 
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
   const focusedLastOutcome =
@@ -116,6 +118,20 @@ export function App() {
             ...current,
             [projectId]: applyWorkerEvent(current[projectId], event),
           }));
+          if (projectId !== focusedProjectIdRef.current) {
+            return;
+          }
+          if (event.type === "phase-log" && event.chunk) {
+            logPhaseLogHandlerRef.current?.(event.chunk);
+          }
+          if (event.type === "stream" && event.phase) {
+            const nextPhase = event.phase;
+            setActive((current) =>
+              current && current.phase !== nextPhase
+                ? { ...current, phase: nextPhase }
+                : current,
+            );
+          }
         }),
       );
     }
@@ -352,7 +368,15 @@ export function App() {
         }
         phaseStepper={<PanelPlaceholder title="Phase stepper" projectId={focusedProjectId} />}
         active={<ActivePanel project={focusedProject} active={active} />}
-        log={<PanelPlaceholder title="Log" projectId={focusedProjectId} />}
+        log={
+          <LogPanel
+            project={focusedProject}
+            activePhase={active?.phase ?? null}
+            registerPhaseLogHandler={(handler) => {
+              logPhaseLogHandlerRef.current = handler;
+            }}
+          />
+        }
         queue={
           <QueuePanel
             project={focusedProject}
