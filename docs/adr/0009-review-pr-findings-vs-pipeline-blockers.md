@@ -21,4 +21,4 @@ Separately, the merge gate used the **cached review-pr handoff** (`request-chang
 
 - Issue slices stuck on review-pr with populated `blockers` unblock on Start without manual `active.json` edits.
 - Operators still see real pipeline blocks (wrong `nextSkill`, missing `PHASE_COMPLETE`, etc.).
-- `review-tdd` should clear `blockers` and set `verdict: "approve"` when fixes are done so the merge gate can pass the approve check.
+- `review-tdd` should clear `blockers` and set `verdict: "approve"` when fixes are done so the merge gate can queue merge on an **open** PR. If the PR is already `MERGED` on GitHub (merge agent merged first), the host gate still succeeds for `/next` even when handoff `verdict` is `n/a`.
