@@ -309,6 +309,7 @@ function createSliceRunner(
       const result = await runPhaseFn({
         ...options,
         signal: options.signal ?? deps.control?.signal,
+        // Dashboard streaming replaces any caller-provided callback.
         onAgentStreamEvent: deps.onAgentStream
           ? (event) => {
               deps.onAgentStream!({ issue, phase: options.phase, event });

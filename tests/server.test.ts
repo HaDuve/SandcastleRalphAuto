@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Handoff } from "../src/handoff/index.js";
+import {
+  createInMemoryProjectMutex,
+  loopProject,
+  type RunProjectDeps,
+} from "../src/cli/index.js";
+import { QUEUE_EMPTY } from "../src/next/index.js";
 import { type Project } from "../src/registry/index.js";
+import { PHASE_COMPLETE_SIGNAL } from "../src/runner/index.js";
 import { createEventBus, type DashboardEvent } from "../src/server/eventBus.js";
 import { createDashboardServer, type DashboardServerOptions } from "../src/server/index.js";
 import { createWorkerManager } from "../src/server/workerManager.js";
@@ -50,6 +57,38 @@ async function startServer(
     throw new Error("Expected server to listen on a TCP port");
   }
   return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+}
+
+function reviewHandoff(issue = 12, pr = 42): Handoff {
+  return {
+    project: "HaDuve/Portfolio",
+    issue,
+    branch: `issue-${issue}`,
+    pr,
+    phase: "review-pr",
+    acceptanceState: "done",
+    verdict: "approve",
+    blockers: [],
+    mergeReady: false,
+    nextSkill: "/review-tdd",
+    startedAt: "2026-06-01T00:00:00.000Z",
+    endedAt: "2026-06-01T01:00:00.000Z",
+  };
+}
+
+async function waitForDashboardEvent(
+  events: DashboardEvent[],
+  type: DashboardEvent["type"],
+  timeoutMs = 3_000,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (events.some((event) => event.type === type)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Timed out waiting for dashboard event: ${type}`);
 }
 
 describe("dashboard server", () => {
@@ -326,6 +365,98 @@ describe("dashboard server", () => {
         timestamp: "2026-06-01T12:00:00.000Z",
       },
     });
+  });
+
+  it("completes an active worker when SSE disconnects during live stream events", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    const events: DashboardEvent[] = [];
+    eventBus.subscribe("portfolio", (event) => events.push(event));
+
+    const workerManager = createWorkerManager({
+      eventBus,
+      loopProject: (input, deps) => loopProject({ ...input, issue: 12 }, deps),
+    });
+
+    const runProjectDeps: RunProjectDeps = {
+      mutex: createInMemoryProjectMutex(),
+      loadRegistry: async () => [project],
+      runLinearSlice: async (options, sliceDeps) => {
+        await sliceDeps!.runPhase({
+          phase: "tdd",
+          branch: options.branch,
+          projectPath: options.projectPath,
+        });
+        await sliceDeps!.runPhase({
+          phase: "review-pr",
+          branch: options.branch,
+          projectPath: options.projectPath,
+        });
+        return {
+          status: "ready-for-next",
+          issue: options.issue,
+          branch: options.branch,
+          pr: 42,
+          phasesCompleted: [
+            "tdd",
+            "create-pr",
+            "review-pr",
+            "review-tdd",
+            "merge",
+          ],
+        };
+      },
+      runPhase: async (options) => {
+        options.onAgentStreamEvent?.({
+          type: "text",
+          message: `streaming ${options.phase}`,
+          iteration: 1,
+          timestamp: new Date("2026-06-01T12:00:00.000Z"),
+        });
+        return {
+          commits: [],
+          branch: options.branch,
+          completionSignal: PHASE_COMPLETE_SIGNAL,
+          handoff:
+            options.phase === "review-pr"
+              ? reviewHandoff(options.issue)
+              : {
+                  ...reviewHandoff(options.issue),
+                  phase: options.phase,
+                  pr: undefined,
+                },
+        };
+      },
+      runNext: async () => ({ status: QUEUE_EMPTY }),
+      runMergeGate: async () => ({ status: "auto-merge-queued" }),
+      waitForMergedPr: async () => {},
+    };
+
+    const started = await startServer(rootDir, {
+      stateRoot,
+      eventBus,
+      workerManager,
+      runProjectDeps,
+    });
+    server = started.server;
+
+    const sseResponse = await fetch(`${started.baseUrl}/api/projects/portfolio/events`);
+    expect(sseResponse.status).toBe(200);
+    await sseResponse.body!.cancel();
+
+    const startResponse = await fetch(`${started.baseUrl}/api/projects/portfolio/start`, {
+      method: "POST",
+    });
+    expect(startResponse.status).toBe(202);
+
+    await waitForDashboardEvent(events, "worker-stopped");
+
+    expect(events).toContainEqual({
+      type: "worker-stopped",
+      projectId: "portfolio",
+      reason: "queue-empty",
+    });
+    expect(events.some((event) => event.type === "stream")).toBe(true);
   });
 
   it("keeps publishing when an SSE client disconnects", async () => {

@@ -86,8 +86,12 @@ function resolveMaxIterations(
   return phase === "tdd" ? tddMaxIterations : 1;
 }
 
+function sanitizeBranchForFilename(branch: string): string {
+  return branch.replace(/[/\\:*?"<>|]/g, "-");
+}
+
 function resolveLogPath(projectPath: string, branch: string, name?: string): string {
-  const sanitizedBranch = branch.replace(/[^a-zA-Z0-9_.-]/g, "-");
+  const sanitizedBranch = sanitizeBranchForFilename(branch);
   const nameSuffix = name
     ? `-${name.toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}`
     : "";

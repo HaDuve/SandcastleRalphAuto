@@ -32,6 +32,7 @@ export function createEventBus(): EventBus {
         return;
       }
       for (const listener of projectListeners) {
+        // Async dispatch keeps publishers (Sandcastle stream callbacks) off the hot path.
         queueMicrotask(() => {
           try {
             listener(event);

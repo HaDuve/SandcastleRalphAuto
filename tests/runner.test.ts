@@ -440,6 +440,45 @@ describe("runPhase", () => {
     expect(forwarded).toEqual([textEvent, toolEvent]);
   });
 
+  it("uses Sandcastle-compatible branch sanitization for streaming log paths", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const promptFile = join(projectPath, "prompts", "tdd.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# tdd\n");
+    await writeHandoff({ ...sampleHandoff, phase: "tdd" }, worktreePath);
+
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => ({
+          commits: [],
+          iterations: [],
+          stdout: "",
+        }),
+      },
+      [],
+      runCalls,
+    );
+
+    await runPhase(
+      {
+        phase: "tdd",
+        branch: "feature/foo@bar",
+        projectPath,
+        promptFile,
+        onAgentStreamEvent: () => {},
+      },
+      deps,
+    );
+
+    expect(runCalls[0]?.logging).toMatchObject({
+      type: "file",
+      path: join(projectPath, ".sandcastle", "logs", "feature-foo@bar.log"),
+    });
+  });
+
   it("accepts a configurable sandbox provider", async () => {
     const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
