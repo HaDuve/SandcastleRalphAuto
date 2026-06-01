@@ -846,6 +846,117 @@ describe("App", () => {
     });
   });
 
+  it("shows blocked in the sidebar after worker-stopped refreshes the active slice", async () => {
+    const sources: Array<{
+      emit: (type: string, data: unknown) => void;
+    }> = [];
+    class StoppableEventSource {
+      private listeners = new Map<string, Set<(event: Event) => void>>();
+
+      constructor(url: string) {
+        void url;
+        sources.push(this);
+        queueMicrotask(() => {
+          this.emit("connected", {
+            type: "connected",
+            projectId: "portfolio",
+            workerStatus: "running",
+          });
+        });
+      }
+
+      addEventListener(type: string, handler: (event: Event) => void) {
+        let typeListeners = this.listeners.get(type);
+        if (!typeListeners) {
+          typeListeners = new Set();
+          this.listeners.set(type, typeListeners);
+        }
+        typeListeners.add(handler);
+      }
+
+      removeEventListener(type: string, handler: (event: Event) => void) {
+        this.listeners.get(type)?.delete(handler);
+      }
+
+      close() {}
+
+      emit(type: string, data: unknown) {
+        const handlers = this.listeners.get(type);
+        if (!handlers) {
+          return;
+        }
+        for (const handler of handlers) {
+          handler({ data: JSON.stringify(data) } as unknown as Event);
+        }
+      }
+    }
+    vi.stubGlobal("EventSource", StoppableEventSource as unknown as typeof EventSource);
+
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    let activeFetches = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "merge", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          activeFetches += 1;
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "merge",
+                branch: "issue-11",
+                status: activeFetches === 1 ? "active" : "blocked",
+                reason: activeFetches > 1 ? "Required check ci failed" : undefined,
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    const sidebar = await screen.findByRole("region", { name: /projects/i });
+    expect(within(sidebar).getByText("running · merge")).toBeInTheDocument();
+
+    await act(async () => {
+      for (const source of sources) {
+        source.emit("worker-stopped", {
+          type: "worker-stopped",
+          projectId: "portfolio",
+          reason: "blocked",
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(within(sidebar).getByText("blocked")).toBeInTheDocument();
+    });
+    expect(within(sidebar).queryByText(/running · merge/i)).not.toBeInTheDocument();
+  });
+
   it("blocks Hide while the project worker is running", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));

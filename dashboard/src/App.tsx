@@ -110,6 +110,21 @@ export function App() {
     };
   }, []);
 
+  const syncActiveSummary = useCallback(async (projectId: string) => {
+    try {
+      const nextActive = await fetchActive(projectId);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: activeSummaryFromSlice(nextActive),
+      }));
+      if (focusedProjectIdRef.current === projectId) {
+        setActive(nextActive);
+      }
+    } catch {
+      // Sidebar sync is best-effort; panel errors surface on explicit refresh.
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribes: Array<() => void> = [];
     for (const projectId of selectedIds) {
@@ -133,6 +148,9 @@ export function App() {
               );
             }
           }
+          if (event.type === "worker-stopped") {
+            void syncActiveSummary(projectId);
+          }
           if (projectId !== focusedProjectIdRef.current) {
             return;
           }
@@ -147,7 +165,7 @@ export function App() {
         unsubscribe();
       }
     };
-  }, [selectedIds]);
+  }, [selectedIds, syncActiveSummary]);
 
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
@@ -387,7 +405,14 @@ export function App() {
           <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
         }
         phaseStepper={
-          <PhaseStepper project={focusedProject} currentPhase={active?.phase ?? null} />
+          <PhaseStepper
+            project={focusedProject}
+            currentPhase={
+              focusedProjectId === null
+                ? null
+                : (activeSummaries[focusedProjectId]?.phase ?? active?.phase ?? null)
+            }
+          />
         }
         active={<ActivePanel project={focusedProject} active={active} />}
         log={

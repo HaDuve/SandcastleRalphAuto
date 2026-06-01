@@ -79,6 +79,22 @@ describe("ProjectPicker", () => {
     expect(screen.getByText("running · create-pr")).toBeInTheDocument();
   });
 
+  it("shows running status from the projects snapshot when the card is unchecked", () => {
+    renderPicker({
+      projects: [
+        {
+          ...portfolio,
+          workerStatus: "running",
+          active: { issue: 11, phase: "review-pr", status: "active" },
+        },
+      ],
+      selectedIds: new Set(),
+      workerStates: {},
+    });
+
+    expect(screen.getByText("running · review-pr")).toBeInTheDocument();
+  });
+
   it("calls start only for checked projects", async () => {
     const user = userEvent.setup();
     const onStart = vi.fn();

@@ -1,4 +1,8 @@
-import { formatProjectStatusIndicator } from "./projectStatus.js";
+import {
+  formatProjectStatusIndicator,
+  resolveActiveSummaryForCard,
+  resolveWorkerStatusForCard,
+} from "./projectStatus.js";
 import { projectCardClass } from "./runOutcomeUi.js";
 import type { Project, ProjectActiveSummary } from "./types.js";
 import type { WorkerState, WorkerStatus } from "./workerStatus.js";
@@ -56,8 +60,8 @@ export function ProjectPicker({
           const hideDisabled = !canHideProject(status);
           const cardClass = projectCardClass(stoppedRunOutcome(workerStates[project.id]));
           const statusLabel = formatProjectStatusIndicator(
-            status,
-            activeSummaries[project.id],
+            resolveWorkerStatusForCard(project, workerStates[project.id]),
+            resolveActiveSummaryForCard(project, activeSummaries[project.id]),
           );
 
           return (
