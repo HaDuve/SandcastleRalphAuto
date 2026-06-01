@@ -350,7 +350,12 @@ async function applyMergeGate(
       },
       stateRoot,
     );
-    return { status: "blocked", reason, resumeSkill: "/merge" };
+    return {
+      status: "blocked",
+      kind: "missing-merge-prerequisites",
+      reason,
+      resumeSkill: "/merge",
+    };
   }
 
   const mergeResult = await (deps.runMergeGate ?? runMergeGate)(

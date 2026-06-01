@@ -1,6 +1,9 @@
 import { type Handoff } from "../handoff/index.js";
 import { type Project } from "../registry/index.js";
 import { type ActiveState } from "../state/index.js";
+import {
+  type MergeGateBlockKind,
+} from "./blockKinds.js";
 
 /** Pre-flight input for the host merge gate (D3/D4). */
 export type RunMergeGateInput = {
@@ -25,6 +28,7 @@ export type RunMergeGateAwaitingHuman = {
 
 export type RunMergeGateBlocked = {
   status: "blocked";
+  kind: MergeGateBlockKind;
   reason: string;
   resumeSkill: "/merge";
 };
@@ -47,8 +51,47 @@ type PrCheck = {
   link: string;
 };
 
-function blocked(reason: string): RunMergeGateBlocked {
-  return { status: "blocked", reason, resumeSkill: "/merge" };
+function blocked(
+  kind: MergeGateBlockKind,
+  reason: string,
+): RunMergeGateBlocked {
+  return { status: "blocked", kind, reason, resumeSkill: "/merge" };
+}
+
+type PrMergeability = {
+  mergeable: string;
+  mergeStateStatus: string;
+};
+
+function isPrMergeable(view: PrMergeability): boolean {
+  return (
+    view.mergeStateStatus === "CLEAN" || view.mergeable === "MERGEABLE"
+  );
+}
+
+function parsePrMergeability(
+  raw: string,
+): PrMergeability | RunMergeGateBlocked {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      typeof (parsed as PrMergeability).mergeable !== "string" ||
+      typeof (parsed as PrMergeability).mergeStateStatus !== "string"
+    ) {
+      return blocked(
+        "mergeability-parse-error",
+        "Could not read PR mergeability from gh",
+      );
+    }
+    return parsed as PrMergeability;
+  } catch {
+    return blocked(
+      "mergeability-parse-error",
+      "Could not read PR mergeability from gh",
+    );
+  }
 }
 
 function allRequiredChecksGreen(checks: PrCheck[]): boolean {
@@ -61,11 +104,17 @@ function parseRequiredChecks(raw: string): PrCheck[] | RunMergeGateBlocked {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
-      return blocked("Could not parse required checks from gh");
+      return blocked(
+        "checks-parse-error",
+        "Could not parse required checks from gh",
+      );
     }
     return parsed as PrCheck[];
   } catch {
-    return blocked("Could not parse required checks from gh");
+    return blocked(
+      "checks-parse-error",
+      "Could not parse required checks from gh",
+    );
   }
 }
 
@@ -83,11 +132,35 @@ export async function runMergeGate(
   }
 
   if (handoff.verdict !== "approve") {
-    return blocked("Merge gate requires a clean Approve verdict");
+    return blocked(
+      "no-approve-verdict",
+      "Merge gate requires a clean Approve verdict",
+    );
   }
 
   if (handoff.blockers.length > 0) {
-    return blocked(`Open blockers: ${handoff.blockers.join(", ")}`);
+    return blocked(
+      "open-blockers",
+      `Open blockers: ${handoff.blockers.join(", ")}`,
+    );
+  }
+
+  const mergeabilityRaw = await deps.gh([
+    "pr",
+    "view",
+    String(pr),
+    "--json",
+    "mergeable,mergeStateStatus",
+  ]);
+  const mergeability = parsePrMergeability(mergeabilityRaw);
+  if ("status" in mergeability) {
+    return mergeability;
+  }
+  if (!isPrMergeable(mergeability)) {
+    return blocked(
+      "pr-not-mergeable",
+      `PR is not mergeable (${mergeability.mergeable}, ${mergeability.mergeStateStatus})`,
+    );
   }
 
   const checksRaw = await deps.gh([
@@ -108,7 +181,10 @@ export async function runMergeGate(
       .filter((check) => check.bucket !== "pass" && check.bucket !== "skipping")
       .map((check) => check.name)
       .join(", ");
-    return blocked(`Required checks not green: ${failing}`);
+    return blocked(
+      "required-checks-failed",
+      `Required checks not green: ${failing}`,
+    );
   }
 
   await deps.gh(["pr", "merge", String(pr), "--squash", "--auto"]);
