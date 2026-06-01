@@ -66,6 +66,11 @@ body {
   color: #9aa7b5;
 }
 
+.panel-placeholder p {
+  margin: 0;
+  color: #9aa7b5;
+}
+
 .queue-panel,
 .active-panel {
   display: flex;
