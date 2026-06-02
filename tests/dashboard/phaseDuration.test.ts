@@ -26,6 +26,12 @@ describe("formatPhaseDuration", () => {
     ).toBe("1h 30m");
   });
 
+  it("formats an in-progress duration when now is passed as the end", () => {
+    expect(
+      formatPhaseDuration("2026-06-01T00:30:00.000Z", "2026-06-01T01:00:00.000Z"),
+    ).toBe("30m");
+  });
+
   it("returns em dash for invalid or negative ranges", () => {
     expect(formatPhaseDuration("not-a-date", "2026-06-01T01:00:00.000Z")).toBe("—");
     expect(

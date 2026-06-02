@@ -19,6 +19,8 @@ import {
   withActivePhase,
 } from "./activeSummaries.js";
 import { ActivePanel } from "./ActivePanel.js";
+import { buildFocusedStatus } from "./focusedHeaderStatus.js";
+import { FocusedHeaderLine } from "./FocusedHeaderLine.js";
 import { DashboardLayout } from "./DashboardLayout.js";
 import { HistoryPanel } from "./HistoryPanel.js";
 import { LogPanel } from "./LogPanel.js";
@@ -38,6 +40,7 @@ import {
   writeSelectedIds,
 } from "./selectedProjects.js";
 import { formatFleetLine, summarizeFleet } from "./fleetSummary.js";
+import { useNow } from "./useNow.js";
 import { applyWorkerEvent, canHideProject, stoppedRunOutcome, type WorkerState } from "./workerStatus.js";
 import "./app.css";
 
@@ -64,8 +67,16 @@ export function App() {
   const focusedLastOutcome =
     focusedProjectId === null ? null : stoppedRunOutcome(workerStates[focusedProjectId]);
   const visibleProjects = projects.filter((project) => !hiddenIds.has(project.id));
+  const now = useNow(10_000);
   const fleetLine = formatFleetLine(
     summarizeFleet(visibleProjects, workerStates, activeSummaries, hiddenIds.size),
+  );
+  const focusedStatus = buildFocusedStatus(
+    focusedProject,
+    focusedProjectId === null ? undefined : workerStates[focusedProjectId],
+    focusedProjectId === null ? null : activeSummaries[focusedProjectId],
+    active,
+    now,
   );
 
   useEffect(() => {
@@ -417,6 +428,7 @@ export function App() {
           <h1>Sandcastle Ralph Auto</h1>
         </div>
         <div className="app-header-status">
+          <FocusedHeaderLine status={focusedStatus} />
           <p className="app-header-fleet" aria-label="Fleet summary">
             {fleetLine}
           </p>
