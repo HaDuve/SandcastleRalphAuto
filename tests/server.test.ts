@@ -559,7 +559,7 @@ describe("dashboard server", () => {
           branch: options.branch,
           completionSignal: PHASE_COMPLETE_SIGNAL,
           handoff: {
-            ...reviewHandoff(options.issue ?? 12),
+            ...reviewHandoff(12),
             phase: options.phase,
           },
         };
@@ -628,7 +628,10 @@ describe("dashboard server", () => {
 
     const phaseLogEvents = sseEvents.filter((event) => event.type === "phase-log");
     const workerStoppedIndex = sseEvents.findIndex((event) => event.type === "worker-stopped");
-    const lastPhaseLogIndex = sseEvents.findLastIndex((event) => event.type === "phase-log");
+    const lastPhaseLogIndex = sseEvents.reduce(
+      (last, event, index) => (event.type === "phase-log" ? index : last),
+      -1,
+    );
 
     expect(phaseLogEvents.length).toBeGreaterThan(1);
     expect(lastPhaseLogIndex).toBeLessThan(workerStoppedIndex);
