@@ -18,6 +18,11 @@ import {
   activeSummaryFromSlice,
   withActivePhase,
 } from "./activeSummaries.js";
+import {
+  focusedLogIssue,
+  focusedPhase,
+  optimisticStartContext,
+} from "./optimisticStart.js";
 import { ActivePanel } from "./ActivePanel.js";
 import { buildFocusedStatus } from "./focusedHeaderStatus.js";
 import { FocusedHeaderLine } from "./FocusedHeaderLine.js";
@@ -353,13 +358,64 @@ export function App() {
     }));
   }, []);
 
+  type OptimisticStartSnapshot = {
+    workerStatus: WorkerState["status"];
+    summary: ProjectActiveSummary | null;
+    active: ActiveSlice | null;
+  };
+
+  const applyOptimisticStart = useCallback(
+    (projectId: string) => {
+      const project = projects.find((entry) => entry.id === projectId);
+      const context = optimisticStartContext({
+        queue: focusedProjectIdRef.current === projectId ? queue : [],
+        active: focusedProjectIdRef.current === projectId ? active : null,
+        catalogActive: project?.active ?? null,
+        summary: activeSummaries[projectId] ?? null,
+      });
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: context.summary,
+      }));
+      if (focusedProjectIdRef.current === projectId) {
+        setActive(context.slice);
+      }
+      setWorkerStatus(projectId, "running");
+    },
+    [active, activeSummaries, projects, queue],
+  );
+
+  const revertOptimisticStart = useCallback(
+    (projectId: string, snapshot: OptimisticStartSnapshot) => {
+      setWorkerStatus(projectId, snapshot.workerStatus);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: snapshot.summary,
+      }));
+      if (focusedProjectIdRef.current === projectId) {
+        setActive(snapshot.active);
+      }
+    },
+    [setWorkerStatus],
+  );
+
   const runControl = useCallback(
     async (action: "start" | "pause" | "resume" | "kill", projectId: string) => {
       setControlError(null);
+      let startSnapshot: OptimisticStartSnapshot | null = null;
+      if (action === "start") {
+        startSnapshot = {
+          workerStatus: workerStates[projectId]?.status ?? "idle",
+          summary: activeSummaries[projectId] ?? null,
+          active: focusedProjectIdRef.current === projectId ? active : null,
+        };
+        flushSync(() => {
+          applyOptimisticStart(projectId);
+        });
+      }
       try {
         if (action === "start") {
           await startProject(projectId);
-          setWorkerStatus(projectId, "running");
         } else if (action === "pause") {
           const result = await pauseProject(projectId);
           if (result.status === "not-running") {
@@ -388,10 +444,32 @@ export function App() {
           await refreshPanels(projectId);
         }
       } catch (error: unknown) {
+        if (action === "start" && startSnapshot) {
+          revertOptimisticStart(projectId, startSnapshot);
+        }
         setControlError(error instanceof Error ? error.message : "Control request failed");
       }
     },
-    [refreshPanels, setWorkerStatus],
+    [
+      active,
+      activeSummaries,
+      applyOptimisticStart,
+      refreshPanels,
+      revertOptimisticStart,
+      setWorkerStatus,
+      workerStates,
+    ],
+  );
+
+  const focusedDisplayPhase =
+    focusedProjectId === null
+      ? null
+      : focusedPhase(focusedProjectId, activeSummaries, active);
+  const focusedLogIssueNumber = focusedLogIssue(
+    focusedProjectId,
+    active,
+    focusedProject?.active ?? null,
+    activeSummaries,
   );
 
   const handleSkipToggle = useCallback(
@@ -457,27 +535,14 @@ export function App() {
           <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
         }
         phaseStepper={
-          <PhaseStepper
-            project={focusedProject}
-            currentPhase={
-              focusedProjectId === null
-                ? null
-                : (activeSummaries[focusedProjectId]?.phase ?? active?.phase ?? null)
-            }
-          />
+          <PhaseStepper project={focusedProject} currentPhase={focusedDisplayPhase} />
         }
         active={<ActivePanel project={focusedProject} active={active} />}
         log={
           <LogPanel
             project={focusedProject}
-            activePhase={active?.phase ?? null}
-            logIssueFallback={
-              active?.issue ??
-              focusedProject?.active?.issue ??
-              (focusedProjectId === null
-                ? null
-                : (activeSummaries[focusedProjectId]?.issue ?? null))
-            }
+            activePhase={focusedDisplayPhase}
+            logIssueFallback={focusedLogIssueNumber}
             registerPhaseLogHandler={(handler) => {
               logPhaseLogHandlerRef.current = handler;
             }}

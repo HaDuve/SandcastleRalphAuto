@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { STARTING_PLACEHOLDER_PHASE } from "../../dashboard/src/optimisticStart.js";
 import { ActivePanel } from "../../dashboard/src/ActivePanel.js";
 import type { ActiveSlice, Project } from "../../dashboard/src/types.js";
 
@@ -35,6 +36,22 @@ describe("ActivePanel", () => {
     render(<ActivePanel project={portfolio} active={null} />);
 
     expect(screen.getByText(/no active slice/i)).toBeInTheDocument();
+  });
+
+  it("shows a starting placeholder while the worker boots", () => {
+    render(
+      <ActivePanel
+        project={portfolio}
+        active={{
+          issue: 0,
+          phase: STARTING_PLACEHOLDER_PHASE,
+          branch: "—",
+          status: "active",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/starting worker/i)).toBeInTheDocument();
   });
 
   it("renders active slice details including PR link and startedAt", () => {
