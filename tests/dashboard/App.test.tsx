@@ -141,6 +141,73 @@ describe("App", () => {
     }
   });
 
+  it("renders the fleet summary line in the header", async () => {
+    const idleOne = {
+      ...portfolio,
+      id: "idle-one",
+      path: "/tmp/idle-one",
+      remote: "HaDuve/IdleOne",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+                { ...other, workerStatus: "paused" },
+                idleOne,
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    const fleet = await screen.findByLabelText(/fleet summary/i);
+    expect(fleet).toHaveTextContent("1 running · 1 paused · 0 blocked · 1 idle");
+    expect(fleet.closest(".app-header-status")).toBeTruthy();
+  });
+
+  it("appends hidden count to the fleet line when projects are hidden", async () => {
+    localStorage.setItem(HIDDEN_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
+
+    render(<App />);
+
+    const fleet = await screen.findByLabelText(/fleet summary/i);
+    expect(fleet).toHaveTextContent(/· 1 hidden$/);
+  });
+
+  it("renders load errors under the fleet summary in the status column", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ error: "catalog down" }), { status: 500 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    const fleet = await screen.findByLabelText(/fleet summary/i);
+    const statusColumn = fleet.closest(".app-header-status");
+    expect(statusColumn).toBeTruthy();
+    const alert = await within(statusColumn as HTMLElement).findByRole("alert");
+    expect(alert).toHaveTextContent(/catalog down|failed to load projects/i);
+  });
+
   it("loads projects from the local API and renders the dashboard shell", async () => {
     vi.stubGlobal(
       "fetch",

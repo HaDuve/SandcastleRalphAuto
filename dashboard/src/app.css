@@ -23,13 +23,36 @@ body {
 
 .app-header {
   flex-shrink: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1.25rem;
+  align-items: start;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid #2a3441;
+}
+
+.app-header-title {
+  padding-right: 0.25rem;
 }
 
 .app-header h1 {
   margin: 0;
   font-size: 1.125rem;
+  white-space: nowrap;
+}
+
+.app-header-status {
+  min-width: 0;
+}
+
+.app-header-fleet {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #9aa7b5;
+}
+
+.app-header-status [role="alert"] {
+  margin: 0.35rem 0 0;
 }
 
 .dashboard {
