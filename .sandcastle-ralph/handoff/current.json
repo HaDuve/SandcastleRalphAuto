@@ -3,12 +3,12 @@
   "issue": 95,
   "branch": "issue-95",
   "pr": 102,
-  "phase": "review-pr",
+  "phase": "review-tdd",
   "acceptanceState": "done",
   "verdict": "n/a",
   "blockers": [],
-  "mergeReady": false,
-  "nextSkill": "/review-tdd",
+  "mergeReady": true,
+  "nextSkill": "/merge",
   "startedAt": "2026-06-02T09:22:15.443Z",
-  "endedAt": "2026-06-02T09:22:15.443Z"
+  "endedAt": "2026-06-02T09:25:32.268309Z"
 }
