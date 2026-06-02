@@ -12,11 +12,19 @@ import {
   persistRunOutcomeFromWorkerError,
 } from "../state/runOutcomeFromWorker.js";
 import { type EventBus } from "./eventBus.js";
+import { reapProcessTree } from "./reapProcessTree.js";
 
 export type WorkerManagerDeps = {
   loopProject?: typeof loopProject;
   eventBus: EventBus;
   now?: () => Date;
+  /**
+   * Terminate the orchestrator's descendant subtree on kill. Defaults to a
+   * SIGTERM→SIGKILL sweep of `process.pid`'s descendants, which reaps agent
+   * grandchildren (e.g. `vitest` fork-pool workers) that Sandcastle's
+   * best-effort SIGTERM leaves orphaned. Injectable for tests.
+   */
+  reapProcessTree?: (rootPid: number) => Promise<number[]>;
 };
 
 export type WorkerManager = {
@@ -57,6 +65,8 @@ function createWorkerControl(entry: WorkerEntry): WorkerControl {
 export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
   const loopProjectFn = deps.loopProject ?? loopProject;
   const now = deps.now ?? (() => new Date());
+  const reapProcessTreeFn =
+    deps.reapProcessTree ?? ((rootPid: number) => reapProcessTree(rootPid));
   const workers = new Map<string, WorkerEntry>();
 
   return {
@@ -186,6 +196,16 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
         return { status: "not-running" };
       }
       entry.abortController.abort();
+      // Abort only signals Sandcastle to SIGTERM the agent process group.
+      // Sweep descendant survivors (orphaned vitest workers, etc.) out of band.
+      void Promise.resolve()
+        .then(() => reapProcessTreeFn(process.pid))
+        .catch((error: unknown) => {
+          console.warn(
+            `[sandcastle] reap after kill of "${projectId}" failed:`,
+            error,
+          );
+        });
       return { status: "killed" };
     },
 
