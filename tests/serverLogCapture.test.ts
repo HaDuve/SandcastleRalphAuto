@@ -36,7 +36,7 @@ describe("server log capture", () => {
     const workerManager = createWorkerManager({
       eventBus,
       loopProject: async (_input, deps) => {
-        if (!deps?.runPhase) {
+        if (!deps || !deps.runPhase) {
           throw new Error("Expected deps.runPhase to be provided");
         }
         await deps.runPhase({
