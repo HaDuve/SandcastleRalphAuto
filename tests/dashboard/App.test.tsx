@@ -1190,6 +1190,194 @@ describe("App", () => {
     expect(screen.getByText("merge", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
   });
 
+  it("updates phase stepper and active slice optimistically when Start is clicked", async () => {
+    let releaseStart: (() => void) | undefined;
+    const startGate = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url.endsWith("/start") && init?.method === "POST") {
+          await startGate;
+          return new Response(JSON.stringify({ status: "started" }), { status: 202 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await screen.findByText(/#10/);
+
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    const stepper = screen.getByRole("region", { name: /phase stepper/i });
+    expect(within(stepper).getByRole("listitem", { current: "step" })).toHaveTextContent("tdd");
+    const activeRegion = screen.getByRole("region", { name: /^active$/i });
+    expect(within(activeRegion).getByText(/#10/)).toBeInTheDocument();
+    expect(within(activeRegion).getByText(/issue-10/i)).toBeInTheDocument();
+
+    releaseStart?.();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /start portfolio/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("aligns log panel phase with stream-updated activeSummaries", async () => {
+    const sources: Array<{
+      dispatch: (type: string, data: unknown) => void;
+    }> = [];
+    class StreamableEventSource {
+      url: string;
+      private listeners = new Map<string, Set<(event: Event) => void>>();
+
+      constructor(url: string) {
+        this.url = url;
+        sources.push(this);
+        queueMicrotask(() => {
+          this.emit("connected", {
+            type: "connected",
+            projectId: "portfolio",
+            workerStatus: "running",
+          });
+        });
+      }
+
+      addEventListener(type: string, handler: (event: Event) => void) {
+        let typeListeners = this.listeners.get(type);
+        if (!typeListeners) {
+          typeListeners = new Set();
+          this.listeners.set(type, typeListeners);
+        }
+        typeListeners.add(handler);
+      }
+
+      removeEventListener(type: string, handler: (event: Event) => void) {
+        this.listeners.get(type)?.delete(handler);
+      }
+
+      close() {}
+
+      emit(type: string, data: unknown) {
+        const handlers = this.listeners.get(type);
+        if (!handlers) {
+          return;
+        }
+        for (const handler of handlers) {
+          handler({ data: JSON.stringify(data) } as unknown as Event);
+        }
+      }
+    }
+    vi.stubGlobal("EventSource", StreamableEventSource as unknown as typeof EventSource);
+
+    let logFetchCount = 0;
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url === "/api/projects/portfolio/log") {
+          logFetchCount += 1;
+          if (logFetchCount === 1) {
+            return new Response(
+              JSON.stringify({
+                issue: 11,
+                phase: "tdd",
+                log: "tdd output\n",
+                phases: ["tdd", "create-pr"],
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "create-pr",
+              log: "create-pr output\n",
+              phases: ["tdd", "create-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("tdd output")).toBeInTheDocument();
+
+    await act(async () => {
+      for (const source of sources) {
+        source.emit("stream", {
+          type: "stream",
+          projectId: "portfolio",
+          issue: 11,
+          phase: "create-pr",
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("log-preview")).toHaveTextContent("create-pr output");
+    });
+    expect(logFetchCount).toBeGreaterThanOrEqual(2);
+  });
+
   it("omits Hide while the project worker is running", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));

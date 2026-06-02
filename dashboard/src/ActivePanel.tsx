@@ -1,3 +1,4 @@
+import { STARTING_PLACEHOLDER_PHASE } from "./optimisticStart.js";
 import type { ActiveSlice, Project } from "./types.js";
 
 export type ActivePanelProps = {
@@ -24,6 +25,15 @@ export function ActivePanel({ project, active }: ActivePanelProps) {
       <div className="active-panel">
         <h2>Active slice</h2>
         <p className="active-idle">No active slice for this project.</p>
+      </div>
+    );
+  }
+
+  if (active.phase === STARTING_PLACEHOLDER_PHASE) {
+    return (
+      <div className="active-panel">
+        <h2>Active slice</h2>
+        <p className="active-starting">Starting worker…</p>
       </div>
     );
   }
