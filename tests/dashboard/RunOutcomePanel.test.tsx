@@ -24,19 +24,31 @@ const blockedOutcome: RunOutcome = {
 
 describe("RunOutcomePanel", () => {
   it("prompts to select a project when none is focused", () => {
-    render(<RunOutcomePanel project={null} lastOutcome={null} />);
+    render(<RunOutcomePanel project={null} lastOutcome={null} workerStatus={null} />);
 
     expect(screen.getByText(/select a project/i)).toBeInTheDocument();
   });
 
   it("shows idle when the project has no recorded run outcome", () => {
-    render(<RunOutcomePanel project={portfolio} lastOutcome={null} />);
+    render(<RunOutcomePanel project={portfolio} lastOutcome={null} workerStatus="idle" />);
 
     expect(screen.getByText(/no run outcome recorded/i)).toBeInTheDocument();
   });
 
+  it('shows running when the worker is running and there is no terminal outcome yet', () => {
+    render(<RunOutcomePanel project={portfolio} lastOutcome={null} workerStatus="running" />);
+
+    expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
+  it('shows running when the worker is paused and there is no terminal outcome yet', () => {
+    render(<RunOutcomePanel project={portfolio} lastOutcome={null} workerStatus="paused" />);
+
+    expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
   it("surfaces the last run outcome for the focused project", () => {
-    render(<RunOutcomePanel project={portfolio} lastOutcome={blockedOutcome} />);
+    render(<RunOutcomePanel project={portfolio} lastOutcome={blockedOutcome} workerStatus="idle" />);
 
     expect(screen.getByRole("status")).toHaveClass("run-outcome-banner--blocked");
     expect(screen.getByText(/blocked/i)).toBeInTheDocument();
@@ -45,7 +57,7 @@ describe("RunOutcomePanel", () => {
   });
 
   it("links to the phase log endpoint for the stopped phase", () => {
-    render(<RunOutcomePanel project={portfolio} lastOutcome={blockedOutcome} />);
+    render(<RunOutcomePanel project={portfolio} lastOutcome={blockedOutcome} workerStatus="idle" />);
 
     const logLink = screen.getByRole("link", { name: /review-pr log/i });
     expect(logLink).toHaveAttribute(
@@ -86,7 +98,7 @@ describe("RunOutcomePanel", () => {
       text: /killed/i,
     },
   ])("renders a $label outcome banner", ({ lastOutcome, className, text, logHref }) => {
-    render(<RunOutcomePanel project={portfolio} lastOutcome={lastOutcome} />);
+    render(<RunOutcomePanel project={portfolio} lastOutcome={lastOutcome} workerStatus="idle" />);
 
     expect(screen.getByRole("status")).toHaveClass(className);
     expect(screen.getByText(text)).toBeInTheDocument();
@@ -102,7 +114,7 @@ describe("RunOutcomePanel", () => {
       phase: "tdd",
       stoppedAt: "2026-06-01T12:00:00.000Z",
     };
-    render(<RunOutcomePanel project={portfolio} lastOutcome={errorOutcome} />);
+    render(<RunOutcomePanel project={portfolio} lastOutcome={errorOutcome} workerStatus="idle" />);
 
     expect(screen.getByText(/run crashed/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /see log/i })).toBeInTheDocument();

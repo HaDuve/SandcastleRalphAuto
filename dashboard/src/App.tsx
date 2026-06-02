@@ -80,6 +80,8 @@ export function App() {
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
   const focusedLastOutcome =
     focusedProjectId === null ? null : stoppedRunOutcome(workerStates[focusedProjectId]);
+  const focusedWorkerStatus =
+    focusedProjectId === null ? null : workerStates[focusedProjectId]?.status ?? null;
   const visibleProjects = projects.filter((project) => !hiddenIds.has(project.id));
   const now = useNow(10_000);
   const fleetLine = formatFleetLine(
@@ -714,7 +716,7 @@ export function App() {
           />
         }
         runOutcome={
-          <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
+          <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} workerStatus={focusedWorkerStatus} />
         }
         phaseStepper={
           <PhaseStepper
