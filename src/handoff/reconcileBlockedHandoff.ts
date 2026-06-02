@@ -2,6 +2,7 @@ import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
   isMergeGateNoApproveBlockReason,
+  normalizeHandoffForMergeGate,
   runMergeGate,
   type GhRunner,
 } from "../merge/index.js";
@@ -271,7 +272,7 @@ export async function tryReconcileMergeGateBlockedHandoff(input: {
 
   const mergeResult = await runMergeGate(
     {
-      handoff,
+      handoff: normalizeHandoffForMergeGate(handoff),
       project: input.project,
       pr: input.active.pr,
     },

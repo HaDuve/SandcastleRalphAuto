@@ -54,6 +54,33 @@ describe("resolveHandoffForMergeGate", () => {
     expect(resolved?.verdict).toBe("approve");
   });
 
+  it("normalizes babysit done handoff with verdict n/a to approve for merge gate", async () => {
+    const host: Handoff = {
+      project: project.remote,
+      issue: 80,
+      branch: "issue-80",
+      pr: 87,
+      phase: "babysit",
+      acceptanceState: "done",
+      verdict: "n/a",
+      blockers: [],
+      mergeReady: true,
+      nextSkill: "/merge",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    };
+
+    const resolved = await resolveHandoffForMergeGate(
+      project,
+      "/state",
+      undefined,
+      async () => host,
+    );
+
+    expect(resolved?.verdict).toBe("approve");
+    expect(resolved?.phase).toBe("babysit");
+  });
+
   it("falls back to review-pr handoff when host is still on review-pr", async () => {
     const cached = reviewPrHandoff();
     const resolved = await resolveHandoffForMergeGate(

@@ -11,6 +11,7 @@ import {
 import {
   activeStateFromMergeGate,
   classifyMergeTailBlock,
+  normalizeHandoffForMergeGate,
   runMergeGate,
   type GhRunner,
   type RunMergeGateResult,
@@ -318,6 +319,7 @@ function createSliceRunner(
   getReviewHandoff: () => Handoff | undefined;
 } {
   let reviewHandoff: Handoff | undefined;
+  let approvedVerdictHandoff: Handoff | undefined;
   const runPhaseFn = deps.runPhase ?? runPhase;
 
   return {
@@ -335,10 +337,13 @@ function createSliceRunner(
       if (options.phase === "review-pr") {
         reviewHandoff = result.handoff;
       }
+      if (result.handoff.verdict === "approve") {
+        approvedVerdictHandoff = result.handoff;
+      }
       await streamPhaseLog(result.logFilePath, deps);
       return result;
     },
-    getReviewHandoff: () => reviewHandoff,
+    getReviewHandoff: () => approvedVerdictHandoff ?? reviewHandoff,
   };
 }
 
@@ -365,15 +370,20 @@ export async function resolveHandoffForMergeGate(
     }
   }
 
+  let resolved: Handoff | undefined;
   if (hostHandoff !== undefined && hostHandoff.phase !== "review-pr") {
-    return hostHandoff;
+    resolved = hostHandoff;
+  } else if (reviewHandoff !== undefined) {
+    resolved = reviewHandoff;
+  } else {
+    resolved = hostHandoff;
   }
 
-  if (reviewHandoff !== undefined) {
-    return reviewHandoff;
+  if (resolved === undefined) {
+    return undefined;
   }
 
-  return hostHandoff;
+  return normalizeHandoffForMergeGate(resolved, reviewHandoff);
 }
 
 type ApplyMergeGateResult =

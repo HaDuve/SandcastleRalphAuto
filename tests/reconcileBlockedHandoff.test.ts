@@ -256,6 +256,86 @@ describe("reconcileBlockedHandoff", () => {
     expect(reconciled?.status).toBe("active");
   });
 
+  it("resumes merge gate when blocked on no-approve after babysit wrote verdict n/a", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-babysit-verdict-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    await writeHostHandoff({
+      stateRoot,
+      projectId,
+      handoff: {
+        project: projectId,
+        issue: 80,
+        branch: "issue-80",
+        pr: 87,
+        phase: "babysit",
+        acceptanceState: "done",
+        verdict: "n/a",
+        blockers: [],
+        mergeReady: true,
+        nextSkill: "/merge",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        endedAt: "2026-06-01T01:00:00.000Z",
+      } satisfies Handoff,
+    });
+    await writeActive(
+      projectId,
+      {
+        issue: 80,
+        phase: "merge",
+        branch: "issue-80",
+        pr: 87,
+        status: "blocked",
+        reason: "Merge gate requires a clean Approve verdict",
+        resumeSkill: "/merge",
+      },
+      stateRoot,
+    );
+
+    const resumed = await tryReconcileMergeGateBlockedHandoff({
+      project: { autoMerge: true, remote: projectId },
+      stateRoot,
+      projectId,
+      active: {
+        issue: 80,
+        phase: "merge",
+        branch: "issue-80",
+        pr: 87,
+        status: "blocked",
+        reason: "Merge gate requires a clean Approve verdict",
+        resumeSkill: "/merge",
+      },
+      gh: async (args) => {
+        if (args[0] !== "pr") {
+          return "";
+        }
+        if (args[1] === "view") {
+          const jsonFlag = args.indexOf("--json");
+          const fields =
+            jsonFlag === -1 ? "" : (args[jsonFlag + 1] ?? "");
+          if (fields.includes("state")) {
+            return JSON.stringify({ state: "OPEN" });
+          }
+          if (fields.includes("mergeable")) {
+            return JSON.stringify({
+              mergeable: "MERGEABLE",
+              mergeStateStatus: "CLEAN",
+            });
+          }
+        }
+        if (args[1] === "checks") {
+          return JSON.stringify([
+            { name: "ci", state: "SUCCESS", bucket: "pass", link: "" },
+          ]);
+        }
+        return "";
+      },
+    });
+
+    expect(resumed).toEqual({ issue: 80, pr: 87 });
+    await expect(access(resolveActivePath(stateRoot, projectId))).rejects.toThrow();
+  });
+
   it("resumes merge gate + next when blocked on no-approve but PR is merged", async () => {
     rootDir = await mkdtemp(join(tmpdir(), "reconcile-merge-gate-"));
     const stateRoot = join(rootDir, "state");
