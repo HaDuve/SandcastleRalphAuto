@@ -39,6 +39,11 @@ import {
   type RunLinearSliceResult,
 } from "../pipeline/index.js";
 import {
+  resolvePhaseLogPath,
+  startTailPhaseLog,
+  type TailPhaseLogHandle,
+} from "../phaseLogs/index.js";
+import {
   runPhase,
   type AgentStreamEvent,
   type RunPhaseOptions,
@@ -117,6 +122,7 @@ export type RunProjectDeps = {
   }) => Promise<void>;
   readLogFile?: (path: string) => Promise<string>;
   onPhaseLog?: (chunk: string) => void;
+  tailPhaseLogPollIntervalMs?: number;
   onAgentStream?: (envelope: AgentStreamEnvelope) => void;
   mutex?: ProjectMutex;
   readActive?: (projectId: string, stateRoot: string) => Promise<ActiveState | null>;
@@ -301,14 +307,25 @@ function defaultDeps(stateRoot: string): ResolvedRunProjectDeps {
   };
 }
 
-async function streamPhaseLog(
-  logFilePath: string | undefined,
+function startPhaseLogTail(
+  options: RunPhaseOptions,
   deps: RunProjectDeps,
-): Promise<void> {
-  if (!logFilePath || !deps.onPhaseLog || !deps.readLogFile) {
-    return;
+): TailPhaseLogHandle | undefined {
+  if (!deps.onPhaseLog || !deps.readLogFile) {
+    return undefined;
   }
-  deps.onPhaseLog(await deps.readLogFile(logFilePath));
+  const logPath = resolvePhaseLogPath({
+    projectPath: options.projectPath,
+    branch: options.branch,
+    phase: options.phase,
+  });
+  return startTailPhaseLog({
+    logPath,
+    onChunk: deps.onPhaseLog,
+    readTextFile: deps.readLogFile,
+    signal: options.signal ?? deps.control?.signal,
+    pollIntervalMs: deps.tailPhaseLogPollIntervalMs,
+  });
 }
 
 function createSliceRunner(
@@ -324,24 +341,28 @@ function createSliceRunner(
 
   return {
     async runPhase(options) {
-      const result = await runPhaseFn({
-        ...options,
-        signal: options.signal ?? deps.control?.signal,
-        // Dashboard streaming replaces any caller-provided callback.
-        onAgentStreamEvent: deps.onAgentStream
-          ? (event) => {
-              deps.onAgentStream!({ issue, phase: options.phase, event });
-            }
-          : options.onAgentStreamEvent,
-      });
-      if (options.phase === "review-pr") {
-        reviewHandoff = result.handoff;
+      const tailHandle = startPhaseLogTail(options, deps);
+      try {
+        const result = await runPhaseFn({
+          ...options,
+          signal: options.signal ?? deps.control?.signal,
+          // Dashboard streaming replaces any caller-provided callback.
+          onAgentStreamEvent: deps.onAgentStream
+            ? (event) => {
+                deps.onAgentStream!({ issue, phase: options.phase, event });
+              }
+            : options.onAgentStreamEvent,
+        });
+        if (options.phase === "review-pr") {
+          reviewHandoff = result.handoff;
+        }
+        if (result.handoff.verdict === "approve") {
+          approvedVerdictHandoff = result.handoff;
+        }
+        return result;
+      } finally {
+        await tailHandle?.stop();
       }
-      if (result.handoff.verdict === "approve") {
-        approvedVerdictHandoff = result.handoff;
-      }
-      await streamPhaseLog(result.logFilePath, deps);
-      return result;
     },
     getReviewHandoff: () => approvedVerdictHandoff ?? reviewHandoff,
   };

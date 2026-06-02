@@ -1,8 +1,8 @@
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { listPhaseLogs, readPhaseLog } from "../src/phaseLogs/index.js";
+import { describe, expect, it, vi } from "vitest";
+import { listPhaseLogs, readPhaseLog, startTailPhaseLog } from "../src/phaseLogs/index.js";
 
 describe("phase logs service", () => {
   async function setupProject(): Promise<{
@@ -86,6 +86,46 @@ describe("phase logs service", () => {
       "merge",
       "babysit",
     ]);
+  });
+
+  it("emits incremental chunks as a simulated log file grows", async () => {
+    vi.useFakeTimers();
+    const chunks: string[] = [];
+    let content = "";
+
+    const handle = startTailPhaseLog({
+      logPath: "/tmp/growing.log",
+      pollIntervalMs: 50,
+      readTextFile: async () => content,
+      onChunk: (chunk) => chunks.push(chunk),
+    });
+
+    content = "alpha\n";
+    await vi.advanceTimersByTimeAsync(50);
+
+    content = "alpha\nbeta\n";
+    await vi.advanceTimersByTimeAsync(50);
+
+    await handle.stop();
+
+    expect(chunks).toEqual(["alpha\n", "beta\n"]);
+    vi.useRealTimers();
+  });
+
+  it("flushes remaining content on stop", async () => {
+    const chunks: string[] = [];
+    let content = "";
+    const handle = startTailPhaseLog({
+      logPath: "/tmp/final.log",
+      pollIntervalMs: 60_000,
+      readTextFile: async () => content,
+      onChunk: (chunk) => chunks.push(chunk),
+    });
+
+    content = "tail\n";
+    await handle.stop();
+
+    expect(chunks).toEqual(["tail\n"]);
   });
 
   it("treats ENOENT during read as a missing log (no crash)", async () => {

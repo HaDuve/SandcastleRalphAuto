@@ -243,6 +243,55 @@ describe("runProjectSlice", () => {
     expect(logs).toEqual(["phase log line\n"]);
   });
 
+  it("streams incremental phase log chunks while runPhase is in flight", async () => {
+    const logs: string[] = [];
+    let content = "";
+
+    await runProjectSlice(
+      { projectId: "portfolio", issue: 10 },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (_options, deps) => {
+          await deps!.runPhase({
+            phase: "tdd",
+            branch: "issue-10",
+            projectPath: "/tmp/portfolio",
+            projectId: _options.projectId,
+            stateRoot: _options.stateRoot,
+          });
+          return sliceSuccess();
+        },
+        runPhase: async () => {
+          content = "alpha\n";
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          content = "alpha\nbeta\n";
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return {
+            commits: [],
+            branch: "issue-10",
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            logFilePath: "/tmp/tdd.log",
+            handoff: reviewHandoff(),
+          };
+        },
+        readLogFile: async () => content,
+        tailPhaseLogPollIntervalMs: 30,
+        onPhaseLog: (chunk) => {
+          logs.push(chunk);
+        },
+        runMergeGate: async () => ({ status: "auto-merge-queued" }),
+        waitForMergedPr: async () => {},
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(logs.length).toBeGreaterThan(1);
+    expect(logs.join("")).toBe("alpha\nbeta\n");
+  });
+
   it("forwards live agent stream events tagged with issue and phase", async () => {
     const envelopes: Array<{ issue: number; phase: string; event: { type: string } }> =
       [];
