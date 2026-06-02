@@ -418,7 +418,7 @@ describe("App", () => {
     });
   });
 
-  it("disables Start after the worker starts successfully", async () => {
+  it("omits Start after the worker starts successfully", async () => {
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
 
     const user = userEvent.setup();
@@ -428,8 +428,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /start portfolio/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
-      expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeEnabled();
+      expect(screen.queryByRole("button", { name: /start portfolio/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeInTheDocument();
     });
   });
 
@@ -499,8 +499,8 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(/not running/i);
-      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeEnabled();
-      expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /pause portfolio/i })).not.toBeInTheDocument();
     });
   });
 
@@ -817,7 +817,7 @@ describe("App", () => {
 
     const sidebar = await screen.findByRole("region", { name: /projects/i });
     const stepper = await screen.findByRole("region", { name: /phase stepper/i });
-    expect(within(sidebar).getByText("running · tdd")).toBeInTheDocument();
+    expect(within(sidebar).queryByText(/running ·/i)).not.toBeInTheDocument();
     await waitFor(() => {
       expect(within(stepper).getByRole("listitem", { current: "step" })).toHaveTextContent("tdd");
     });
@@ -834,7 +834,7 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(within(sidebar).getByText("running · create-pr")).toBeInTheDocument();
+      expect(within(sidebar).queryByText(/running ·/i)).not.toBeInTheDocument();
     });
     await waitFor(() => {
       expect(within(stepper).getByRole("listitem", { current: "step" })).toHaveTextContent(
@@ -843,7 +843,7 @@ describe("App", () => {
     });
   });
 
-  it("shows blocked in the sidebar after worker-stopped refreshes the active slice", async () => {
+  it("shows blocked card styling in the sidebar after worker-stopped refreshes the active slice", async () => {
     const { sources } = installStoppableEventSource({
       connected: { projectId: "portfolio", workerStatus: "running" },
     });
@@ -895,7 +895,7 @@ describe("App", () => {
     render(<App />);
 
     const sidebar = await screen.findByRole("region", { name: /projects/i });
-    expect(within(sidebar).getByText("running · merge")).toBeInTheDocument();
+    expect(within(sidebar).queryByText(/running · merge/i)).not.toBeInTheDocument();
 
     await act(async () => {
       for (const source of sources) {
@@ -913,9 +913,10 @@ describe("App", () => {
     });
 
     await waitFor(() => {
-      expect(within(sidebar).getByText("blocked")).toBeInTheDocument();
+      const card = within(sidebar).getByRole("checkbox", { name: /portfolio/i }).closest("li");
+      expect(card).toHaveClass("project-card--blocked");
     });
-    expect(within(sidebar).queryByText(/running · merge/i)).not.toBeInTheDocument();
+    expect(within(sidebar).queryByText(/^blocked$/i)).not.toBeInTheDocument();
   });
 
   it("defers EventSource subscription until fetchProjects completes", async () => {
@@ -1026,7 +1027,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText(/running · merge/i);
+    await screen.findByRole("region", { name: /phase stepper/i });
 
     await act(async () => {
       for (const source of sources) {
@@ -1095,7 +1096,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText(/running · merge/i);
+    await screen.findByRole("region", { name: /phase stepper/i });
 
     await act(async () => {
       for (const source of sources) {
@@ -1122,7 +1123,7 @@ describe("App", () => {
     expect(screen.getByText("merge", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
   });
 
-  it("blocks Hide while the project worker is running", async () => {
+  it("omits Hide while the project worker is running", async () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
 
@@ -1132,7 +1133,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /start portfolio/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /hide portfolio/i })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: /hide portfolio/i })).not.toBeInTheDocument();
     });
   });
 });

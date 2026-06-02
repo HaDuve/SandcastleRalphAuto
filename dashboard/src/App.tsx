@@ -420,7 +420,6 @@ export function App() {
             projects={visibleProjects}
             selectedIds={selectedIds}
             workerStates={workerStates}
-            activeSummaries={activeSummaries}
             hasHiddenProjects={hiddenIds.size > 0}
             onSelectedChange={handleSelectedChange}
             onStart={(projectId) => void runControl("start", projectId)}
