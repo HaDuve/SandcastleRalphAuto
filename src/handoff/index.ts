@@ -51,6 +51,7 @@ export {
   isMissingPhaseCompleteBlockReason,
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
+  tryReconcileMergeDeferredReviewLoopHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,

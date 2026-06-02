@@ -6,6 +6,7 @@ import {
   isHandoffSchemaBlockReason,
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
+  tryReconcileMergeDeferredReviewLoopHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
@@ -695,6 +696,56 @@ describe("reconcileBlockedHandoff", () => {
       branch: "issue-80",
       pr: 87,
       phase: "babysit",
+      status: "active",
+      startedAt: active.startedAt,
+    });
+  });
+
+  it("resumes at review-pr when merge blocked acceptance routes back to review-tdd", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-merge-review-loop-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const handoff = {
+      project: projectId,
+      issue: 101,
+      branch: "issue-101",
+      pr: 113,
+      phase: "merge",
+      acceptanceState: "blocked",
+      verdict: "request-changes",
+      blockers: ["Live server tail is not wired"],
+      mergeReady: false,
+      nextSkill: "/review-tdd",
+      startedAt: "2026-06-02T14:23:30.839Z",
+      endedAt: "2026-06-02T14:24:00.000Z",
+    } satisfies Handoff;
+    await writeHostHandoff({ stateRoot, projectId, handoff });
+
+    const active: ActiveState = {
+      issue: 101,
+      phase: "merge",
+      branch: "issue-101",
+      pr: 113,
+      status: "blocked",
+      reason: "Handoff acceptanceState is blocked, expected done",
+      resumeSkill: "/merge",
+      startedAt: "2026-06-02T14:23:30.839Z",
+    };
+    await writeActive(projectId, active, stateRoot);
+
+    const reconciled = await tryReconcileMergeDeferredReviewLoopHandoff({
+      projectPath: join(rootDir, "repo"),
+      branch: "issue-101",
+      stateRoot,
+      projectId,
+      active,
+    });
+
+    expect(reconciled).toEqual({
+      issue: 101,
+      branch: "issue-101",
+      pr: 113,
+      phase: "review-pr",
       status: "active",
       startedAt: active.startedAt,
     });

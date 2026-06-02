@@ -7,6 +7,7 @@ import {
   readHostHandoff,
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
+  tryReconcileMergeDeferredReviewLoopHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
@@ -845,6 +846,13 @@ async function resolveLoopStart(
         active,
       })) ??
       (await tryReconcileReviewTddProceduralBlockedHandoff({
+        projectPath,
+        branch: branchForIssue(active.issue),
+        stateRoot,
+        projectId: project.remote,
+        active,
+      })) ??
+      (await tryReconcileMergeDeferredReviewLoopHandoff({
         projectPath,
         branch: branchForIssue(active.issue),
         stateRoot,

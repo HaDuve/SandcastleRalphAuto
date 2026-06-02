@@ -386,6 +386,67 @@ export async function tryReconcileMergeDeferredBabysitHandoff(input: {
   };
 }
 
+/**
+ * When merge wrote blocked acceptance because review has in-scope blockers (and routed
+ * back to `/review-tdd`), restart the review loop at `/review-pr` on Start.
+ *
+ * This intentionally prefers re-running review-pr (fresh GitHub truth + threads)
+ * before re-entering review-tdd, so the agent loops: review-pr → review-tdd → merge.
+ */
+export async function tryReconcileMergeDeferredReviewLoopHandoff(input: {
+  stateRoot: string;
+  projectId: string;
+  projectPath: string;
+  branch: string;
+  active: ActiveState;
+}): Promise<ActiveState | null> {
+  if (
+    input.active.status !== "blocked" ||
+    input.active.phase !== "merge" ||
+    !isMergeAcceptanceBlockedStallReason(input.active.reason, input.active.phase)
+  ) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (
+    handoff.phase !== "merge" ||
+    handoff.acceptanceState !== "blocked" ||
+    handoff.nextSkill !== "/review-tdd"
+  ) {
+    return null;
+  }
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: handoff.pr ?? input.active.pr,
+    phase: "review-pr",
+    status: "active",
+    startedAt: input.active.startedAt,
+  };
+}
+
 export type MergeGateOnlyResume = {
   issue: number;
   pr: number;
