@@ -142,6 +142,48 @@ describe("runPhase", () => {
     expect(runCalls[0]?.maxIterations).toBe(1);
   });
 
+  it("ensures .cursorignore un-ignores the handoff directory before the agent runs", async () => {
+    const runCalls: SandcastleSandboxRunOptions[] = [];
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-worktree-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
+    const promptFile = join(projectPath, "prompts", "create-pr.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# create-pr\n");
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
+
+    const deps = createMockDeps(
+      {
+        worktreePath,
+        runImpl: async () => {
+          const content = await readFile(join(worktreePath, ".cursorignore"), "utf8");
+          expect(content).toContain("!.sandcastle-ralph/handoff/");
+          return {
+            commits: [],
+            iterations: [],
+            stdout: "",
+          };
+        },
+      },
+      [],
+      runCalls,
+    );
+
+    await runPhase(
+      {
+        phase: "create-pr",
+        branch: "issue-6-runner",
+        projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
+        promptFile,
+      },
+      deps,
+    );
+
+    expect(runCalls).toHaveLength(1);
+  });
+
   it("writes seedHandoff to the sandbox worktree before the agent runs", async () => {
     const createSandboxCalls: SandcastleCreateSandboxOptions[] = [];
     const projectPath = await mkdtemp(join(tmpdir(), "runner-test-"));
