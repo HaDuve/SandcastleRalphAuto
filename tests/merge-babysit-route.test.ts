@@ -4,6 +4,10 @@ import {
   isMergeDeferredToBabysit,
 } from "../src/handoff/index.js";
 
+const conflictBlockers = [
+  "PR #87 not mergeable: mergeStateStatus DIRTY — merge conflict with main",
+];
+
 describe("isMergeDeferredToBabysit", () => {
   it("is true when merge handoff is blocked and routes to /babysit", () => {
     expect(
@@ -11,6 +15,21 @@ describe("isMergeDeferredToBabysit", () => {
         phase: "merge",
         acceptanceState: "blocked",
         nextSkill: "/babysit",
+        mergeReady: false,
+        blockers: conflictBlockers,
+      }),
+    ).toBe(true);
+  });
+
+  it("is true when blocked merge wrote /next but blockers are conflict/CI", () => {
+    expect(
+      isMergeDeferredToBabysit({
+        phase: "merge",
+        acceptanceState: "blocked",
+        nextSkill: "/next",
+        verdict: "approve",
+        mergeReady: false,
+        blockers: conflictBlockers,
       }),
     ).toBe(true);
   });
@@ -21,16 +40,33 @@ describe("isMergeDeferredToBabysit", () => {
         phase: "merge",
         acceptanceState: "done",
         nextSkill: "/next",
+        mergeReady: true,
+        blockers: [],
       }),
     ).toBe(false);
   });
 
-  it("is false when blocked merge handoff does not route to babysit", () => {
+  it("is false when blocked merge routes to review-tdd", () => {
+    expect(
+      isMergeDeferredToBabysit({
+        phase: "merge",
+        acceptanceState: "blocked",
+        nextSkill: "/review-tdd",
+        mergeReady: false,
+        blockers: ["Open in-scope finding"],
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when blocked with /next but no babysit-able blockers", () => {
     expect(
       isMergeDeferredToBabysit({
         phase: "merge",
         acceptanceState: "blocked",
         nextSkill: "/next",
+        verdict: "approve",
+        mergeReady: false,
+        blockers: ["Requires explicit human sign-off"],
       }),
     ).toBe(false);
   });

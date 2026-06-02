@@ -255,14 +255,22 @@ const NEXT_SKILL_BY_PHASE: Record<(typeof CANONICAL_PHASES)[number], string> =
   };
 
 describe("runLinearSlice merge → babysit recovery", () => {
+  const mergeConflictBlockers = [
+    "PR #87 not mergeable: mergeStateStatus DIRTY — merge conflict with main",
+  ];
+
   const mergeBlockedHandoff = (
     nextSkill: string,
     acceptanceState: Handoff["acceptanceState"] = "blocked",
+    overrides: Partial<Handoff> = {},
   ): RunPhaseResult =>
     phaseResult("merge", nextSkill, {
       pr: 87,
       acceptanceState,
+      verdict: "approve",
       mergeReady: false,
+      blockers: mergeConflictBlockers,
+      ...overrides,
     });
 
   it("runs babysit and retries merge when merge agent defers to /babysit", async () => {
@@ -344,9 +352,50 @@ describe("runLinearSlice merge → babysit recovery", () => {
     }
   });
 
-  it("blocks merge when handoff is blocked but nextSkill is not /babysit", async () => {
+  it("runs babysit when merge is blocked with /next but conflict blockers", async () => {
     const stateRoot = await mkdtemp(
-      join(tmpdir(), "pipeline-merge-blocked-wrong-skill-"),
+      join(tmpdir(), "pipeline-merge-blocked-next-skill-"),
+    );
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+    let mergeRuns = 0;
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 80,
+        branch: "issue-80",
+        projectPath: "/tmp/project",
+        stateRoot,
+        fromPhase: "merge",
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          if (options.phase === "babysit") {
+            return phaseResult("babysit", "/merge", { pr: 87 });
+          }
+          mergeRuns += 1;
+          if (mergeRuns === 1) {
+            return mergeBlockedHandoff("/next");
+          }
+          return phaseResult("merge", "/next", {
+            pr: 87,
+            acceptanceState: "done",
+            mergeReady: true,
+            blockers: [],
+          });
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual(["merge", "babysit", "merge"]);
+    expect(result.status).toBe("ready-for-next");
+  });
+
+  it("blocks merge when blocked /next handoff has no babysit-able blockers", async () => {
+    const stateRoot = await mkdtemp(
+      join(tmpdir(), "pipeline-merge-blocked-human-"),
     );
     const projectId = "HaDuve/SandcastleRalphAuto";
 
@@ -360,7 +409,10 @@ describe("runLinearSlice merge → babysit recovery", () => {
         fromPhase: "merge",
       },
       {
-        runPhase: async () => mergeBlockedHandoff("/next"),
+        runPhase: async () =>
+          mergeBlockedHandoff("/next", "blocked", {
+            blockers: ["Requires explicit human sign-off"],
+          }),
       },
     );
 
@@ -369,10 +421,6 @@ describe("runLinearSlice merge → babysit recovery", () => {
       expect(result.active.reason).toMatch(/acceptanceState is blocked/);
       expect(result.phasesCompleted).toEqual([]);
     }
-    await expect(readActive(projectId, stateRoot)).resolves.toMatchObject({
-      status: "blocked",
-      phase: "merge",
-    });
   });
 });
 

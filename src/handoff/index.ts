@@ -29,6 +29,7 @@ export {
 } from "./mergeBabysitRoute.js";
 export {
   isHandoffSchemaBlockReason,
+  tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
