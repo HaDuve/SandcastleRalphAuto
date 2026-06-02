@@ -564,7 +564,8 @@ describe("merge-tail recovery", () => {
             options.phase === "babysit" ? "/tmp/babysit.log" : undefined,
           handoff: mergeReadyHandoff(),
         }),
-        readLogFile: async () => "babysit log\n",
+        readLogFile: async (path) =>
+          path.includes("babysit") ? "babysit log\n" : "",
         onPhaseLog: (line) => {
           logs.push(line);
         },

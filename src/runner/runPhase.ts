@@ -177,22 +177,22 @@ export async function runPhase(
       name: options.name,
     } satisfies SandboxRunOptions;
 
-    const runResult = await sandbox.run(
-      options.onAgentStreamEvent
-        ? {
-            ...baseRunOptions,
-            logging: {
-              type: "file",
-              path: resolveLogPath(
-                options.projectPath,
-                options.branch,
-                options.phase,
-              ),
-              onAgentStreamEvent: options.onAgentStreamEvent,
-            },
-          }
-        : baseRunOptions,
+    const logPath = resolveLogPath(
+      options.projectPath,
+      options.branch,
+      options.phase,
     );
+
+    const runResult = await sandbox.run({
+      ...baseRunOptions,
+      logging: {
+        type: "file",
+        path: logPath,
+        ...(options.onAgentStreamEvent
+          ? { onAgentStreamEvent: options.onAgentStreamEvent }
+          : {}),
+      },
+    });
 
     // Prefer the handoff written by the phase; if none was written, carry over host-owned handoff.
     let handoff: Handoff;

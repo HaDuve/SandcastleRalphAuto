@@ -525,6 +525,119 @@ describe("dashboard server", () => {
     releaseLoop?.();
   });
 
+  it("streams incremental phase-log over SSE before the worker stops", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    const eventBus = createEventBus();
+    let content = "";
+
+    const runProjectDeps: RunProjectDeps = {
+      mutex: createInMemoryProjectMutex(),
+      loadRegistry: async () => [project],
+      runLinearSlice: async (options, sliceDeps) => {
+        await sliceDeps!.runPhase({
+          phase: "tdd",
+          branch: options.branch,
+          projectPath: options.projectPath,
+          projectId: options.projectId,
+          stateRoot: options.stateRoot,
+        });
+        return {
+          status: "ready-for-next",
+          issue: options.issue,
+          branch: options.branch,
+          pr: 42,
+          phasesCompleted: ["tdd"],
+        };
+      },
+      runPhase: async (options) => {
+        content = "alpha\n";
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        content = "alpha\nbeta\n";
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return {
+          commits: [],
+          branch: options.branch,
+          completionSignal: PHASE_COMPLETE_SIGNAL,
+          handoff: {
+            ...reviewHandoff(12),
+            phase: options.phase,
+          },
+        };
+      },
+      readLogFile: async () => content,
+      tailPhaseLogPollIntervalMs: 30,
+      runNext: async () => ({ status: QUEUE_EMPTY }),
+      runMergeGate: async () => ({ status: "auto-merge-queued" }),
+      waitForMergedPr: async () => {},
+    };
+
+    const workerManager = createWorkerManager({
+      eventBus,
+      loopProject: (input, deps) => loopProject({ ...input, issue: 12 }, deps),
+    });
+
+    const started = await startServer(rootDir, {
+      stateRoot,
+      eventBus,
+      workerManager,
+      runProjectDeps,
+    });
+    server = started.server;
+
+    const sseEvents: DashboardEvent[] = [];
+    const response = await fetch(`${started.baseUrl}/api/projects/portfolio/events`);
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+
+    const readSse = (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        const chunk = decoder.decode(value);
+        for (const block of chunk.split("\n\n")) {
+          if (!block.includes("data:")) {
+            continue;
+          }
+          const dataLine = block.split("\n").find((line) => line.startsWith("data: "));
+          if (dataLine) {
+            sseEvents.push(JSON.parse(dataLine.slice("data: ".length)) as DashboardEvent);
+          }
+        }
+        const phaseLogCount = sseEvents.filter((event) => event.type === "phase-log").length;
+        if (phaseLogCount >= 2 && sseEvents.some((event) => event.type === "worker-stopped")) {
+          break;
+        }
+      }
+    })();
+
+    const startResponse = await fetch(`${started.baseUrl}/api/projects/portfolio/start`, {
+      method: "POST",
+    });
+    expect(startResponse.status).toBe(202);
+
+    await Promise.race([
+      readSse,
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("Timed out waiting for incremental phase-log SSE")), 5_000),
+      ),
+    ]);
+    await reader.cancel();
+
+    const phaseLogEvents = sseEvents.filter((event) => event.type === "phase-log");
+    const workerStoppedIndex = sseEvents.findIndex((event) => event.type === "worker-stopped");
+    const lastPhaseLogIndex = sseEvents.reduce(
+      (last, event, index) => (event.type === "phase-log" ? index : last),
+      -1,
+    );
+
+    expect(phaseLogEvents.length).toBeGreaterThan(1);
+    expect(lastPhaseLogIndex).toBeLessThan(workerStoppedIndex);
+    expect(phaseLogEvents.map((event) => event.chunk).join("")).toBe("alpha\nbeta\n");
+  });
+
   it("streams project events over SSE", async () => {
     const { rootDir } = await setupProjectRoot();
     const eventBus = createEventBus();
