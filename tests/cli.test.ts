@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
 } from "../src/handoff/index.js";
 import { MERGE_GATE_NO_APPROVE_REASON } from "../src/merge/index.js";
 import { readActive, writeActive } from "../src/state/index.js";
+import { resolveProjectStateDir } from "../src/state/index.js";
 import {
   CliError,
   loopProject,
@@ -15,6 +16,7 @@ import {
 } from "../src/cli/index.js";
 import { QUEUE_EMPTY, type RunNextInput } from "../src/next/index.js";
 import { normalizeCreatePrNoDiffHandoff } from "../src/handoff/createPrNoDiffRoute.js";
+import { createFileProjectMutex } from "../src/cli/mutex.js";
 import {
   runLinearSlice,
   type RunLinearSliceOptions,
@@ -419,6 +421,40 @@ describe("runProjectSlice", () => {
 });
 
 describe("loopProject", () => {
+  it("releases the worker lock when a slice returns blocked", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "cli-lock-release-"));
+    const stateRoot = join(rootDir, "state");
+
+    const lockPath = join(
+      resolveProjectStateDir(stateRoot, portfolio.remote),
+      ".worker.lock",
+    );
+
+    await loopProject(
+      { projectId: "portfolio", issue: 10, rootDir, stateRoot },
+      {
+        ...readNoActive,
+        loadRegistry: async () => [portfolio],
+        mutex: createFileProjectMutex(stateRoot),
+        runLinearSlice: async () => ({
+          status: "blocked",
+          active: {
+            issue: 10,
+            phase: "create-pr",
+            branch: "issue-10",
+            status: "blocked",
+            reason: "Handoff acceptanceState is blocked, expected done",
+            resumeSkill: "/create-pr",
+            startedAt: "2026-06-01T00:00:00.000Z",
+          },
+          phasesCompleted: [],
+        }),
+      },
+    );
+
+    await expect(access(lockPath)).rejects.toThrow();
+  });
+
   it("passes emptySliceIssue to runNext after create-pr no-diff slice", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "cli-nodiff-"));
     const stateRoot = join(rootDir, "state");
@@ -997,6 +1033,6 @@ describe("loopProject", () => {
     );
 
     expect(result).toEqual({ status: "blocked", reason: "tests failing" });
-    expect(events).toEqual(["acquire"]);
+    expect(events).toEqual(["acquire", "release"]);
   });
 });

@@ -907,33 +907,41 @@ export async function loopProject(
 
   const project = findProjectById(await loadRegistry(rootDir), input.projectId);
   await mutex.acquire(project.remote);
-
-  const loopStart = await resolveLoopStart(
-    project,
-    project.path,
-    stateRoot,
-    input.issue,
-    deps,
-    resolved,
-  );
-  if (!isLoopStartReady(loopStart)) {
-    if (loopStart.status === "queue-empty") {
-      await mutex.release(project.remote);
+  let released = false;
+  const releaseOnce = async (): Promise<void> => {
+    if (released) {
+      return;
     }
-    return loopStart;
-  }
-
-  let slicesCompleted = 0;
-  let currentIssue = loopStart.issue;
-  let fromPhase = loopStart.fromPhase;
-  let mergeGateOnly = isLoopStartReady(loopStart)
-    ? loopStart.mergeGateOnly
-    : undefined;
-  let createPrNoDiffReady = isLoopStartReady(loopStart)
-    ? loopStart.createPrNoDiffReady
-    : undefined;
+    released = true;
+    await mutex.release(project.remote);
+  };
 
   try {
+    const loopStart = await resolveLoopStart(
+      project,
+      project.path,
+      stateRoot,
+      input.issue,
+      deps,
+      resolved,
+    );
+    if (!isLoopStartReady(loopStart)) {
+      if (loopStart.status === "queue-empty") {
+        await releaseOnce();
+      }
+      return loopStart;
+    }
+
+    let slicesCompleted = 0;
+    let currentIssue = loopStart.issue;
+    let fromPhase = loopStart.fromPhase;
+    let mergeGateOnly = isLoopStartReady(loopStart)
+      ? loopStart.mergeGateOnly
+      : undefined;
+    let createPrNoDiffReady = isLoopStartReady(loopStart)
+      ? loopStart.createPrNoDiffReady
+      : undefined;
+
     for (;;) {
       if (deps.control) {
         await deps.control.waitIfPaused();
@@ -957,7 +965,7 @@ export async function loopProject(
           return nextBlocked(nextResult);
         }
         if (nextResult.status === QUEUE_EMPTY) {
-          await mutex.release(project.remote);
+          await releaseOnce();
           return { status: "queue-empty", slicesCompleted };
         }
         currentIssue = nextResult.issue;
@@ -1033,7 +1041,7 @@ export async function loopProject(
             return nextBlocked(nextResult);
           }
           if (nextResult.status === QUEUE_EMPTY) {
-            await mutex.release(project.remote);
+            await releaseOnce();
             return { status: "queue-empty", slicesCompleted };
           }
           currentIssue = nextResult.issue;
@@ -1058,7 +1066,7 @@ export async function loopProject(
             return nextBlocked(nextResult);
           }
           if (nextResult.status === QUEUE_EMPTY) {
-            await mutex.release(project.remote);
+            await releaseOnce();
             return { status: "queue-empty", slicesCompleted };
           }
           currentIssue = nextResult.issue;
@@ -1120,7 +1128,7 @@ export async function loopProject(
         return nextBlocked(nextResult);
       }
       if (nextResult.status === QUEUE_EMPTY) {
-        await mutex.release(project.remote);
+        await releaseOnce();
         return { status: "queue-empty", slicesCompleted };
       }
 
@@ -1129,8 +1137,10 @@ export async function loopProject(
     }
   } catch (error) {
     if (isAbortError(error)) {
-      await mutex.release(project.remote);
+      await releaseOnce();
     }
     throw error;
+  } finally {
+    await releaseOnce();
   }
 }
