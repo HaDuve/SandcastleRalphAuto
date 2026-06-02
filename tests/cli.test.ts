@@ -137,6 +137,51 @@ describe("runProjectSlice", () => {
     });
   });
 
+  it("cleans up the slice worktree and local branch after merge confirmation", async () => {
+    let waited = false;
+    const cleanupCalls: Array<{ projectPath: string; branch: string }> = [];
+
+    await runProjectSlice(
+      { projectId: "portfolio", issue: 10 },
+      {
+        loadRegistry: async () => [portfolio],
+        runLinearSlice: async (options, deps) => {
+          await deps!.runPhase({
+            phase: "review-pr",
+            branch: "issue-10",
+            projectPath: "/tmp/portfolio",
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
+          });
+          return sliceSuccess();
+        },
+        runPhase: async (options) =>
+          ({
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: reviewHandoff(),
+          }) satisfies RunPhaseResult,
+        runMergeGate: async () => ({ status: "auto-merge-queued" as const }),
+        waitForMergedPr: async () => {
+          waited = true;
+        },
+        cleanupAfterMerge: async (input) => {
+          expect(waited).toBe(true);
+          cleanupCalls.push(input);
+        },
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(cleanupCalls).toEqual([
+      { projectPath: "/tmp/portfolio", branch: "issue-10" },
+    ]);
+  });
+
   it("rejects unknown project ids", async () => {
     await expect(
       runProjectSlice(
@@ -802,6 +847,59 @@ describe("loopProject", () => {
 
     expect(bootstrapCalled).toBe(true);
     expect(result).toEqual({ status: "queue-empty", slicesCompleted: 1 });
+  });
+
+  it("cleans up the slice worktree and local branch in the loop path", async () => {
+    let waited = false;
+    const cleanupCalls: Array<{ projectPath: string; branch: string }> = [];
+
+    const result = await loopProject(
+      { projectId: "portfolio" },
+      {
+        loadRegistry: async () => [portfolio],
+        readActive: async () => null,
+        bootstrapFirstIssue: async () => ({
+          status: "started",
+          issue: 9,
+          branch: "issue-9",
+        }),
+        runLinearSlice: async (options, deps) => {
+          await deps!.runPhase({
+            phase: "review-pr",
+            branch: options.branch,
+            projectPath: options.projectPath,
+            projectId: options.projectId,
+            stateRoot: options.stateRoot,
+          });
+          return sliceSuccess(9, 41);
+        },
+        runPhase: async (options) =>
+          ({
+            commits: [],
+            branch: options.branch,
+            completionSignal: PHASE_COMPLETE_SIGNAL,
+            handoff: reviewHandoff(41),
+          }) satisfies RunPhaseResult,
+        runMergeGate: async () => ({ status: "auto-merge-queued" as const }),
+        waitForMergedPr: async () => {
+          waited = true;
+        },
+        cleanupAfterMerge: async (input) => {
+          expect(waited).toBe(true);
+          cleanupCalls.push(input);
+        },
+        runNext: async () => ({ status: QUEUE_EMPTY }),
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(result).toEqual({ status: "queue-empty", slicesCompleted: 1 });
+    expect(cleanupCalls).toEqual([
+      { projectPath: "/tmp/portfolio", branch: "issue-9" },
+    ]);
   });
 
   it("releases the mutex when the worker is aborted", async () => {

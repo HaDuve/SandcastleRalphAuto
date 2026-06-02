@@ -31,7 +31,7 @@ import {
   type RunNextResult,
 } from "../next/index.js";
 import { buildRunNextLoopDeps } from "./runNextLoopDeps.js";
-import type { GitRunner } from "../handoff/worktreeNoDiff.js";
+import { defaultGitRunner, type GitRunner } from "../handoff/worktreeNoDiff.js";
 import { selectNextIssue, parseGhIssueList, type GhIssue } from "../next/select.js";
 import {
   loadRegistryFromRoot,
@@ -127,6 +127,10 @@ export type RunProjectDeps = {
   gh?: GhRunner;
   /** Injected for tests; used when reconciling create-pr no-diff handoffs. */
   git?: GitRunner;
+  cleanupAfterMerge?: (input: {
+    projectPath: string;
+    branch: string;
+  }) => Promise<void>;
   waitForMergedPr?: (input: {
     project: Project;
     pr: number;
@@ -150,6 +154,55 @@ export type RunProjectDeps = {
   ) => Promise<BootstrapFirstIssueResult>;
   control?: WorkerControl;
 };
+
+async function cleanupLocalGitAfterMerge(
+  input: { projectPath: string; branch: string },
+  git: GitRunner = defaultGitRunner,
+): Promise<void> {
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  const errors: string[] = [];
+  const safeGit = async (args: string[]): Promise<{ exitCode: number }> => {
+    try {
+      return await git(args, input.projectPath);
+    } catch (error: unknown) {
+      errors.push(
+        `git ${args.join(" ")} threw: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { exitCode: 1 };
+    }
+  };
+
+  const removeWorktree = await safeGit([
+    "worktree",
+    "remove",
+    "--force",
+    worktreePath,
+  ]);
+  if (removeWorktree.exitCode !== 0) {
+    errors.push(
+      `git worktree remove --force "${worktreePath}" (exit ${removeWorktree.exitCode})`,
+    );
+  }
+
+  const deleteBranch = await safeGit(["branch", "-D", input.branch]);
+  if (deleteBranch.exitCode !== 0) {
+    errors.push(`git branch -D "${input.branch}" (exit ${deleteBranch.exitCode})`);
+  }
+
+  if (errors.length > 0) {
+    console.warn(
+      `[sandcastle] cleanup after merge for "${input.branch}" failed (best-effort): ${errors.join(
+        "; ",
+      )}`,
+    );
+  }
+}
 
 function resolvePaths(input: { rootDir?: string; stateRoot?: string }): {
   rootDir: string;
@@ -665,6 +718,10 @@ export async function runProjectSlice(
     }
 
     await waitForMergedPr({ project, pr: sliceForMerge.pr });
+    await (deps.cleanupAfterMerge ?? cleanupLocalGitAfterMerge)({
+      projectPath: project.path,
+      branch: sliceForMerge.branch,
+    });
     await mutex.release(project.remote);
     return {
       status: "completed",
@@ -1117,6 +1174,10 @@ export async function loopProject(
       }
 
       await waitForMergedPr({ project, pr: sliceForMerge.pr });
+      await (deps.cleanupAfterMerge ?? cleanupLocalGitAfterMerge)({
+        projectPath: project.path,
+        branch: sliceForMerge.branch,
+      });
 
       const nextResult = await invokeRunNext(
         project,
