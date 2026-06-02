@@ -563,7 +563,7 @@ export async function runProjectSlice(
       gh: deps.gh ?? resolved.gh,
       runLinearSliceFn,
       sliceRunner,
-      babysitAttempted: false,
+      babysitAttempted: sliceForMerge.mergeTailBabysitAttempted ?? false,
     });
 
     if (mergeOutcome.source === "recovery-slice") {
@@ -872,7 +872,7 @@ export async function loopProject(
         gh: deps.gh ?? resolved.gh,
         runLinearSliceFn,
         sliceRunner,
-        babysitAttempted: false,
+        babysitAttempted: sliceForMerge.mergeTailBabysitAttempted ?? false,
       });
 
       if (mergeOutcome.source === "recovery-slice") {

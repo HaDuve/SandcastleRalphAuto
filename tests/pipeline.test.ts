@@ -254,6 +254,128 @@ const NEXT_SKILL_BY_PHASE: Record<(typeof CANONICAL_PHASES)[number], string> =
     merge: "/next",
   };
 
+describe("runLinearSlice merge → babysit recovery", () => {
+  const mergeBlockedHandoff = (
+    nextSkill: string,
+    acceptanceState: Handoff["acceptanceState"] = "blocked",
+  ): RunPhaseResult =>
+    phaseResult("merge", nextSkill, {
+      pr: 87,
+      acceptanceState,
+      mergeReady: false,
+    });
+
+  it("runs babysit and retries merge when merge agent defers to /babysit", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-merge-babysit-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 80,
+        branch: "issue-80",
+        projectPath: "/tmp/project",
+        stateRoot,
+        fromPhase: "merge",
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          if (options.phase === "merge" && phaseCalls.filter((p) => p === "merge").length === 1) {
+            return mergeBlockedHandoff("/babysit");
+          }
+          if (options.phase === "babysit") {
+            return phaseResult("babysit", "/merge", { pr: 87 });
+          }
+          return phaseResult("merge", "/next", {
+            pr: 87,
+            acceptanceState: "done",
+            mergeReady: true,
+          });
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual(["merge", "babysit", "merge"]);
+    expect(result).toMatchObject({
+      status: "ready-for-next",
+      issue: 80,
+      pr: 87,
+      mergeTailBabysitAttempted: true,
+      phasesCompleted: ["merge"],
+    });
+    await expect(readActive(projectId, stateRoot)).resolves.toBeNull();
+  });
+
+  it("blocks when merge still defers to babysit after one recovery attempt", async () => {
+    const stateRoot = await mkdtemp(
+      join(tmpdir(), "pipeline-merge-babysit-twice-"),
+    );
+    const projectId = "HaDuve/SandcastleRalphAuto";
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 80,
+        branch: "issue-80",
+        projectPath: "/tmp/project",
+        stateRoot,
+        fromPhase: "merge",
+      },
+      {
+        runPhase: async (options) => {
+          if (options.phase === "babysit") {
+            return phaseResult("babysit", "/merge", { pr: 87 });
+          }
+          return mergeBlockedHandoff("/babysit");
+        },
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    if (result.status === "blocked") {
+      expect(result.active).toMatchObject({
+        phase: "merge",
+        status: "blocked",
+        resumeSkill: "/merge",
+      });
+      expect(result.phasesCompleted).toEqual([]);
+    }
+  });
+
+  it("blocks merge when handoff is blocked but nextSkill is not /babysit", async () => {
+    const stateRoot = await mkdtemp(
+      join(tmpdir(), "pipeline-merge-blocked-wrong-skill-"),
+    );
+    const projectId = "HaDuve/SandcastleRalphAuto";
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 80,
+        branch: "issue-80",
+        projectPath: "/tmp/project",
+        stateRoot,
+        fromPhase: "merge",
+      },
+      {
+        runPhase: async () => mergeBlockedHandoff("/next"),
+      },
+    );
+
+    expect(result.status).toBe("blocked");
+    if (result.status === "blocked") {
+      expect(result.active.reason).toMatch(/acceptanceState is blocked/);
+      expect(result.phasesCompleted).toEqual([]);
+    }
+    await expect(readActive(projectId, stateRoot)).resolves.toMatchObject({
+      status: "blocked",
+      phase: "merge",
+    });
+  });
+});
+
 describe("runLinearSlice recovery resume", () => {
   it("runs babysit from fromPhase and returns recovery-complete", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-recovery-"));

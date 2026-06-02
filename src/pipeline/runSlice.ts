@@ -17,9 +17,11 @@ import {
   type ActiveState,
 } from "../state/index.js";
 import {
+  isMergeDeferredToBabysit,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
 } from "../handoff/index.js";
+import { PHASE_COMPLETE_SIGNAL } from "../runner/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
 
 function isAbortError(error: unknown): boolean {
@@ -46,6 +48,8 @@ export type RunLinearSliceSuccess = {
   branch: string;
   pr?: number;
   phasesCompleted: CanonicalPhase[];
+  /** True when `/babysit` already ran after merge-agent defer (ADR 0006 cap). */
+  mergeTailBabysitAttempted?: boolean;
 };
 
 export type RunLinearSliceBlocked = {
@@ -66,6 +70,7 @@ export type RunLinearSliceRecoveryComplete = {
   issue: number;
   branch: string;
   pr?: number;
+  mergeTailBabysitAttempted?: boolean;
 };
 
 export type RunLinearSliceResult =
@@ -89,6 +94,7 @@ export function toSliceReadyForMerge(
       branch: slice.branch,
       pr: slice.pr,
       phasesCompleted: [],
+      mergeTailBabysitAttempted: slice.mergeTailBabysitAttempted,
     };
   }
   if (slice.status === "ready-for-next") {
@@ -116,6 +122,7 @@ type RunRecoverySliceInput = {
   phase: Extract<RunnablePhase, "babysit">;
   pr?: number;
   sliceStartedAt: string;
+  mergeTailBabysitAttempted?: boolean;
   runPhaseOptions?: RunLinearSliceOptions["runPhaseOptions"];
   deps: RunLinearSliceDeps;
 };
@@ -208,6 +215,7 @@ async function runRecoverySlice(
     issue,
     branch,
     pr,
+    mergeTailBabysitAttempted: input.mergeTailBabysitAttempted,
   };
 }
 
@@ -293,6 +301,8 @@ export async function runLinearSlice(
       ? existing.startedAt
       : new Date().toISOString();
 
+  let mergeTailBabysitAttempted = false;
+
   for (const phase of CANONICAL_PHASES.slice(phaseStartIndex)) {
     const activeBeforeRun: ActiveState = {
       issue,
@@ -341,6 +351,123 @@ export async function runLinearSlice(
       phase,
       result,
     });
+
+    if (
+      !outcome.ok &&
+      phase === "merge" &&
+      result.completionSignal === PHASE_COMPLETE_SIGNAL &&
+      isMergeDeferredToBabysit(result.handoff)
+    ) {
+      if (mergeTailBabysitAttempted) {
+        await writeActive(
+          projectId,
+          { ...outcome.active, startedAt: sliceStartedAt },
+          stateRoot,
+        );
+        return {
+          status: "blocked",
+          active: outcome.active,
+          phasesCompleted,
+        };
+      }
+      mergeTailBabysitAttempted = true;
+
+      const recovery = await runRecoverySlice({
+        projectId,
+        issue,
+        branch,
+        projectPath,
+        stateRoot,
+        phase: "babysit",
+        pr,
+        sliceStartedAt,
+        mergeTailBabysitAttempted: true,
+        runPhaseOptions: options.runPhaseOptions,
+        deps,
+      });
+
+      if (
+        recovery.status === "blocked" ||
+        recovery.status === "awaiting-human"
+      ) {
+        return { ...recovery, phasesCompleted };
+      }
+
+      pr = recovery.pr;
+
+      let mergeRetryResult: RunPhaseResult;
+      try {
+        mergeRetryResult = await deps.runPhase({
+          phase: "merge",
+          branch,
+          projectPath,
+          projectId,
+          stateRoot,
+          ...options.runPhaseOptions,
+        });
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        const reason =
+          error instanceof Error ? error.message : "Phase run failed";
+        const blocked: ActiveState = {
+          issue,
+          phase: "merge",
+          branch,
+          pr,
+          status: "blocked",
+          reason,
+          resumeSkill: skillForPhase("merge"),
+          startedAt: sliceStartedAt,
+        };
+        await writeActive(projectId, blocked, stateRoot);
+        return { status: "blocked", active: blocked, phasesCompleted };
+      }
+
+      const mergeRetryOutcome = advanceSlice({
+        issue,
+        branch,
+        pr,
+        phase: "merge",
+        result: mergeRetryResult,
+      });
+
+      if (!mergeRetryOutcome.ok) {
+        await writeActive(
+          projectId,
+          { ...mergeRetryOutcome.active, startedAt: sliceStartedAt },
+          stateRoot,
+        );
+        return {
+          status: "blocked",
+          active: mergeRetryOutcome.active,
+          phasesCompleted,
+        };
+      }
+
+      phasesCompleted.push("merge");
+      pr = mergeRetryOutcome.active.pr;
+
+      if (mergeRetryOutcome.handoffToNext) {
+        await clearActive(projectId, stateRoot);
+        return {
+          status: "ready-for-next",
+          issue,
+          branch,
+          pr,
+          phasesCompleted,
+          mergeTailBabysitAttempted: true,
+        };
+      }
+
+      await writeActive(
+        projectId,
+        { ...mergeRetryOutcome.active, startedAt: sliceStartedAt },
+        stateRoot,
+      );
+      continue;
+    }
 
     if (!outcome.ok) {
       await writeActive(
