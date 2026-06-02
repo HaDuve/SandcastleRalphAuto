@@ -41,11 +41,15 @@ describe("renderHarness", () => {
 
   it("uses phase-specific phase and nextSkill in the handoff example JSON", () => {
     const mergeHarness = renderHarness("merge");
-    const exampleStart = mergeHarness.indexOf("```json");
-    const exampleEnd = mergeHarness.indexOf("```", exampleStart + 7);
-    const example = JSON.parse(
-      mergeHarness.slice(exampleStart + 7, exampleEnd).trim(),
-    ) as { phase: string; nextSkill: string };
+    const blocks = [...mergeHarness.matchAll(/```json\s*([\s\S]*?)```/g)].map(
+      (m) => m[1]?.trim() ?? "",
+    );
+    const contractExample = blocks.find((b) => b.startsWith("{") && b.includes('"phase"'));
+    expect(contractExample).toBeTruthy();
+    const example = JSON.parse(contractExample as string) as {
+      phase: string;
+      nextSkill: string;
+    };
 
     expect(example.phase).toBe("merge");
     expect(example.nextSkill).toBe("/next");
@@ -98,14 +102,15 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("<!-- /sandcastle-ralph:skill-snapshot -->");
     expect(prompt).toContain(skill.trim());
 
-    expect(prompt).toMatch(/current\.json/);
+    expect(prompt).toMatch(/inline handoff/i);
+    expect(prompt).toContain("```json");
     expect(prompt).toMatch(/Do not ask questions/i);
     expect(prompt).toContain("<promise>PHASE_COMPLETE</promise>");
 
     const parsed = parsePrompt(prompt);
     expect(parsed.phase).toBe("tdd");
     expect(parsed.skillSnapshot).toBe(skill.trim());
-    expect(parsed.harness).toMatch(/current\.json/);
+    expect(parsed.harness).toMatch(/inline handoff/i);
   });
 
   it("rejects prompts with an unknown phase in the snapshot marker", () => {
