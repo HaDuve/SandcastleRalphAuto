@@ -3,7 +3,7 @@ import { request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { type Handoff } from "../src/handoff/index.js";
+import { type Handoff, writeHostHandoff } from "../src/handoff/index.js";
 import {
   createInMemoryProjectMutex,
   loopProject,
@@ -212,6 +212,62 @@ describe("dashboard server", () => {
             phase: "tdd",
             status: "active",
             branch: "issue-11",
+          },
+        },
+      ],
+    });
+  });
+
+  it("falls back to host handoff for active identity when active.json is cleared mid-run", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    await writeHostHandoff({
+      stateRoot,
+      projectId: project.remote,
+      handoff: {
+        project: project.remote,
+        issue: 11,
+        branch: "issue-11",
+        pr: 123,
+        phase: "merge",
+        acceptanceState: "done",
+        blockers: [],
+        mergeReady: false,
+        nextSkill: "/next",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        endedAt: "2026-06-01T01:00:00.000Z",
+      },
+    });
+
+    const started = await startServer(rootDir, {
+      stateRoot,
+      workerManager: {
+        start: async () => ({ status: "already-running" }),
+        pause: () => ({ status: "not-running" }),
+        resume: () => ({ status: "not-running" }),
+        kill: () => ({ status: "not-running" }),
+        isRunning: () => true,
+        isPaused: () => false,
+      },
+    });
+    server = started.server;
+
+    const response = await fetch(`${started.baseUrl}/api/projects`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      projects: [
+        {
+          ...project,
+          workerStatus: "running",
+          lastRunOutcome: null,
+          active: {
+            issue: 11,
+            title: "Test issue title",
+            phase: "merge",
+            status: "active",
+            branch: "issue-11",
+            pr: 123,
+            startedAt: "2026-06-01T00:00:00.000Z",
           },
         },
       ],
