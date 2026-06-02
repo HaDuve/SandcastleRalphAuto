@@ -7,6 +7,7 @@ export type DashboardEvent =
   | { type: "worker-paused"; projectId: string }
   | { type: "worker-resumed"; projectId: string }
   | { type: "phase-log"; projectId: string; chunk: string }
+  | { type: "server-log"; projectId: string; chunk: string }
   | {
       type: "stream";
       projectId: string;

@@ -2025,6 +2025,103 @@ describe("App", () => {
     });
   });
 
+  it("appends server-log chunks over SSE when viewing All", async () => {
+    const { sources } = installStoppableEventSource({
+      connected: { projectId: "portfolio", workerStatus: "running" },
+    });
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url === "/api/projects/portfolio/log") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "seed\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "server",
+              log: "",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=tdd") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "seed\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await screen.findByTestId("log-preview");
+
+    await act(async () => {
+      for (const source of sources) {
+        source.emit("server-log", {
+          type: "server-log",
+          projectId: "portfolio",
+          chunk: "server-tail\n",
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("log-preview")).toHaveTextContent("server-tail");
+    });
+  });
+
   it("auto-refreshes all focused tiles every 30 seconds while visible", async () => {
     vi.useFakeTimers();
     let activeFetchCount = 0;
