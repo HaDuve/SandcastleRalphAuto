@@ -189,13 +189,20 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
       return null;
     }
     try {
-      const handoff = await readHostHandoff({ stateRoot, projectId: project.remote });
+      const handoff = await readHostHandoff({
+        stateRoot,
+        projectId: project.remote,
+      });
+      const phase = parseRunnablePhase(handoff.phase);
+      if (!phase) {
+        return null;
+      }
       return {
         issue: handoff.issue,
-        phase: handoff.phase,
+        phase,
         branch: handoff.branch,
         pr: handoff.pr,
-        status: "active",
+        status: "active" as const,
         startedAt: handoff.startedAt,
       };
     } catch {

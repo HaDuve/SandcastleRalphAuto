@@ -3,12 +3,14 @@
   "issue": 95,
   "branch": "issue-95",
   "pr": 102,
-  "phase": "review-tdd",
-  "acceptanceState": "done",
+  "phase": "merge",
+  "acceptanceState": "blocked",
   "verdict": "n/a",
-  "blockers": [],
-  "mergeReady": true,
-  "nextSkill": "/merge",
+  "blockers": [
+    "Required check failing: ci (see https://github.com/HaDuve/SandcastleRalphAuto/actions/runs/26810328557)"
+  ],
+  "mergeReady": false,
+  "nextSkill": "/next",
   "startedAt": "2026-06-02T10:17:56.132Z",
-  "endedAt": "2026-06-02T10:17:56.132Z"
+  "endedAt": "2026-06-02T10:19:36.915556Z"
 }
