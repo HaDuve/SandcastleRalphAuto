@@ -13,6 +13,13 @@ function renderBranchPin(phase: RunnablePhase): string {
     lines.push(
       "",
       "For this AFK run, **ignore** the create-pr skill's branch-resolution table in the skill snapshot. Use only `handoff.branch`.",
+      "",
+      "## No-diff shortcut (unblock automation)",
+      "",
+      "If `git log origin/main..HEAD --oneline` is empty **and** `git diff origin/main...HEAD` is empty, there is no diff to open a PR for. In that case:",
+      "",
+      "- Do **not** mark the handoff `blocked`.",
+      "- Write the handoff as `acceptanceState: \"done\"`, `blockers: []`, `pr` omitted, and set `nextSkill: \"/next\"` so the host advances the queue.",
     );
   }
 

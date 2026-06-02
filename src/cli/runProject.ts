@@ -1,7 +1,9 @@
 import { join } from "node:path";
 import {
   HandoffError,
+  isCreatePrNoDiffDoneHandoff,
   readHostHandoff,
+  tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
@@ -22,8 +24,11 @@ import {
   QUEUE_EMPTY,
   runNext,
   seedTddHandoff,
+  type RunNextInput,
   type RunNextResult,
 } from "../next/index.js";
+import { buildRunNextLoopDeps } from "./runNextLoopDeps.js";
+import type { GitRunner } from "../handoff/worktreeNoDiff.js";
 import { selectNextIssue, parseGhIssueList, type GhIssue } from "../next/select.js";
 import {
   loadRegistryFromRoot,
@@ -117,6 +122,8 @@ export type RunProjectDeps = {
   runMergeGate?: typeof runMergeGate;
   runNext?: typeof runNext;
   gh?: GhRunner;
+  /** Injected for tests; used when reconciling create-pr no-diff handoffs. */
+  git?: GitRunner;
   waitForMergedPr?: (input: {
     project: Project;
     pr: number;
@@ -586,6 +593,35 @@ export async function runProjectSlice(
       throw new Error(`Unexpected slice status: ${slice.status}`);
     }
 
+    if (sliceForMerge.pr === undefined) {
+      let hostHandoff: Handoff | undefined;
+      try {
+        hostHandoff = await (deps.readHostHandoff ?? readHostHandoff)({
+          stateRoot,
+          projectId: project.remote,
+        });
+      } catch (error) {
+        if (!(error instanceof HandoffError)) {
+          throw error;
+        }
+      }
+      if (
+        hostHandoff !== undefined &&
+        isCreatePrNoDiffDoneHandoff(hostHandoff)
+      ) {
+        await mutex.release(project.remote);
+        return {
+          status: "completed",
+          issue: sliceForMerge.issue,
+        };
+      }
+      return {
+        status: "blocked",
+        issue: sliceForMerge.issue,
+        reason: "Slice completed without a PR number",
+      };
+    }
+
     const mergeHandoff = await resolveHandoffForMergeGate(
       project,
       stateRoot,
@@ -622,13 +658,6 @@ export async function runProjectSlice(
         status: "awaiting-human",
         issue: slice.issue,
         reason: mergeResult.reason,
-      };
-    }
-    if (sliceForMerge.pr === undefined) {
-      return {
-        status: "blocked",
-        issue: sliceForMerge.issue,
-        reason: "Slice completed without a PR number",
       };
     }
 
@@ -668,12 +697,32 @@ function nextBlocked(
   };
 }
 
+async function invokeRunNext(
+  project: Project,
+  stateRoot: string,
+  runNextFn: typeof runNext,
+  gh: GhRunner,
+  input: Pick<RunNextInput, "pr" | "emptySliceIssue">,
+): Promise<RunNextResult> {
+  return runNextFn(
+    {
+      project,
+      projectPath: project.path,
+      stateRoot,
+      ...input,
+    },
+    buildRunNextLoopDeps({ project, stateRoot, gh }),
+  );
+}
+
 type LoopStartReady = {
   kind: "ready";
   issue: number;
   fromPhase?: RunPhaseOptions["phase"];
   /** Host merge gate + `/next` only — slice already merged on GitHub. */
   mergeGateOnly?: { pr: number };
+  /** create-pr had no diff; advance queue without merge gate. */
+  createPrNoDiffReady?: { issue: number; branch: string };
 };
 
 type LoopStart = LoopStartReady | LoopProjectResult;
@@ -699,6 +748,22 @@ async function resolveLoopStart(
         reason: active.reason ?? "Slice is blocked",
       };
     }
+    const createPrNoDiff = await tryReconcileCreatePrNoDiffBlockedHandoff({
+      projectPath,
+      branch: branchForIssue(active.issue),
+      stateRoot,
+      projectId: project.remote,
+      active,
+      git: deps.git,
+    });
+    if (createPrNoDiff !== null) {
+      return {
+        kind: "ready",
+        issue: createPrNoDiff.issue,
+        createPrNoDiffReady: createPrNoDiff,
+      };
+    }
+
     const reconciled =
       (await tryReconcileSchemaBlockedHandoff({
         projectPath,
@@ -862,6 +927,9 @@ export async function loopProject(
   let mergeGateOnly = isLoopStartReady(loopStart)
     ? loopStart.mergeGateOnly
     : undefined;
+  let createPrNoDiffReady = isLoopStartReady(loopStart)
+    ? loopStart.createPrNoDiffReady
+    : undefined;
 
   try {
     for (;;) {
@@ -870,6 +938,29 @@ export async function loopProject(
         if (deps.control.signal.aborted) {
           throw new DOMException("Aborted", "AbortError");
         }
+      }
+
+      if (createPrNoDiffReady !== undefined) {
+        const emptySliceIssue = createPrNoDiffReady.issue;
+        createPrNoDiffReady = undefined;
+        slicesCompleted += 1;
+        const nextResult = await invokeRunNext(
+          project,
+          stateRoot,
+          runNextFn,
+          deps.gh ?? resolved.gh,
+          { emptySliceIssue },
+        );
+        if (nextResult.status === "blocked") {
+          return nextBlocked(nextResult);
+        }
+        if (nextResult.status === QUEUE_EMPTY) {
+          await mutex.release(project.remote);
+          return { status: "queue-empty", slicesCompleted };
+        }
+        currentIssue = nextResult.issue;
+        fromPhase = "create-pr";
+        continue;
       }
 
       const sliceRunner = createSliceRunner(deps, currentIssue);
@@ -891,6 +982,7 @@ export async function loopProject(
                 projectPath: project.path,
                 stateRoot,
                 fromPhase,
+                git: deps.git,
               },
               { runPhase: sliceRunner.runPhase },
             );
@@ -910,6 +1002,46 @@ export async function loopProject(
 
       if (slice.status === "ready-for-next") {
         slicesCompleted += 1;
+      }
+
+      if (sliceForMerge.pr === undefined) {
+        let hostHandoff: Handoff | undefined;
+        try {
+          hostHandoff = await (deps.readHostHandoff ?? readHostHandoff)({
+            stateRoot,
+            projectId: project.remote,
+          });
+        } catch (error) {
+          if (!(error instanceof HandoffError)) {
+            throw error;
+          }
+        }
+        if (
+          hostHandoff !== undefined &&
+          isCreatePrNoDiffDoneHandoff(hostHandoff)
+        ) {
+          const nextResult = await invokeRunNext(
+            project,
+            stateRoot,
+            runNextFn,
+            deps.gh ?? resolved.gh,
+            { emptySliceIssue: hostHandoff.issue },
+          );
+          if (nextResult.status === "blocked") {
+            return nextBlocked(nextResult);
+          }
+          if (nextResult.status === QUEUE_EMPTY) {
+            await mutex.release(project.remote);
+            return { status: "queue-empty", slicesCompleted };
+          }
+          currentIssue = nextResult.issue;
+          fromPhase = "create-pr";
+          continue;
+        }
+        return {
+          status: "blocked",
+          reason: "Slice completed without a PR number",
+        };
       }
 
       const mergeHandoff = await resolveHandoffForMergeGate(
@@ -946,38 +1078,15 @@ export async function loopProject(
       if (mergeResult.status === "awaiting-human") {
         return mergeBlocked(mergeResult);
       }
-      if (sliceForMerge.pr === undefined) {
-        return {
-          status: "blocked",
-          reason: "Slice completed without a PR number",
-        };
-      }
 
       await waitForMergedPr({ project, pr: sliceForMerge.pr });
 
-      const nextResult = await runNextFn(
-        {
-          project,
-          projectPath: project.path,
-          stateRoot,
-          pr: sliceForMerge.pr,
-        },
-        {
-          gh: deps.gh ?? resolved.gh,
-          readSkips: async (projectId, skipsRoot) => {
-            const { readSkips } = await import("../state/index.js");
-            return readSkips(projectId, skipsRoot);
-          },
-          archiveHandoff: async (projectId) => {
-            const { archiveHostHandoff } = await import("../handoff/index.js");
-            return archiveHostHandoff({ stateRoot, projectId });
-          },
-          writeActive,
-          startTdd: async (startInput) => {
-            const { startTddViaRunPhase } = await import("../next/index.js");
-            await startTddViaRunPhase(startInput);
-          },
-        },
+      const nextResult = await invokeRunNext(
+        project,
+        stateRoot,
+        runNextFn,
+        deps.gh ?? resolved.gh,
+        { pr: sliceForMerge.pr },
       );
 
       if (nextResult.status === "blocked") {

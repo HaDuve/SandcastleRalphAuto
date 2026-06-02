@@ -24,17 +24,31 @@ export {
   formatReviewFindingsNote,
 } from "./reviewPrRoute.js";
 export {
+  confirmsCreatePrNoDiffAtWorktree,
+  isCreatePrNoDiffBlockedHandoff,
+  isCreatePrNoDiffDoneHandoff,
+  isCreatePrNoDiffStallReason,
+  normalizeCreatePrNoDiffHandoff,
+} from "./createPrNoDiffRoute.js";
+export {
+  defaultGitRunner,
+  worktreeHasNoDiffVsOriginMain,
+  type GitRunner,
+} from "./worktreeNoDiff.js";
+export {
   isMergeDeferredToBabysit,
   isMergeAcceptanceBlockedStallReason,
 } from "./mergeBabysitRoute.js";
 export {
   isHandoffSchemaBlockReason,
   isTransientCursorBlockReason,
+  tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
+  type CreatePrNoDiffResume,
   type MergeGateOnlyResume,
 } from "./reconcileBlockedHandoff.js";
 export {

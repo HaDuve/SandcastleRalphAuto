@@ -13,7 +13,8 @@ import {
   loopProject,
   runProjectSlice,
 } from "../src/cli/index.js";
-import { QUEUE_EMPTY } from "../src/next/index.js";
+import { QUEUE_EMPTY, type RunNextInput } from "../src/next/index.js";
+import { normalizeCreatePrNoDiffHandoff } from "../src/handoff/createPrNoDiffRoute.js";
 import {
   runLinearSlice,
   type RunLinearSliceOptions,
@@ -418,6 +419,61 @@ describe("runProjectSlice", () => {
 });
 
 describe("loopProject", () => {
+  it("passes emptySliceIssue to runNext after create-pr no-diff slice", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "cli-nodiff-"));
+    const stateRoot = join(rootDir, "state");
+    let nextInput: RunNextInput | undefined;
+
+    await writeHostHandoff({
+      stateRoot,
+      projectId: portfolio.remote,
+      handoff: normalizeCreatePrNoDiffHandoff({
+        project: portfolio.remote,
+        issue: 95,
+        branch: "issue-95",
+        phase: "create-pr",
+        acceptanceState: "blocked",
+        blockers: [
+          "No PR was created: branch issue-95 has 0 commits vs origin/main",
+        ],
+        mergeReady: false,
+        nextSkill: "/review-pr",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        endedAt: "2026-06-01T01:00:00.000Z",
+      }),
+    });
+
+    const result = await loopProject(
+      { projectId: "portfolio", issue: 95, rootDir, stateRoot },
+      {
+        loadRegistry: async () => [portfolio],
+        readActive: async () => null,
+        runLinearSlice: async () => ({
+          status: "ready-for-next",
+          issue: 95,
+          branch: "issue-95",
+          pr: undefined,
+          phasesCompleted: ["tdd", "create-pr"],
+        }),
+        runMergeGate: async () => {
+          throw new Error("merge gate must not run for no-diff slice");
+        },
+        runNext: async (input) => {
+          nextInput = input;
+          return { status: QUEUE_EMPTY };
+        },
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(nextInput?.emptySliceIssue).toBe(95);
+    expect(nextInput?.pr).toBeUndefined();
+    expect(result).toEqual({ status: "queue-empty", slicesCompleted: 1 });
+  });
+
   it("runs /next until the queue is empty", async () => {
     const nextCalls: number[] = [];
     let sliceCount = 0;
@@ -448,7 +504,9 @@ describe("loopProject", () => {
         runMergeGate: async () => ({ status: "auto-merge-queued" }),
         waitForMergedPr: async () => {},
         runNext: async (input) => {
-          nextCalls.push(input.pr);
+          if (input.pr !== undefined) {
+            nextCalls.push(input.pr);
+          }
           if (nextCalls.length === 1) {
             return { status: "started", issue: 11, branch: "issue-11" };
           }
@@ -837,7 +895,9 @@ describe("loopProject", () => {
         },
         waitForMergedPr: async () => {},
         runNext: async (input) => {
-          nextPrs.push(input.pr);
+          if (input.pr !== undefined) {
+            nextPrs.push(input.pr);
+          }
           return { status: QUEUE_EMPTY };
         },
         mutex: {

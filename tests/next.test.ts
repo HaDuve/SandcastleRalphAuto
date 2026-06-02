@@ -124,6 +124,7 @@ function runNextDeps(
   return {
     gh: async () => "[]",
     readSkips: async () => [],
+    writeSkips: async () => {},
     archiveHandoff: async () => "archived",
     writeActive: async () => {},
     startTdd: async () => {},
@@ -428,5 +429,53 @@ describe("runNext", () => {
       branch: "issue-10",
     });
     expect(startedTdd).toEqual({ issue: 10 });
+  });
+
+  it("skips the empty-slice issue before dequeuing when no PR was merged", async () => {
+    const writtenSkips: number[][] = [];
+    let startedTdd = false;
+
+    const result = await runNext(
+      {
+        project: fullProject,
+        projectPath: "/tmp/sandcastle",
+        stateRoot: "/tmp/state",
+        emptySliceIssue: 95,
+      },
+      runNextDeps({
+        gh: async (args) => {
+          if (args[0] === "issue" && args[1] === "list") {
+            return JSON.stringify([
+              {
+                number: 95,
+                state: "OPEN",
+                labels: [{ name: "ready-for-agent" }],
+              },
+              {
+                number: 100,
+                state: "OPEN",
+                labels: [{ name: "ready-for-agent" }],
+              },
+            ]);
+          }
+          return "";
+        },
+        readSkips: async () => [],
+        writeSkips: async (_projectId, skips) => {
+          writtenSkips.push([...skips]);
+        },
+        startTdd: async () => {
+          startedTdd = true;
+        },
+      }),
+    );
+
+    expect(result).toEqual({
+      status: "started",
+      issue: 100,
+      branch: "issue-100",
+    });
+    expect(writtenSkips).toEqual([[95]]);
+    expect(startedTdd).toBe(true);
   });
 });

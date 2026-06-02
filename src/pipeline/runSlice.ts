@@ -1,4 +1,5 @@
 import { unlink } from "node:fs/promises";
+import { join } from "node:path";
 import {
   CANONICAL_PHASES,
   isRecoveryPhase,
@@ -17,16 +18,49 @@ import {
   type ActiveState,
 } from "../state/index.js";
 import {
+  confirmsCreatePrNoDiffAtWorktree,
   isMergeDeferredToBabysit,
+  normalizeCreatePrNoDiffHandoff,
+  tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
+  writeHandoff,
+  writeHostHandoff,
 } from "../handoff/index.js";
+import type { GitRunner } from "../handoff/worktreeNoDiff.js";
 import { PHASE_COMPLETE_SIGNAL } from "../runner/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
+import { phasesCompletedThroughCreatePr } from "./phasesCompleted.js";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function persistCreatePrNoDiffHandoffIfNeeded(
+  phase: RunnablePhase,
+  result: RunPhaseResult,
+  projectPath: string,
+  stateRoot: string,
+  projectId: string,
+  git?: GitRunner,
+): Promise<RunPhaseResult> {
+  if (phase !== "create-pr") {
+    return result;
+  }
+  const worktreePath = join(
+    projectPath,
+    ".sandcastle",
+    "worktrees",
+    result.branch,
+  );
+  if (!(await confirmsCreatePrNoDiffAtWorktree(result.handoff, worktreePath, git))) {
+    return result;
+  }
+  const handoff = normalizeCreatePrNoDiffHandoff(result.handoff);
+  await writeHandoff(handoff, worktreePath);
+  await writeHostHandoff({ stateRoot, projectId, handoff });
+  return { ...result, handoff };
 }
 
 export type RunLinearSliceOptions = {
@@ -37,6 +71,8 @@ export type RunLinearSliceOptions = {
   stateRoot: string;
   /** Resume a slice after `/next` has already run `/tdd`, or mid-recovery `/babysit`. */
   fromPhase?: RunnablePhase;
+  /** Injected for tests; verifies no-diff before normalizing create-pr handoffs. */
+  git?: GitRunner;
   runPhaseOptions?: Omit<
     RunPhaseOptions,
     "phase" | "branch" | "projectPath"
@@ -125,6 +161,7 @@ type RunRecoverySliceInput = {
   sliceStartedAt: string;
   mergeTailBabysitAttempted?: boolean;
   runPhaseOptions?: RunLinearSliceOptions["runPhaseOptions"];
+  git?: GitRunner;
   deps: RunLinearSliceDeps;
 };
 
@@ -183,12 +220,21 @@ async function runRecoverySlice(
     return { status: "blocked", active: blocked, phasesCompleted: [] };
   }
 
+  const phaseResult = await persistCreatePrNoDiffHandoffIfNeeded(
+    phase,
+    result,
+    projectPath,
+    stateRoot,
+    projectId,
+    input.git,
+  );
+
   const outcome = advanceSlice({
     issue,
     branch,
     pr,
     phase,
-    result,
+    result: phaseResult,
   });
 
   if (!outcome.ok) {
@@ -248,6 +294,29 @@ export async function runLinearSlice(
 
   const existing = await readActive(projectId, stateRoot);
   if (existing?.status === "blocked") {
+    const createPrNoDiff = await tryReconcileCreatePrNoDiffBlockedHandoff({
+      projectPath,
+      branch,
+      stateRoot,
+      projectId,
+      active: existing,
+      git: options.git,
+    });
+    if (createPrNoDiff !== null) {
+      return {
+        status: "ready-for-next",
+        issue: createPrNoDiff.issue,
+        branch: createPrNoDiff.branch,
+        pr: undefined,
+        phasesCompleted: phasesCompletedThroughCreatePr(
+          options.fromPhase !== undefined &&
+            !isRecoveryPhase(options.fromPhase)
+            ? options.fromPhase
+            : undefined,
+        ),
+      };
+    }
+
     const reconciled =
       (await tryReconcileSchemaBlockedHandoff({
         projectPath,
@@ -286,6 +355,7 @@ export async function runLinearSlice(
           ? existing.startedAt
           : new Date().toISOString(),
       runPhaseOptions: options.runPhaseOptions,
+      git: options.git,
       deps,
     });
   }
@@ -346,19 +416,28 @@ export async function runLinearSlice(
       return { status: "blocked", active: blocked, phasesCompleted };
     }
 
+    const phaseResult = await persistCreatePrNoDiffHandoffIfNeeded(
+      phase,
+      result,
+      projectPath,
+      stateRoot,
+      projectId,
+      options.git,
+    );
+
     const outcome = advanceSlice({
       issue,
       branch,
       pr,
       phase,
-      result,
+      result: phaseResult,
     });
 
     if (
       !outcome.ok &&
       phase === "merge" &&
-      result.completionSignal === PHASE_COMPLETE_SIGNAL &&
-      isMergeDeferredToBabysit(result.handoff)
+      phaseResult.completionSignal === PHASE_COMPLETE_SIGNAL &&
+      isMergeDeferredToBabysit(phaseResult.handoff)
     ) {
       if (mergeTailBabysitAttempted) {
         await writeActive(
@@ -385,6 +464,7 @@ export async function runLinearSlice(
         sliceStartedAt,
         mergeTailBabysitAttempted: true,
         runPhaseOptions: options.runPhaseOptions,
+        git: options.git,
         deps,
       });
 

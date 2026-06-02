@@ -98,6 +98,32 @@ describe("advanceSlice", () => {
     });
   });
 
+  it("short-circuits when create-pr agent marks blocked for zero commits vs main", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "create-pr",
+      result: phaseResult("create-pr", "/review-pr", {
+        acceptanceState: "blocked",
+        blockers: [
+          "No PR was created: branch issue-7-pipeline has 0 commits vs origin/main",
+        ],
+        mergeReady: false,
+      }),
+    });
+
+    expect(outcome).toEqual({
+      ok: true,
+      handoffToNext: true,
+      active: {
+        issue: 7,
+        phase: "merge",
+        branch: "issue-7-pipeline",
+        pr: undefined,
+        status: "active",
+      },
+    });
+  });
+
   it("advances review-pr to review-tdd when verdict omitted but nextSkill routes", () => {
     const outcome = advanceSlice({
       ...base,

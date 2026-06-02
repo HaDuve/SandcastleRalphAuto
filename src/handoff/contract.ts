@@ -20,12 +20,35 @@ function exampleHandoffForPhase(phase: RunnablePhase) {
   };
 }
 
+function renderCreatePrNoDiffExample(): string {
+  return JSON.stringify(
+    {
+      project: "owner/repo",
+      issue: 95,
+      branch: "issue-95",
+      phase: "create-pr",
+      acceptanceState: "done",
+      blockers: [],
+      mergeReady: false,
+      nextSkill: "/next",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    },
+    null,
+    2,
+  );
+}
+
 export function renderHandoffContract(phase: RunnablePhase): string {
   const acceptanceStates = HANDOFF_ACCEPTANCE_STATE_VALUES.map((v) => `"${v}"`).join(
     " | ",
   );
   const phases = HANDOFF_PHASE_VALUES.map((v) => `"${v}"`).join(", ");
   const example = exampleHandoffForPhase(phase);
+  const nextSkillLine =
+    phase === "create-pr"
+      ? '- `nextSkill` — when done with a PR: `"/review-pr"`; when **no diff vs main** (no PR): `"/next"`'
+      : `- \`nextSkill\` — for this phase when done: \`"${example.nextSkill}"\``;
 
   return [
     "## Handoff contract (`current.json`)",
@@ -41,7 +64,7 @@ export function renderHandoffContract(phase: RunnablePhase): string {
     "- `verdict` — optional: `\"approve\"` | `\"request-changes\"` | `\"n/a\"`",
     "- `blockers` — string array (empty when unblocked)",
     "- `mergeReady` — boolean",
-    `- \`nextSkill\` — for this phase when done: \`"${example.nextSkill}"\``,
+    nextSkillLine,
     "- `startedAt` / `endedAt` — ISO-8601 timestamps",
     "",
     "Example when this phase is complete:",
@@ -49,5 +72,15 @@ export function renderHandoffContract(phase: RunnablePhase): string {
     "```json",
     JSON.stringify(example, null, 2),
     "```",
+    ...(phase === "create-pr"
+      ? [
+          "",
+          "Example when there is **no diff** (no PR; host advances queue):",
+          "",
+          "```json",
+          renderCreatePrNoDiffExample(),
+          "```",
+        ]
+      : []),
   ].join("\n");
 }

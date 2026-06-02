@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   isHandoffSchemaBlockReason,
+  tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
@@ -14,6 +15,17 @@ import {
 import { readHostHandoff, writeHostHandoff } from "../src/handoff/hostStore.js";
 import { readHandoff } from "../src/handoff/io.js";
 import type { Handoff } from "../src/handoff/schema.js";
+import type { GitRunner } from "../src/handoff/worktreeNoDiff.js";
+
+const noDiffGit: GitRunner = async (args) => {
+  if (args[0] === "rev-list") {
+    return { stdout: "0\n", exitCode: 0 };
+  }
+  if (args[0] === "diff" && args.includes("--quiet")) {
+    return { stdout: "", exitCode: 0 };
+  }
+  return { stdout: "", exitCode: 1 };
+};
 import { MERGE_GATE_NO_APPROVE_REASON } from "../src/merge/index.js";
 import {
   resolveActivePath,
@@ -119,6 +131,75 @@ describe("reconcileBlockedHandoff", () => {
       branch: "issue-95",
       status: "active",
       startedAt: active.startedAt,
+    });
+  });
+
+  it("clears blocked create-pr when handoff documents zero commits vs main", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-create-pr-nodiff-"));
+    const projectPath = join(rootDir, "repo");
+    const branch = "issue-95";
+    const handoffDir = join(
+      projectPath,
+      ".sandcastle",
+      "worktrees",
+      branch,
+      ".sandcastle-ralph",
+      "handoff",
+    );
+    await mkdir(handoffDir, { recursive: true });
+    await writeFile(
+      join(handoffDir, "current.json"),
+      JSON.stringify(
+        {
+          project: "HaDuve/SandcastleRalphAuto",
+          issue: 95,
+          branch,
+          phase: "create-pr",
+          acceptanceState: "blocked",
+          blockers: [
+            "No PR was created: branch issue-95 has 0 commits vs origin/main",
+          ],
+          mergeReady: false,
+          nextSkill: "/review-pr",
+          startedAt: "2026-06-02T06:53:30.322Z",
+          endedAt: "2026-06-02T06:54:00.000Z",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const stateRoot = join(rootDir, "state");
+    const active: ActiveState = {
+      issue: 95,
+      phase: "create-pr",
+      branch,
+      status: "blocked",
+      reason: "Handoff acceptanceState is blocked, expected done",
+      resumeSkill: "/create-pr",
+      startedAt: "2026-06-02T06:53:30.322Z",
+    };
+    await writeActive("proj", active, stateRoot);
+
+    const resumed = await tryReconcileCreatePrNoDiffBlockedHandoff({
+      projectPath,
+      branch,
+      stateRoot,
+      projectId: "proj",
+      active,
+      git: noDiffGit,
+    });
+
+    expect(resumed).toEqual({ issue: 95, branch });
+    await expect(access(resolveActivePath(stateRoot, "proj"))).rejects.toThrow();
+
+    const worktreeHandoff = await readHandoff(
+      join(projectPath, ".sandcastle", "worktrees", branch),
+    );
+    expect(worktreeHandoff).toMatchObject({
+      acceptanceState: "done",
+      nextSkill: "/next",
+      blockers: [],
     });
   });
 

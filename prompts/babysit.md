@@ -23,7 +23,7 @@ Required JSON (host validates with Zod after this phase):
 - `pr` — optional PR number (set once a PR exists)
 - `phase` — must be `"babysit"` for this run (allowed values: "tdd", "create-pr", "review-pr", "review-tdd", "babysit", "merge", "next")
 - `acceptanceState` — one of: "in-progress" | "done" | "blocked". When this phase **finishes successfully**, use `"done"` — **not** `"complete"`, `"finished"`, or other words.
-- `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`. When this phase **finishes successfully** with `mergeReady: true`, use `"approve"` (review already passed) — do not leave `"n/a"` or the host merge gate will block.
+- `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
 - `blockers` — string array (empty when unblocked)
 - `mergeReady` — boolean
 - `nextSkill` — for this phase when done: `"/merge"`

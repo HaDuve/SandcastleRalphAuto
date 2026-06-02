@@ -8,6 +8,11 @@ import {
 import { type ActiveState } from "../state/index.js";
 import { getNextOrchestratorPhase, isCanonicalPhase } from "./sequence.js";
 import {
+  isCreatePrNoDiffBlockedHandoff,
+  isCreatePrNoDiffDoneHandoff,
+  normalizeCreatePrNoDiffHandoff,
+} from "../handoff/createPrNoDiffRoute.js";
+import {
   isReviewPrRequestChangesToReviewTdd,
 } from "../handoff/reviewPrRoute.js";
 
@@ -71,6 +76,9 @@ function advanceFailureReason(
     return `Handoff phase ${handoff.phase} does not match completed phase ${phase}`;
   }
   if (handoff.acceptanceState !== "done") {
+    if (phase === "create-pr" && isCreatePrNoDiffBlockedHandoff(handoff)) {
+      return null;
+    }
     return `Handoff acceptanceState is ${handoff.acceptanceState}, expected done`;
   }
   if (
@@ -82,11 +90,7 @@ function advanceFailureReason(
     return `Handoff has blockers: ${handoff.blockers.join("; ")}`;
   }
   const expected = expectedNextSkill(phase);
-  if (
-    phase === "create-pr" &&
-    handoff.nextSkill === "/next" &&
-    handoff.pr === undefined
-  ) {
+  if (phase === "create-pr" && isCreatePrNoDiffDoneHandoff(handoff)) {
     return null;
   }
   if (handoff.nextSkill !== expected) {
@@ -98,7 +102,14 @@ function advanceFailureReason(
 }
 
 export function advanceSlice(input: AdvanceSliceInput): AdvanceSliceOutcome {
-  const { handoff, completionSignal } = input.result;
+  let { handoff, completionSignal } = input.result;
+  if (
+    input.phase === "create-pr" &&
+    isCreatePrNoDiffBlockedHandoff(handoff) &&
+    completionSignal === PHASE_COMPLETE_SIGNAL
+  ) {
+    handoff = normalizeCreatePrNoDiffHandoff(handoff);
+  }
   const failure = advanceFailureReason(
     input.phase,
     handoff,
@@ -117,7 +128,8 @@ export function advanceSlice(input: AdvanceSliceInput): AdvanceSliceOutcome {
     };
   }
 
-  if (input.phase === "create-pr" && handoff.nextSkill === "/next") {
+  // handoffToNext clears active immediately; phase label is unused (orchestrator "next").
+  if (input.phase === "create-pr" && isCreatePrNoDiffDoneHandoff(handoff)) {
     return {
       ok: true,
       handoffToNext: true,

@@ -20,7 +20,7 @@ For this AFK run, **ignore** the create-pr skill's branch-resolution table in th
 If `git log origin/main..HEAD --oneline` is empty **and** `git diff origin/main...HEAD` is empty, there is no diff to open a PR for. In that case:
 
 - Do **not** mark the handoff `blocked`.
-- Write the handoff as `acceptanceState: "done"`, `blockers: []`, `pr` omitted, and set `nextSkill: "/next"` so the host can pick up the next issue.
+- Write the handoff as `acceptanceState: "done"`, `blockers: []`, `pr` omitted, and set `nextSkill: "/next"` so the host advances the queue.
 
 ## Handoff contract (`current.json`)
 
@@ -35,7 +35,7 @@ Required JSON (host validates with Zod after this phase):
 - `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
 - `blockers` — string array (empty when unblocked)
 - `mergeReady` — boolean
-- `nextSkill` — for this phase when done: `"/review-pr"`
+- `nextSkill` — when done with a PR: `"/review-pr"`; when **no diff vs main** (no PR): `"/next"`
 - `startedAt` / `endedAt` — ISO-8601 timestamps
 
 Example when this phase is complete:
@@ -50,6 +50,23 @@ Example when this phase is complete:
   "blockers": [],
   "mergeReady": false,
   "nextSkill": "/review-pr",
+  "startedAt": "2026-06-01T00:00:00.000Z",
+  "endedAt": "2026-06-01T01:00:00.000Z"
+}
+```
+
+Example when there is **no diff** (no PR; host advances queue):
+
+```json
+{
+  "project": "owner/repo",
+  "issue": 95,
+  "branch": "issue-95",
+  "phase": "create-pr",
+  "acceptanceState": "done",
+  "blockers": [],
+  "mergeReady": false,
+  "nextSkill": "/next",
   "startedAt": "2026-06-01T00:00:00.000Z",
   "endedAt": "2026-06-01T01:00:00.000Z"
 }
@@ -93,6 +110,13 @@ Repo branch shapes: `feat/foo-224`, `feat-foo-244`, `feature/...`.
 - Never force-push `main`/`master`; no `--no-verify` unless user asked
 - No `.env*` / credentials in commit
 - No empty commit; no amend unless user rule allows
+
+## No diff vs `main` (Sandcastle AFK)
+
+When `git log origin/main..HEAD --oneline` is empty **and** `git diff origin/main...HEAD` is empty:
+
+- Do **not** set `acceptanceState: "blocked"`.
+- Handoff: `acceptanceState: "done"`, `blockers: []`, omit `pr`, `nextSkill: "/next"`.
 
 ## 1. Branch
 

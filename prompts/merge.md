@@ -26,10 +26,10 @@ Required JSON (host validates with Zod after this phase):
 - `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
 - `blockers` — string array (empty when unblocked)
 - `mergeReady` — boolean
-- `nextSkill` — `"/next"` when merged successfully; `"/babysit"` when blocked by CI/conflicts; `"/review-tdd"` when in-scope findings remain
+- `nextSkill` — for this phase when done: `"/next"`
 - `startedAt` / `endedAt` — ISO-8601 timestamps
 
-Example when this phase merges successfully:
+Example when this phase is complete:
 
 ```json
 {
@@ -41,24 +41,6 @@ Example when this phase merges successfully:
   "blockers": [],
   "mergeReady": true,
   "nextSkill": "/next",
-  "startedAt": "2026-06-01T00:00:00.000Z",
-  "endedAt": "2026-06-01T01:00:00.000Z"
-}
-```
-
-Example when CI or merge conflicts block (host runs `/babysit`):
-
-```json
-{
-  "project": "owner/repo",
-  "issue": 29,
-  "branch": "issue-29",
-  "phase": "merge",
-  "acceptanceState": "blocked",
-  "verdict": "approve",
-  "blockers": ["PR not mergeable: merge conflict with main"],
-  "mergeReady": false,
-  "nextSkill": "/babysit",
   "startedAt": "2026-06-01T00:00:00.000Z",
   "endedAt": "2026-06-01T01:00:00.000Z"
 }

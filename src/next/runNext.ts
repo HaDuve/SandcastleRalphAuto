@@ -12,7 +12,10 @@ export type RunNextInput = {
   project: Project;
   projectPath: string;
   stateRoot: string;
-  pr: number;
+  /** Omitted when the prior slice ended at create-pr with no diff (no PR to merge). */
+  pr?: number;
+  /** When advancing without `pr`, record operator skip so the empty slice is not re-queued. */
+  emptySliceIssue?: number;
 };
 
 export type RunNextStarted = {
@@ -47,6 +50,11 @@ export type StartTddInput = {
 export type RunNextDeps = {
   gh: GhRunner;
   readSkips: (projectId: string, stateRoot: string) => Promise<number[]>;
+  writeSkips: (
+    projectId: string,
+    skips: number[],
+    stateRoot: string,
+  ) => Promise<void>;
   archiveHandoff: (projectId: string) => Promise<string>;
   writeActive: (
     projectId: string,
@@ -119,29 +127,26 @@ export async function runNext(
   input: RunNextInput,
   deps: RunNextDeps,
 ): Promise<RunNextResult> {
-  const {
-    project,
-    projectPath,
-    stateRoot,
-    pr,
-  } = input;
+  const { project, projectPath, stateRoot, pr, emptySliceIssue } = input;
   const now = deps.now ?? (() => new Date());
 
-  const prStateRaw = await deps.gh([
-    "pr",
-    "view",
-    String(pr),
-    "--repo",
-    project.remote,
-    "--json",
-    "state",
-  ]);
-  const prState = parsePrState(prStateRaw);
-  if (typeof prState !== "string") {
-    return prState;
-  }
-  if (prState !== "MERGED") {
-    return blocked(`PR #${pr} is not merged (state: ${prState})`);
+  if (pr !== undefined) {
+    const prStateRaw = await deps.gh([
+      "pr",
+      "view",
+      String(pr),
+      "--repo",
+      project.remote,
+      "--json",
+      "state",
+    ]);
+    const prState = parsePrState(prStateRaw);
+    if (typeof prState !== "string") {
+      return prState;
+    }
+    if (prState !== "MERGED") {
+      return blocked(`PR #${pr} is not merged (state: ${prState})`);
+    }
   }
 
   try {
@@ -171,7 +176,16 @@ export async function runNext(
     return parsedIssues;
   }
 
-  const skips = await deps.readSkips(project.remote, stateRoot);
+  let skips = await deps.readSkips(project.remote, stateRoot);
+  if (
+    pr === undefined &&
+    emptySliceIssue !== undefined &&
+    !skips.includes(emptySliceIssue)
+  ) {
+    skips = [...skips, emptySliceIssue].sort((a, b) => a - b);
+    await deps.writeSkips(project.remote, skips, stateRoot);
+  }
+
   const nextIssue = selectNextIssue(parsedIssues, project, skips);
   if (nextIssue === null) {
     return { status: QUEUE_EMPTY };

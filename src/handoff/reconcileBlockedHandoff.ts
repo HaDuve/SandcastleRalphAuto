@@ -22,6 +22,12 @@ import {
   isReviewPrRequestChangesToReviewTdd,
 } from "./reviewPrRoute.js";
 import {
+  confirmsCreatePrNoDiffAtWorktree,
+  isCreatePrNoDiffStallReason,
+  normalizeCreatePrNoDiffHandoff,
+} from "./createPrNoDiffRoute.js";
+import type { GitRunner } from "./worktreeNoDiff.js";
+import {
   isTransientCursorErrorMessage,
   isTransientCursorRetriesExhaustedMessage,
 } from "../runner/transientCursorError.js";
@@ -277,6 +283,78 @@ export type MergeGateOnlyResume = {
   issue: number;
   pr: number;
 };
+
+export type CreatePrNoDiffResume = {
+  issue: number;
+  branch: string;
+};
+
+/**
+ * When create-pr wrote blocked for zero commits / no PR, normalize handoff and
+ * let the host advance the queue on Start without re-running create-pr.
+ */
+export async function tryReconcileCreatePrNoDiffBlockedHandoff(input: {
+  projectPath: string;
+  branch: string;
+  stateRoot: string;
+  projectId: string;
+  active: ActiveState;
+  git?: GitRunner;
+}): Promise<CreatePrNoDiffResume | null> {
+  if (
+    input.active.status !== "blocked" ||
+    !isCreatePrNoDiffStallReason(input.active.reason, input.active.phase)
+  ) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (!(await confirmsCreatePrNoDiffAtWorktree(handoff, worktreePath, input.git))) {
+    return null;
+  }
+
+  const fixed = normalizeCreatePrNoDiffHandoff(handoff);
+  await writeHandoff(fixed, worktreePath);
+  await writeHostHandoff({
+    stateRoot: input.stateRoot,
+    projectId: input.projectId,
+    handoff: fixed,
+  });
+
+  try {
+    await unlink(resolveActivePath(input.stateRoot, input.projectId));
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "ENOENT"
+    ) {
+      throw error;
+    }
+  }
+
+  return { issue: input.active.issue, branch: input.active.branch };
+}
 
 /**
  * When the merge agent already merged on GitHub but the host blocked on
