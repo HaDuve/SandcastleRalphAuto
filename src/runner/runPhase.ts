@@ -34,6 +34,7 @@ import {
   sleep,
   transientCursorBackoffDelayMs,
 } from "./transientCursorError.js";
+import { ensureCursorignoreAllowsHandoff } from "./cursorignore.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
 
@@ -235,6 +236,9 @@ export async function runPhase(
   });
 
   try {
+    // Defense-in-depth: ensure Cursor can read the handoff dir in this worktree.
+    await ensureCursorignoreAllowsHandoff(sandbox.worktreePath);
+
     // Seed the agent-facing worktree handoff from host store, unless explicitly overridden.
     let hostHandoff: Handoff | undefined;
     try {
