@@ -2,12 +2,13 @@
   "project": "HaDuve/SandcastleRalphAuto",
   "issue": 95,
   "branch": "issue-95",
-  "phase": "create-pr",
+  "pr": 102,
+  "phase": "review-pr",
   "acceptanceState": "done",
+  "verdict": "n/a",
   "blockers": [],
   "mergeReady": false,
-  "nextSkill": "/review-pr",
-  "startedAt": "2026-06-02T09:02:56.316Z",
-  "endedAt": "2026-06-02T09:14:59.869010Z",
-  "pr": 102
+  "nextSkill": "/review-tdd",
+  "startedAt": "2026-06-02T09:22:15.443Z",
+  "endedAt": "2026-06-02T09:22:15.443Z"
 }
