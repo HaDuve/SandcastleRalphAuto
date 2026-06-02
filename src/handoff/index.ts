@@ -25,8 +25,10 @@ export {
 } from "./reviewPrRoute.js";
 export {
   isHandoffSchemaBlockReason,
+  tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
+  type MergeGateOnlyResume,
 } from "./reconcileBlockedHandoff.js";
 export {
   archiveHostHandoff,

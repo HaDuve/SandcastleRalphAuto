@@ -1,6 +1,13 @@
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  isMergeGateNoApproveBlockReason,
+  runMergeGate,
+  type GhRunner,
+} from "../merge/index.js";
+import type { Project } from "../registry/index.js";
 import { parseRunnablePhase, type RunnablePhase } from "../prompts/phases.js";
-import type { ActiveState } from "../state/schema.js";
+import { resolveActivePath, type ActiveState } from "../state/index.js";
 import { readHostHandoff, writeHostHandoff } from "./hostStore.js";
 import { readHandoff, writeHandoff } from "./io.js";
 import type { Handoff } from "./schema.js";
@@ -161,4 +168,70 @@ export async function tryReconcileReviewPrBlockedHandoff(input: {
     startedAt: input.active.startedAt,
     ...(note !== null ? { reason: note } : {}),
   };
+}
+
+export type MergeGateOnlyResume = {
+  issue: number;
+  pr: number;
+};
+
+/**
+ * When the merge agent already merged on GitHub but the host blocked on
+ * `verdict !== approve` (pre–PR #74) or stale `active.json` after the fix,
+ * re-run the merge gate on Start and continue with `/next` only.
+ */
+export async function tryReconcileMergeGateBlockedHandoff(input: {
+  project: Pick<Project, "autoMerge" | "remote">;
+  stateRoot: string;
+  projectId: string;
+  active: ActiveState;
+  gh: GhRunner;
+  readHostHandoffFn?: typeof readHostHandoff;
+}): Promise<MergeGateOnlyResume | null> {
+  if (
+    input.active.status !== "blocked" ||
+    input.active.phase !== "merge" ||
+    !isMergeGateNoApproveBlockReason(input.active.reason) ||
+    input.active.pr === undefined
+  ) {
+    return null;
+  }
+
+  const readHost = input.readHostHandoffFn ?? readHostHandoff;
+  let handoff: Handoff;
+  try {
+    handoff = await readHost({
+      stateRoot: input.stateRoot,
+      projectId: input.projectId,
+    });
+  } catch {
+    return null;
+  }
+
+  const mergeResult = await runMergeGate(
+    {
+      handoff,
+      project: input.project,
+      pr: input.active.pr,
+    },
+    { gh: input.gh },
+  );
+
+  if (mergeResult.status !== "auto-merge-queued") {
+    return null;
+  }
+
+  try {
+    await unlink(resolveActivePath(input.stateRoot, input.projectId));
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "ENOENT"
+    ) {
+      throw error;
+    }
+  }
+
+  return { issue: input.active.issue, pr: input.active.pr };
 }

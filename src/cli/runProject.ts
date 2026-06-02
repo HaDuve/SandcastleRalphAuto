@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
   HandoffError,
   readHostHandoff,
+  tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   type Handoff,
@@ -25,7 +26,11 @@ import {
   loadRegistryFromRoot,
   type Project,
 } from "../registry/index.js";
-import { isRunnablePhase, type RunnablePhase } from "../prompts/phases.js";
+import {
+  CANONICAL_PHASES,
+  isRunnablePhase,
+  type RunnablePhase,
+} from "../prompts/phases.js";
 import {
   runLinearSlice,
   toSliceReadyForMerge,
@@ -628,6 +633,8 @@ type LoopStartReady = {
   kind: "ready";
   issue: number;
   fromPhase?: RunPhaseOptions["phase"];
+  /** Host merge gate + `/next` only — slice already merged on GitHub. */
+  mergeGateOnly?: { pr: number };
 };
 
 type LoopStart = LoopStartReady | LoopProjectResult;
@@ -644,13 +651,15 @@ async function resolveLoopStart(
   deps: RunProjectDeps,
   resolved: ResolvedRunProjectDeps,
 ): Promise<LoopStart> {
-  if (issue !== undefined) {
-    return { kind: "ready", issue };
-  }
-
   const readActiveFn = deps.readActive ?? readActive;
   const active = await readActiveFn(project.remote, stateRoot);
   if (active?.status === "blocked") {
+    if (issue !== undefined && active.issue !== issue) {
+      return {
+        status: "blocked",
+        reason: active.reason ?? "Slice is blocked",
+      };
+    }
     const reconciled =
       (await tryReconcileSchemaBlockedHandoff({
         projectPath,
@@ -680,11 +689,43 @@ async function resolveLoopStart(
         fromPhase: reconciled.phase,
       };
     }
+
+    const mergeGateOnly = await tryReconcileMergeGateBlockedHandoff({
+      project,
+      stateRoot,
+      projectId: project.remote,
+      active,
+      gh: deps.gh ?? resolved.gh,
+    });
+    if (mergeGateOnly !== null) {
+      return {
+        kind: "ready",
+        issue: mergeGateOnly.issue,
+        mergeGateOnly: { pr: mergeGateOnly.pr },
+      };
+    }
+
     return {
       status: "blocked",
       reason: active.reason ?? "Slice is blocked",
     };
   }
+
+  if (issue !== undefined) {
+    if (
+      active?.status === "active" &&
+      active.issue === issue &&
+      isRunnablePhase(active.phase)
+    ) {
+      return {
+        kind: "ready",
+        issue,
+        fromPhase: active.phase,
+      };
+    }
+    return { kind: "ready", issue };
+  }
+
   if (active?.status === "awaiting-human") {
     return {
       status: "awaiting-human",
@@ -762,6 +803,9 @@ export async function loopProject(
   let slicesCompleted = 0;
   let currentIssue = loopStart.issue;
   let fromPhase = loopStart.fromPhase;
+  let mergeGateOnly = isLoopStartReady(loopStart)
+    ? loopStart.mergeGateOnly
+    : undefined;
 
   try {
     for (;;) {
@@ -774,17 +818,27 @@ export async function loopProject(
 
       const sliceRunner = createSliceRunner(deps, currentIssue);
       const runLinearSliceFn = deps.runLinearSlice ?? resolved.runLinearSlice;
-      const slice = await runLinearSliceFn(
-        {
-          projectId: project.remote,
-          issue: currentIssue,
-          branch: branchForIssue(currentIssue),
-          projectPath: project.path,
-          stateRoot,
-          fromPhase,
-        },
-        { runPhase: sliceRunner.runPhase },
-      );
+      const slice =
+        mergeGateOnly !== undefined
+          ? {
+              status: "ready-for-next" as const,
+              issue: currentIssue,
+              branch: branchForIssue(currentIssue),
+              pr: mergeGateOnly.pr,
+              phasesCompleted: [...CANONICAL_PHASES],
+            }
+          : await runLinearSliceFn(
+              {
+                projectId: project.remote,
+                issue: currentIssue,
+                branch: branchForIssue(currentIssue),
+                projectPath: project.path,
+                stateRoot,
+                fromPhase,
+              },
+              { runPhase: sliceRunner.runPhase },
+            );
+      mergeGateOnly = undefined;
 
       if (slice.status === "blocked" || slice.status === "awaiting-human") {
         return {

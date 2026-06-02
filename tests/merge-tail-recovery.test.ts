@@ -276,6 +276,7 @@ describe("merge-tail recovery", () => {
       { projectId: "portfolio", issue: 10 },
       {
         ...mergeTailDeps({}).deps,
+        readActive: async () => null,
         runLinearSlice: async (options, sliceDeps) => {
           if (options.fromPhase === "babysit") {
             return {
