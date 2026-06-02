@@ -22,15 +22,15 @@ export function formatProjectStatusIndicator(
   workerStatus: WorkerStatus,
   active: ProjectActiveSummary | null | undefined,
 ): string {
-  if (active?.status === "blocked" || active?.status === "awaiting-human") {
-    return "blocked";
-  }
   if (workerStatus === "paused") {
     return "paused";
   }
   if (workerStatus === "running") {
     const phase = active?.phase ?? "…";
     return `running · ${phase}`;
+  }
+  if (active?.status === "blocked" || active?.status === "awaiting-human") {
+    return "blocked";
   }
   return "idle";
 }

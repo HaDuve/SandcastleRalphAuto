@@ -32,6 +32,12 @@ describe("formatProjectStatusIndicator", () => {
     ).toBe("blocked");
   });
 
+  it("shows running when the worker is running even if the active slice is still marked blocked", () => {
+    expect(
+      formatProjectStatusIndicator("running", { ...active, status: "blocked", phase: "babysit" }),
+    ).toBe("running · babysit");
+  });
+
   it("shows running with babysit when the recovery phase is active", () => {
     expect(
       formatProjectStatusIndicator("running", { ...active, phase: "babysit" }),
