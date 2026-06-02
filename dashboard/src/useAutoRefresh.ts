@@ -4,6 +4,8 @@ export type UseAutoRefreshOptions = {
   enabled: boolean;
   intervalMs: number;
   onRefresh: () => void | Promise<void>;
+  /** When this value changes, clear the interval and reset catch-up timing. */
+  resetKey?: string | number | null;
 };
 
 type VisibilityDocument = {
@@ -17,7 +19,12 @@ function visibilityDocument(): VisibilityDocument | null {
   return candidate ?? null;
 }
 
-export function useAutoRefresh({ enabled, intervalMs, onRefresh }: UseAutoRefreshOptions): void {
+export function useAutoRefresh({
+  enabled,
+  intervalMs,
+  onRefresh,
+  resetKey = null,
+}: UseAutoRefreshOptions): void {
   const onRefreshRef = useRef(onRefresh);
   const lastSuccessfulRefreshAtRef = useRef<number | null>(null);
   const intervalIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,8 +73,10 @@ export function useAutoRefresh({ enabled, intervalMs, onRefresh }: UseAutoRefres
       startInterval();
     };
 
+    lastSuccessfulRefreshAtRef.current = null;
+    clearScheduledRefresh();
+
     if (!enabled) {
-      clearScheduledRefresh();
       return clearScheduledRefresh;
     }
 
@@ -80,5 +89,5 @@ export function useAutoRefresh({ enabled, intervalMs, onRefresh }: UseAutoRefres
       doc.removeEventListener("visibilitychange", handleVisibilityChange);
       clearScheduledRefresh();
     };
-  }, [enabled, intervalMs]);
+  }, [enabled, intervalMs, resetKey]);
 }

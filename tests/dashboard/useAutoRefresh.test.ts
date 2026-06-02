@@ -151,6 +151,100 @@ describe("useAutoRefresh", () => {
     expect(onRefresh).toHaveBeenCalledTimes(2);
   });
 
+
+  it("restarts the interval when resetKey changes", async () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(
+      ({ resetKey }) =>
+        useAutoRefresh({
+          enabled: true,
+          intervalMs: 30_000,
+          onRefresh,
+          resetKey,
+        }),
+      { initialProps: { resetKey: "project-a" } },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    rerender({ resetKey: "project-b" });
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets catch-up timing when resetKey changes", async () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(
+      ({ resetKey }) =>
+        useAutoRefresh({
+          enabled: true,
+          intervalMs: 30_000,
+          onRefresh,
+          resetKey,
+        }),
+      { initialProps: { resetKey: "project-a" } },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    rerender({ resetKey: "project-b" });
+
+    act(() => {
+      Object.defineProperty(testDocument(), "visibilityState", {
+        configurable: true,
+        get: () => "hidden",
+      });
+      testDocument().dispatchEvent(new Event("visibilitychange"));
+      vi.advanceTimersByTime(45_000);
+    });
+
+    act(() => {
+      Object.defineProperty(testDocument(), "visibilityState", {
+        configurable: true,
+        get: () => "visible",
+      });
+      testDocument().dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+  });
+
   it("clears the interval when disabled", async () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
     const { rerender } = renderHook(

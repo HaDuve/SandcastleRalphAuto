@@ -385,6 +385,7 @@ export function App() {
     enabled: catalogReady && focusedProjectId !== null,
     intervalMs: AUTO_REFRESH_INTERVAL_MS,
     onRefresh: refreshAllFocusedTiles,
+    resetKey: focusedProjectId,
   });
 
   useEffect(() => {

@@ -1657,6 +1657,107 @@ describe("App", () => {
     expect(screen.queryByRole("alert")).toBe(within(queueRegion).getByRole("alert"));
   });
 
+
+  it("refreshes the history tile without updating other panels", async () => {
+    let historyFetchCount = 0;
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          historyFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              history:
+                historyFetchCount <= 1
+                  ? [
+                      {
+                        pr: 99,
+                        issue: 9,
+                        branch: "issue-9",
+                        startedAt: "2026-06-01T00:00:00.000Z",
+                        endedAt: "2026-06-01T01:00:00.000Z",
+                        phases: [
+                          {
+                            phase: "merge",
+                            startedAt: "2026-06-01T00:00:00.000Z",
+                            endedAt: "2026-06-01T01:00:00.000Z",
+                          },
+                        ],
+                      },
+                    ]
+                  : [
+                      {
+                        pr: 100,
+                        issue: 10,
+                        branch: "issue-10",
+                        startedAt: "2026-06-02T00:00:00.000Z",
+                        endedAt: "2026-06-02T01:00:00.000Z",
+                        phases: [
+                          {
+                            phase: "merge",
+                            startedAt: "2026-06-02T00:00:00.000Z",
+                            endedAt: "2026-06-02T01:00:00.000Z",
+                          },
+                        ],
+                      },
+                    ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/log")) {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "log line\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    expect(await screen.findByText(/#99/)).toBeInTheDocument();
+
+    const historyRegion = screen.getByRole("region", { name: /^history$/i });
+    await user.click(within(historyRegion).getByRole("button", { name: /refresh history/i }));
+
+    await waitFor(() => {
+      expect(within(historyRegion).getByText(/#100/)).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole("region", { name: /^queue$/i })).getByText(/#10/)).toBeInTheDocument();
+  });
+
   it("preserves SSE log tail when refreshing the log tile on the live phase", async () => {
     const { sources } = installStoppableEventSource({
       connected: { projectId: "portfolio", workerStatus: "running" },
