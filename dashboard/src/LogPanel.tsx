@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { fetchProjectLog } from "./api.js";
-import { appendLogChunk, lastLines } from "./logLines.js";
+import { appendLogChunk, lastLines, scrollLogBodyToTail } from "./logLines.js";
 import type { Project } from "./types.js";
 
 const PREVIEW_LINE_COUNT = 5;
@@ -55,6 +55,7 @@ export function LogPanel({
   const livePhaseRef = useRef<string | null>(null);
   const viewPhaseRef = useRef<string | null>(null);
   const expandedBodyRef = useRef<HTMLPreElement>(null);
+  const previewBodyRef = useRef<HTMLPreElement>(null);
   const phaseFetchGenerationRef = useRef(0);
   const logLoadGenerationRef = useRef(0);
   const previousActivePhaseRef = useRef<string | null>(null);
@@ -170,14 +171,11 @@ export function LogPanel({
   }, [isViewingLivePhase, project?.id, registerPhaseLogHandler]);
 
   useLayoutEffect(() => {
-    if (!expanded) {
-      return;
-    }
-    const body = expandedBodyRef.current;
+    const body = expanded ? expandedBodyRef.current : previewBodyRef.current;
     if (!body) {
       return;
     }
-    body.scrollTop = body.scrollHeight;
+    scrollLogBodyToTail(body);
   }, [expanded, logText]);
 
   const handlePhaseChange = (phase: string) => {
@@ -259,7 +257,10 @@ export function LogPanel({
           </pre>
         </>
       ) : (
-        <pre className="log-body log-body--preview" data-testid="log-preview">
+        <pre
+          ref={previewBodyRef}
+          className="log-body log-body--preview"
+          data-testid="log-preview">
           {previewText}
         </pre>
       )}

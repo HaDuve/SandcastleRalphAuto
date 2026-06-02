@@ -166,7 +166,7 @@ body {
 
 .log-body--preview {
   max-height: calc(1.5em * 5 + 1.5rem);
-  overflow: hidden;
+  overflow: auto;
 }
 
 .log-body--expanded {
