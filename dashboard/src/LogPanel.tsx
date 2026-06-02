@@ -14,7 +14,10 @@ import type { Project } from "./types.js";
 const PREVIEW_LINE_COUNT = 5;
 
 export type PhaseLogHandler = ((chunk: string) => void) | null;
+export type ServerLogHandler = ((chunk: string) => void) | null;
 export type LogRefreshHandler = (() => Promise<void>) | null;
+
+type LogChannel = "all" | "server" | string;
 
 export type LogPanelProps = {
   project: Project | null;
@@ -22,45 +25,29 @@ export type LogPanelProps = {
   /** When `active.json` is cleared mid-run, load logs by issue + phase. */
   logIssueFallback?: number | null;
   registerPhaseLogHandler?: (handler: PhaseLogHandler) => void;
+  registerServerLogHandler?: (handler: ServerLogHandler) => void;
   registerRefreshHandler?: (handler: LogRefreshHandler) => void;
   onRefresh?: () => void;
   refreshing?: boolean;
   refreshError?: string | null;
 };
 
-function applyProjectLog(
-  result: NonNullable<Awaited<ReturnType<typeof fetchProjectLog>>>,
-  options: {
-    livePhaseRef: MutableRefObject<string | null>;
-    viewPhaseRef: MutableRefObject<string | null>;
-    reseedView: boolean;
-    preserveSseTail: boolean;
-    lastFetchedLogRef: MutableRefObject<string>;
-    setPhases: (phases: string[]) => void;
-    setViewPhase: (phase: string) => void;
-    setLogText: (log: string | ((current: string) => string)) => void;
-  },
-): void {
-  options.livePhaseRef.current = result.phase;
-  options.setPhases(result.phases);
-  const fetchedLog = result.log ?? "";
-  if (options.reseedView) {
-    options.viewPhaseRef.current = result.phase;
-    options.setViewPhase(result.phase);
-    options.lastFetchedLogRef.current = fetchedLog;
-    options.setLogText(fetchedLog);
-    return;
+function combineAllLogs(options: { serverLog: string; phases: string[]; phaseLogs: string[] }): string {
+  const blocks: string[] = [];
+  blocks.push("=== Server ===\n");
+  blocks.push(options.serverLog);
+  if (!options.serverLog.endsWith("\n")) {
+    blocks.push("\n");
   }
-  if (options.preserveSseTail) {
-    options.setLogText((current) => {
-      const sseSuffix = current.slice(options.lastFetchedLogRef.current.length);
-      options.lastFetchedLogRef.current = fetchedLog;
-      return fetchedLog + sseSuffix;
-    });
-    return;
+  for (const [index, phase] of options.phases.entries()) {
+    const log = options.phaseLogs[index] ?? "";
+    blocks.push(`\n=== ${phase} ===\n`);
+    blocks.push(log);
+    if (log && !log.endsWith("\n")) {
+      blocks.push("\n");
+    }
   }
-  options.lastFetchedLogRef.current = fetchedLog;
-  options.setLogText(fetchedLog);
+  return blocks.join("");
 }
 
 export function LogPanel({
@@ -68,6 +55,7 @@ export function LogPanel({
   activePhase,
   logIssueFallback = null,
   registerPhaseLogHandler,
+  registerServerLogHandler,
   registerRefreshHandler,
   onRefresh,
   refreshing = false,
@@ -75,10 +63,10 @@ export function LogPanel({
 }: LogPanelProps) {
   const [logText, setLogText] = useState("");
   const [phases, setPhases] = useState<string[]>([]);
-  const [viewPhase, setViewPhase] = useState<string | null>(null);
+  const [channel, setChannel] = useState<LogChannel>("all");
   const [expanded, setExpanded] = useState(false);
   const livePhaseRef = useRef<string | null>(null);
-  const viewPhaseRef = useRef<string | null>(null);
+  const channelRef = useRef<LogChannel>("all");
   const lastFetchedLogRef = useRef("");
   const expandedBodyRef = useRef<HTMLPreElement>(null);
   const previewBodyRef = useRef<HTMLPreElement>(null);
@@ -87,63 +75,105 @@ export function LogPanel({
   const previousActivePhaseRef = useRef<string | null>(null);
   const [hasActiveLog, setHasActiveLog] = useState(false);
 
-  const isViewingLivePhase = useCallback(() => {
-    return (
-      viewPhaseRef.current !== null &&
-      livePhaseRef.current !== null &&
-      viewPhaseRef.current === livePhaseRef.current
-    );
+  const isViewingLivePhaseLogStream = useCallback(() => {
+    if (!livePhaseRef.current) {
+      return false;
+    }
+    const selected = channelRef.current;
+    return selected === "all" || selected === livePhaseRef.current;
   }, []);
 
-  const loadProjectLog = useCallback(
-    async (options: { phase?: string; reseedView: boolean; preserveSseTail?: boolean }) => {
+  const fetchLogWithFallback = useCallback(
+    async (options: { projectId: string; phase?: string }) => {
+      let result = await fetchProjectLog(options.projectId, { phase: options.phase });
+      if (
+        !result &&
+        logIssueFallback !== null &&
+        logIssueFallback !== undefined &&
+        options.phase
+      ) {
+        result = await fetchProjectLog(options.projectId, {
+          phase: options.phase,
+          issue: logIssueFallback,
+        });
+      }
+      return result;
+    },
+    [logIssueFallback],
+  );
+
+  const loadChannelLog = useCallback(
+    async (options: { selectedChannel: LogChannel; reseedView: boolean; preserveSseTail?: boolean }) => {
       if (!project) {
         return null;
       }
       const generation = ++logLoadGenerationRef.current;
       try {
-        let result = await fetchProjectLog(project.id, { phase: options.phase });
-        if (
-          !result &&
-          logIssueFallback !== null &&
-          logIssueFallback !== undefined &&
-          options.phase
-        ) {
-          result = await fetchProjectLog(project.id, {
-            phase: options.phase,
-            issue: logIssueFallback,
-          });
-        }
+        const meta = await fetchProjectLog(project.id);
         if (generation !== logLoadGenerationRef.current) {
           return null;
         }
-        if (!result) {
+        if (!meta) {
           setHasActiveLog(false);
           setLogText("");
           setPhases([]);
-          setViewPhase(null);
+          setChannel("all");
+          channelRef.current = "all";
           livePhaseRef.current = null;
-          viewPhaseRef.current = null;
           lastFetchedLogRef.current = "";
           return null;
         }
         setHasActiveLog(true);
-        applyProjectLog(result, {
-          livePhaseRef,
-          viewPhaseRef,
-          reseedView: options.reseedView,
-          preserveSseTail: options.preserveSseTail ?? false,
-          lastFetchedLogRef,
-          setPhases,
-          setViewPhase,
-          setLogText,
-        });
-        return result;
+        livePhaseRef.current = meta.phase;
+        setPhases(meta.phases);
+
+        const selectedChannel = options.reseedView ? "all" : options.selectedChannel;
+        if (options.reseedView) {
+          setChannel("all");
+          channelRef.current = "all";
+        }
+
+        let fetchedLog = "";
+        if (selectedChannel === "all") {
+          const server = await fetchLogWithFallback({ projectId: project.id, phase: "server" });
+          const phaseResults = await Promise.all(
+            meta.phases.map((phase) => fetchLogWithFallback({ projectId: project.id, phase })),
+          );
+          const phaseLogs = phaseResults.map((result) => result?.log ?? "");
+          fetchedLog = combineAllLogs({
+            serverLog: server?.log ?? "",
+            phases: meta.phases,
+            phaseLogs,
+          });
+        } else if (selectedChannel === "server") {
+          const server = await fetchLogWithFallback({ projectId: project.id, phase: "server" });
+          fetchedLog = server?.log ?? "";
+        } else {
+          const result = await fetchLogWithFallback({ projectId: project.id, phase: selectedChannel });
+          fetchedLog = result?.log ?? "";
+        }
+
+        if (generation !== logLoadGenerationRef.current) {
+          return null;
+        }
+
+        if (options.preserveSseTail) {
+          setLogText((current) => {
+            const sseSuffix = current.slice(lastFetchedLogRef.current.length);
+            lastFetchedLogRef.current = fetchedLog;
+            return fetchedLog + sseSuffix;
+          });
+          return meta;
+        }
+
+        lastFetchedLogRef.current = fetchedLog;
+        setLogText(fetchedLog);
+        return meta;
       } catch {
         return null;
       }
     },
-    [logIssueFallback, project],
+    [fetchLogWithFallback, project],
   );
 
   const refreshLog = useCallback(async () => {
@@ -151,33 +181,25 @@ export function LogPanel({
       return;
     }
     const generation = ++logLoadGenerationRef.current;
-    const phase = isViewingLivePhase() ? undefined : viewPhaseRef.current ?? undefined;
-    let result = await fetchProjectLog(project.id, { phase });
-    if (!result && logIssueFallback !== null && logIssueFallback !== undefined && phase) {
-      result = await fetchProjectLog(project.id, { phase, issue: logIssueFallback });
-    }
+    const selected = channelRef.current;
+    const preserveSseTail =
+      selected === "server" || selected === "all" ? true : isViewingLivePhaseLogStream();
+    const meta = await loadChannelLog({
+      selectedChannel: selected,
+      reseedView: false,
+      preserveSseTail,
+    });
     if (generation !== logLoadGenerationRef.current) {
       return;
     }
-    if (!result) {
+    if (!meta) {
       throw new Error("Log not found");
     }
-    setHasActiveLog(true);
-    applyProjectLog(result, {
-      livePhaseRef,
-      viewPhaseRef,
-      reseedView: false,
-      preserveSseTail: isViewingLivePhase(),
-      lastFetchedLogRef,
-      setPhases,
-      setViewPhase,
-      setLogText,
-    });
-  }, [isViewingLivePhase, logIssueFallback, project]);
+  }, [isViewingLivePhaseLogStream, loadChannelLog, project]);
 
   useEffect(() => {
-    viewPhaseRef.current = viewPhase;
-  }, [viewPhase]);
+    channelRef.current = channel;
+  }, [channel]);
 
   useEffect(() => {
     if (!registerRefreshHandler) {
@@ -193,19 +215,19 @@ export function LogPanel({
     if (!project) {
       setLogText("");
       setPhases([]);
-      setViewPhase(null);
+      setChannel("all");
       setHasActiveLog(false);
       setExpanded(false);
       livePhaseRef.current = null;
-      viewPhaseRef.current = null;
+      channelRef.current = "all";
       lastFetchedLogRef.current = "";
       return;
     }
 
     setExpanded(false);
     previousActivePhaseRef.current = activePhase;
-    void loadProjectLog({ reseedView: true });
-  }, [activePhase, project?.id, loadProjectLog]);
+    void loadChannelLog({ selectedChannel: "all", reseedView: true });
+  }, [activePhase, project?.id, loadChannelLog]);
 
   useEffect(() => {
     if (!project || !activePhase) {
@@ -218,8 +240,8 @@ export function LogPanel({
       return;
     }
 
-    void loadProjectLog({ reseedView: isViewingLivePhase() });
-  }, [activePhase, isViewingLivePhase, loadProjectLog, project]);
+    void loadChannelLog({ selectedChannel: channelRef.current, reseedView: false });
+  }, [activePhase, loadChannelLog, project]);
 
   useEffect(() => {
     if (!registerPhaseLogHandler || !project) {
@@ -227,7 +249,7 @@ export function LogPanel({
     }
 
     const onChunk = (chunk: string) => {
-      if (!isViewingLivePhase() || !chunk) {
+      if (!isViewingLivePhaseLogStream() || !chunk) {
         return;
       }
       setLogText((current) => appendLogChunk(current, chunk));
@@ -237,7 +259,26 @@ export function LogPanel({
     return () => {
       registerPhaseLogHandler(null);
     };
-  }, [isViewingLivePhase, project?.id, registerPhaseLogHandler]);
+  }, [isViewingLivePhaseLogStream, project?.id, registerPhaseLogHandler]);
+
+  useEffect(() => {
+    if (!registerServerLogHandler || !project) {
+      return;
+    }
+
+    const onChunk = (chunk: string) => {
+      const selected = channelRef.current;
+      if ((selected !== "server" && selected !== "all") || !chunk) {
+        return;
+      }
+      setLogText((current) => appendLogChunk(current, chunk));
+    };
+
+    registerServerLogHandler(onChunk);
+    return () => {
+      registerServerLogHandler(null);
+    };
+  }, [project?.id, registerServerLogHandler]);
 
   useLayoutEffect(() => {
     const body = expanded ? expandedBodyRef.current : previewBodyRef.current;
@@ -247,23 +288,45 @@ export function LogPanel({
     scrollLogBodyToTail(body);
   }, [expanded, logText]);
 
-  const handlePhaseChange = (phase: string) => {
+  const handleChannelChange = (nextChannel: LogChannel) => {
     if (!project) {
       return;
     }
     const generation = ++phaseFetchGenerationRef.current;
-    setViewPhase(phase);
-    viewPhaseRef.current = phase;
+    setChannel(nextChannel);
+    channelRef.current = nextChannel;
     void (async () => {
       try {
-        let result = await fetchProjectLog(project.id, { phase });
-        if (!result && logIssueFallback !== null && logIssueFallback !== undefined) {
-          result = await fetchProjectLog(project.id, { phase, issue: logIssueFallback });
-        }
-        if (generation !== phaseFetchGenerationRef.current || !result) {
+        const meta = await fetchProjectLog(project.id);
+        if (generation !== phaseFetchGenerationRef.current || !meta) {
           return;
         }
-        const fetchedLog = result.log ?? "";
+        livePhaseRef.current = meta.phase;
+        setPhases(meta.phases);
+
+        let fetchedLog = "";
+        if (nextChannel === "all") {
+          const server = await fetchLogWithFallback({ projectId: project.id, phase: "server" });
+          const phaseResults = await Promise.all(
+            meta.phases.map((phase) => fetchLogWithFallback({ projectId: project.id, phase })),
+          );
+          const phaseLogs = phaseResults.map((result) => result?.log ?? "");
+          fetchedLog = combineAllLogs({
+            serverLog: server?.log ?? "",
+            phases: meta.phases,
+            phaseLogs,
+          });
+        } else if (nextChannel === "server") {
+          const server = await fetchLogWithFallback({ projectId: project.id, phase: "server" });
+          fetchedLog = server?.log ?? "";
+        } else {
+          const result = await fetchLogWithFallback({ projectId: project.id, phase: nextChannel });
+          fetchedLog = result?.log ?? "";
+        }
+
+        if (generation !== phaseFetchGenerationRef.current) {
+          return;
+        }
         lastFetchedLogRef.current = fetchedLog;
         setLogText(fetchedLog);
       } catch {
@@ -314,25 +377,27 @@ export function LogPanel({
           </button>
         }
       />
+      {phases.length > 0 ? (
+        <label className="log-phase-label">
+          Log channel
+          <select
+            aria-label="Log channel"
+            className="log-phase-select"
+            value={channel}
+            onChange={(event) => handleChannelChange(event.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="server">Server</option>
+            {phases.map((phase) => (
+              <option key={phase} value={phase}>
+                {phase}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {expanded ? (
         <>
-          {phases.length > 0 ? (
-            <label className="log-phase-label">
-              Phase
-              <select
-                aria-label="Phase"
-                className="log-phase-select"
-                value={viewPhase ?? ""}
-                onChange={(event) => handlePhaseChange(event.target.value)}
-              >
-                {phases.map((phase) => (
-                  <option key={phase} value={phase}>
-                    {phase}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
           <pre
             ref={expandedBodyRef}
             className="log-body log-body--expanded"

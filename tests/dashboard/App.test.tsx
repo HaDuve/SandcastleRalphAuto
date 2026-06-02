@@ -1504,13 +1504,47 @@ describe("App", () => {
             { status: 200 },
           );
         }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "server",
+              log: "",
+              phases: ["tdd", "create-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=tdd") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "tdd output\n",
+              phases: ["tdd", "create-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=create-pr") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "create-pr",
+              log: "create-pr output\n",
+              phases: ["tdd", "create-pr"],
+            }),
+            { status: 200 },
+          );
+        }
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
       }),
     );
 
     render(<App />);
 
-    expect(await screen.findByText("tdd output")).toBeInTheDocument();
+    await screen.findByTestId("log-preview");
+    expect(screen.getByTestId("log-preview")).toHaveTextContent("tdd output");
 
     await act(async () => {
       for (const source of sources) {
@@ -1924,11 +1958,35 @@ describe("App", () => {
         }
         if (url === "/api/projects/portfolio/log") {
           logFetchCount += 1;
+          const baseLog = logFetchCount === 1 ? "seed\n" : "seed\nrefreshed\n";
           return new Response(
             JSON.stringify({
               issue: 11,
               phase: "tdd",
-              log: logFetchCount === 1 ? "seed\n" : "seed\nrefreshed\n",
+              log: baseLog,
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "server",
+              log: "",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=tdd") {
+          const baseLog = logFetchCount <= 1 ? "seed\n" : "seed\nrefreshed\n";
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: baseLog,
               phases: ["tdd"],
             }),
             { status: 200 },
@@ -1940,7 +1998,8 @@ describe("App", () => {
 
     const user = userEvent.setup();
     render(<App />);
-    expect(await screen.findByText("seed")).toBeInTheDocument();
+    await screen.findByTestId("log-preview");
+    expect(screen.getByTestId("log-preview")).toHaveTextContent("seed");
 
     await act(async () => {
       for (const source of sources) {

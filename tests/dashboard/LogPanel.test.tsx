@@ -39,6 +39,48 @@ function stubLogFetch(log: string, phases = ["tdd", "review-pr"], phase = "revie
   });
 }
 
+function stubAllAndServerLogFetch(options?: {
+  phases?: string[];
+  phase?: string;
+  livePhaseLog?: string;
+  phaseLogs?: Record<string, string>;
+  serverLog?: string;
+}) {
+  const phases = options?.phases ?? ["tdd", "review-pr"];
+  const livePhase = options?.phase ?? "review-pr";
+  const livePhaseLog = options?.livePhaseLog ?? "review output\n";
+  const phaseLogs: Record<string, string> = {
+    tdd: "tdd output\n",
+    "review-pr": "review-pr output\n",
+    ...(options?.phaseLogs ?? {}),
+  };
+  const serverLog = options?.serverLog ?? "server output\n";
+
+  return vi.fn(async (url: string) => {
+    if (url === "/api/projects/portfolio/log") {
+      return new Response(
+        JSON.stringify({ issue: 7, phase: livePhase, log: livePhaseLog, phases }),
+        { status: 200 },
+      );
+    }
+    if (url === "/api/projects/portfolio/log?phase=server") {
+      return new Response(
+        JSON.stringify({ issue: 7, phase: "server", log: serverLog, phases }),
+        { status: 200 },
+      );
+    }
+    for (const phase of phases) {
+      if (url === `/api/projects/portfolio/log?phase=${encodeURIComponent(phase)}`) {
+        return new Response(
+          JSON.stringify({ issue: 7, phase, log: phaseLogs[phase] ?? "", phases }),
+          { status: 200 },
+        );
+      }
+    }
+    return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+  });
+}
+
 describe("LogPanel", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -52,9 +94,20 @@ describe("LogPanel", () => {
 
   it("shows the latest five lines in the collapsed preview", async () => {
     const log = ["line1", "line2", "line3", "line4", "line5", "line6", "line7"].join("\n") + "\n";
-    vi.stubGlobal("fetch", stubLogFetch(log));
+    vi.stubGlobal(
+      "fetch",
+      stubAllAndServerLogFetch({
+        livePhaseLog: log,
+        phaseLogs: { "review-pr": log },
+        serverLog: "",
+      }),
+    );
 
+    const user = userEvent.setup();
     render(<LogPanel project={portfolio} activePhase="review-pr" />);
+
+    await screen.findByTestId("log-preview");
+    await user.selectOptions(screen.getByRole("combobox", { name: /log channel/i }), "review-pr");
 
     const preview = await screen.findByTestId("log-preview");
     expect(preview).toHaveTextContent("line3");
@@ -62,14 +115,37 @@ describe("LogPanel", () => {
     expect(preview).not.toHaveTextContent("line2");
   });
 
+  it("shows the log channel dropdown without expanding", async () => {
+    vi.stubGlobal("fetch", stubAllAndServerLogFetch());
+
+    render(<LogPanel project={portfolio} activePhase="review-pr" />);
+
+    await screen.findByTestId("log-preview");
+    const selector = screen.getByRole("combobox", { name: /log channel/i });
+    expect(selector).toBeInTheDocument();
+    expect(selector).toHaveValue("all");
+    expect(screen.getByRole("option", { name: /all/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /server/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^tdd$/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^review-pr$/i })).toBeInTheDocument();
+  });
+
   it("reveals the full log when expanded", async () => {
     const log = ["line1", "line2", "line3", "line4", "line5", "line6", "line7"].join("\n") + "\n";
-    vi.stubGlobal("fetch", stubLogFetch(log));
+    vi.stubGlobal(
+      "fetch",
+      stubAllAndServerLogFetch({
+        livePhaseLog: log,
+        phaseLogs: { "review-pr": log },
+        serverLog: "",
+      }),
+    );
 
     const user = userEvent.setup();
     render(<LogPanel project={portfolio} activePhase="review-pr" />);
 
     await screen.findByTestId("log-preview");
+    await user.selectOptions(screen.getByRole("combobox", { name: /log channel/i }), "review-pr");
     await user.click(screen.getByRole("button", { name: /expand/i }));
 
     const expanded = screen.getByTestId("log-expanded");
@@ -105,26 +181,67 @@ describe("LogPanel", () => {
             { status: 200 },
           );
         }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "server",
+              log: "",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=tdd") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "tdd",
+              log: "tdd output\n",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=review-pr") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "review-pr",
+              log: "review-pr output\n",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
       }),
     );
 
     const { rerender } = render(<LogPanel project={portfolio} activePhase="tdd" />);
 
-    expect(await screen.findByText("tdd output")).toBeInTheDocument();
+    expect(await screen.findByText(/=== tdd ===/i)).toBeInTheDocument();
+    expect(screen.getByTestId("log-preview")).toHaveTextContent("tdd output");
 
     rerender(<LogPanel project={portfolio} activePhase="review-pr" />);
 
     await waitFor(() => {
       expect(screen.getByTestId("log-preview")).toHaveTextContent("review-pr output");
     });
-    expect(screen.getByTestId("log-preview")).not.toHaveTextContent("tdd output");
+    expect(screen.getByTestId("log-preview")).toHaveTextContent("tdd output");
     expect(logFetchCount).toBeGreaterThanOrEqual(2);
   });
 
   it("appends phase-log chunks from the shared events subscription", async () => {
     let tailHandler: ((chunk: string) => void) | null = null;
-    vi.stubGlobal("fetch", stubLogFetch("seed\n"));
+    vi.stubGlobal(
+      "fetch",
+      stubAllAndServerLogFetch({
+        livePhaseLog: "seed\n",
+        phaseLogs: { "review-pr": "seed\n" },
+        serverLog: "",
+      }),
+    );
 
     render(
       <LogPanel
@@ -136,7 +253,7 @@ describe("LogPanel", () => {
       />,
     );
 
-    await screen.findByText("seed");
+    await screen.findByText(/seed/);
     tailHandler!("live");
 
     await waitFor(() => {
@@ -146,7 +263,14 @@ describe("LogPanel", () => {
 
   it("ignores phase-log chunks while viewing a prior phase", async () => {
     let tailHandler: ((chunk: string) => void) | null = null;
-    vi.stubGlobal("fetch", stubLogFetch("review output\n"));
+    vi.stubGlobal(
+      "fetch",
+      stubAllAndServerLogFetch({
+        livePhaseLog: "review output\n",
+        phaseLogs: { "review-pr": "review output\n", tdd: "tdd-only line\n" },
+        serverLog: "",
+      }),
+    );
 
     const user = userEvent.setup();
     render(
@@ -161,7 +285,7 @@ describe("LogPanel", () => {
 
     await screen.findByTestId("log-preview");
     await user.click(screen.getByRole("button", { name: /expand/i }));
-    await user.selectOptions(await screen.findByRole("combobox", { name: /phase/i }), "tdd");
+    await user.selectOptions(await screen.findByRole("combobox", { name: /log channel/i }), "tdd");
 
     await waitFor(() => {
       expect(screen.getByTestId("log-expanded")).toHaveTextContent("tdd-only line");
@@ -175,7 +299,11 @@ describe("LogPanel", () => {
   });
 
   it("loads a prior phase log from the dropdown when expanded", async () => {
-    const fetchMock = stubLogFetch("review output\n");
+    const fetchMock = stubAllAndServerLogFetch({
+      livePhaseLog: "review output\n",
+      phaseLogs: { "review-pr": "review output\n", tdd: "tdd-only line\n" },
+      serverLog: "",
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const user = userEvent.setup();
@@ -184,7 +312,7 @@ describe("LogPanel", () => {
     await screen.findByTestId("log-preview");
     await user.click(screen.getByRole("button", { name: /expand/i }));
 
-    const phaseSelect = await screen.findByRole("combobox", { name: /phase/i });
+    const phaseSelect = await screen.findByRole("combobox", { name: /log channel/i });
     await user.selectOptions(phaseSelect, "tdd");
 
     await waitFor(() => {
@@ -212,6 +340,39 @@ describe("LogPanel", () => {
             { status: 200 },
           );
         }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "server",
+              log: "",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=tdd") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "tdd",
+              log: "",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=review-pr") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "review-pr",
+              log: logFetchCount === 1 ? "seed\n" : "seed\nrefreshed-base\n",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
         return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
       }),
     );
@@ -229,7 +390,7 @@ describe("LogPanel", () => {
       />,
     );
 
-    await screen.findByText("seed");
+    await screen.findByText(/seed/);
     tailHandler!("live-tail\n");
 
     await waitFor(() => {
@@ -256,6 +417,17 @@ describe("LogPanel", () => {
               issue: 7,
               phase: "review-pr",
               log: "review output\n",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "server",
+              log: "",
               phases: ["tdd", "review-pr"],
             }),
             { status: 200 },
@@ -289,7 +461,7 @@ describe("LogPanel", () => {
 
     await screen.findByTestId("log-preview");
     await user.click(screen.getByRole("button", { name: /expand/i }));
-    await user.selectOptions(await screen.findByRole("combobox", { name: /phase/i }), "tdd");
+    await user.selectOptions(await screen.findByRole("combobox", { name: /log channel/i }), "tdd");
 
     await waitFor(() => {
       expect(screen.getByTestId("log-expanded")).toHaveTextContent("historical tdd");
@@ -298,6 +470,28 @@ describe("LogPanel", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
+        if (url === "/api/projects/portfolio/log") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "review-pr",
+              log: "review output\n",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "/api/projects/portfolio/log?phase=server") {
+          return new Response(
+            JSON.stringify({
+              issue: 7,
+              phase: "server",
+              log: "",
+              phases: ["tdd", "review-pr"],
+            }),
+            { status: 200 },
+          );
+        }
         if (url === "/api/projects/portfolio/log?phase=tdd") {
           return new Response(
             JSON.stringify({
