@@ -21,9 +21,50 @@ import {
   isReviewPrBlockersStallReason,
   isReviewPrRequestChangesToReviewTdd,
 } from "./reviewPrRoute.js";
+import {
+  isTransientCursorErrorMessage,
+  isTransientCursorRetriesExhaustedMessage,
+} from "../runner/transientCursorError.js";
 
 export function isHandoffSchemaBlockReason(reason: string | undefined): boolean {
   return reason !== undefined && reason.includes("Invalid handoff schema");
+}
+
+export function isTransientCursorBlockReason(reason: string | undefined): boolean {
+  return (
+    reason !== undefined &&
+    isTransientCursorErrorMessage(reason) &&
+    !isTransientCursorRetriesExhaustedMessage(reason)
+  );
+}
+
+/**
+ * When a phase failed only due to transient Cursor `resource_exhausted` after
+ * in-run retries, allow dashboard Start to resume the same phase.
+ */
+export function tryReconcileTransientCursorBlockedHandoff(input: {
+  active: ActiveState;
+}): ActiveState | null {
+  if (
+    input.active.status !== "blocked" ||
+    !isTransientCursorBlockReason(input.active.reason)
+  ) {
+    return null;
+  }
+
+  const phase = parseRunnablePhase(input.active.phase);
+  if (phase === null) {
+    return null;
+  }
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: input.active.pr,
+    phase,
+    status: "active",
+    startedAt: input.active.startedAt,
+  };
 }
 
 function phaseFromNextSkill(nextSkill: string): RunnablePhase | null {

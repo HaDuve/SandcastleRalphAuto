@@ -8,7 +8,8 @@ import {
   type SandboxRunResult,
 } from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { join } from "node:path";
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   readHostHandoff,
@@ -20,6 +21,17 @@ import {
 } from "../handoff/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 import { type RunnablePhase } from "../prompts/phases.js";
+import {
+  DEFAULT_CURSOR_TRANSIENT_BASE_DELAY_MS,
+  DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO,
+  DEFAULT_CURSOR_TRANSIENT_MAX_ATTEMPTS,
+  DEFAULT_CURSOR_TRANSIENT_MAX_DELAY_MS,
+  formatTransientCursorExhaustedMessage,
+  isTransientCursorError,
+  jitterDelayMs,
+  sleep,
+  transientCursorBackoffDelayMs,
+} from "./transientCursorError.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
 
@@ -57,6 +69,11 @@ export type RunPhaseOptions = {
   seedHandoff?: Handoff;
   /** Live agent stream events (text/toolCall) forwarded from Sandcastle file logging. */
   onAgentStreamEvent?: (event: AgentStreamEvent) => void;
+  /** Retries for transient Cursor `resource_exhausted` failures (exponential backoff). */
+  cursorTransientMaxAttempts?: number;
+  cursorTransientBaseDelayMs?: number;
+  cursorTransientMaxDelayMs?: number;
+  cursorTransientJitterRatio?: number;
 };
 
 export type RunPhaseResult = {
@@ -122,6 +139,67 @@ const defaultDeps = (): RunPhaseDeps => ({
   readHandoff,
 });
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function runSandboxWithTransientRetry(
+  run: () => Promise<SandcastleSandboxRunResult>,
+  input: {
+    logPath: string;
+    signal?: AbortSignal;
+    maxAttempts: number;
+    baseDelayMs: number;
+    maxDelayMs: number;
+    jitterRatio: number;
+  },
+): Promise<SandcastleSandboxRunResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= input.maxAttempts; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      lastError = error;
+      const canRetry =
+        isTransientCursorError(error) && attempt < input.maxAttempts;
+      if (!canRetry) {
+        if (
+          isTransientCursorError(error) &&
+          error instanceof Error &&
+          attempt >= input.maxAttempts
+        ) {
+          throw new Error(
+            formatTransientCursorExhaustedMessage(
+              error.message,
+              input.maxAttempts,
+            ),
+            { cause: error },
+          );
+        }
+        throw error;
+      }
+      const delayMs = transientCursorBackoffDelayMs(
+        attempt + 1,
+        input.baseDelayMs,
+        input.maxDelayMs,
+      );
+      const jitteredDelayMs = jitterDelayMs(delayMs, input.jitterRatio);
+      const message =
+        error instanceof Error ? error.message : "Transient Cursor error";
+      await mkdir(dirname(input.logPath), { recursive: true });
+      await appendFile(
+        input.logPath,
+        `\n--- Transient Cursor error (attempt ${attempt}/${input.maxAttempts}): ${message.trim()} — retrying in ${jitteredDelayMs}ms ---\n`,
+      );
+      await sleep(jitteredDelayMs, input.signal);
+    }
+  }
+  throw lastError;
+}
+
 export async function runPhase(
   options: RunPhaseOptions,
   deps: RunPhaseDeps = defaultDeps(),
@@ -183,16 +261,36 @@ export async function runPhase(
       options.phase,
     );
 
-    const runResult = await sandbox.run({
-      ...baseRunOptions,
-      logging: {
-        type: "file",
-        path: logPath,
-        ...(options.onAgentStreamEvent
-          ? { onAgentStreamEvent: options.onAgentStreamEvent }
-          : {}),
+    const maxAttempts =
+      options.cursorTransientMaxAttempts ?? DEFAULT_CURSOR_TRANSIENT_MAX_ATTEMPTS;
+    const baseDelayMs =
+      options.cursorTransientBaseDelayMs ?? DEFAULT_CURSOR_TRANSIENT_BASE_DELAY_MS;
+    const maxDelayMs =
+      options.cursorTransientMaxDelayMs ?? DEFAULT_CURSOR_TRANSIENT_MAX_DELAY_MS;
+    const jitterRatio =
+      options.cursorTransientJitterRatio ?? DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO;
+
+    const runResult = await runSandboxWithTransientRetry(
+      () =>
+        sandbox.run({
+          ...baseRunOptions,
+          logging: {
+            type: "file",
+            path: logPath,
+            ...(options.onAgentStreamEvent
+              ? { onAgentStreamEvent: options.onAgentStreamEvent }
+              : {}),
+          },
+        }),
+      {
+        logPath,
+        signal: options.signal,
+        maxAttempts,
+        baseDelayMs,
+        maxDelayMs,
+        jitterRatio,
       },
-    });
+    );
 
     // Prefer the handoff written by the phase; if none was written, carry over host-owned handoff.
     let handoff: Handoff;

@@ -20,6 +20,7 @@ import {
   isMergeDeferredToBabysit,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
+  tryReconcileTransientCursorBlockedHandoff,
 } from "../handoff/index.js";
 import { PHASE_COMPLETE_SIGNAL } from "../runner/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
@@ -261,7 +262,8 @@ export async function runLinearSlice(
         stateRoot,
         projectId,
         active: existing,
-      }));
+      })) ??
+      tryReconcileTransientCursorBlockedHandoff({ active: existing });
     if (reconciled === null) {
       return { status: "blocked", active: existing, phasesCompleted };
     }
