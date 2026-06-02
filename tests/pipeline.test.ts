@@ -74,6 +74,30 @@ describe("advanceSlice", () => {
     branch: "issue-7-pipeline",
   };
 
+  it("short-circuits after create-pr when there is no diff and no PR to review", () => {
+    const outcome = advanceSlice({
+      ...base,
+      phase: "create-pr",
+      result: phaseResult("create-pr", "/next", {
+        pr: undefined,
+        blockers: [],
+        mergeReady: false,
+      }),
+    });
+
+    expect(outcome).toEqual({
+      ok: true,
+      handoffToNext: true,
+      active: {
+        issue: 7,
+        phase: "merge",
+        branch: "issue-7-pipeline",
+        pr: undefined,
+        status: "active",
+      },
+    });
+  });
+
   it("advances review-pr to review-tdd when verdict omitted but nextSkill routes", () => {
     const outcome = advanceSlice({
       ...base,

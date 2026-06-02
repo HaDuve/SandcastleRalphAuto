@@ -82,6 +82,13 @@ function advanceFailureReason(
     return `Handoff has blockers: ${handoff.blockers.join("; ")}`;
   }
   const expected = expectedNextSkill(phase);
+  if (
+    phase === "create-pr" &&
+    handoff.nextSkill === "/next" &&
+    handoff.pr === undefined
+  ) {
+    return null;
+  }
   if (handoff.nextSkill !== expected) {
     const pipelineLabel =
       phase === "babysit" ? "babysit recovery" : "linear pipeline";
@@ -107,6 +114,20 @@ export function advanceSlice(input: AdvanceSliceInput): AdvanceSliceOutcome {
         skillForPhase(input.phase),
       ),
       reason: failure,
+    };
+  }
+
+  if (input.phase === "create-pr" && handoff.nextSkill === "/next") {
+    return {
+      ok: true,
+      handoffToNext: true,
+      active: {
+        issue: input.issue,
+        phase: "merge",
+        branch: input.branch,
+        pr: handoff.pr ?? input.pr,
+        status: "active",
+      },
     };
   }
 
