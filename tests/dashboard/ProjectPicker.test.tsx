@@ -1,6 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import {
+  cursorWorkspaceLink,
+  githubRepoUrl,
+  truncateRemote,
+} from "../../dashboard/src/linkTargets.js";
 import { ProjectPicker } from "../../dashboard/src/ProjectPicker.js";
 import type { Project, ProjectActiveSummary } from "../../dashboard/src/types.js";
 import type { WorkerState, WorkerStatus } from "../../dashboard/src/workerStatus.js";
@@ -66,6 +71,47 @@ describe("ProjectPicker", () => {
     renderPicker();
 
     expect(screen.getByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
+  });
+
+  it("renders the project id as a Cursor workspace link on its own line", () => {
+    renderPicker();
+
+    const idLink = screen.getByRole("link", { name: "portfolio" });
+    expect(idLink).toHaveAttribute("href", cursorWorkspaceLink(portfolio.path));
+    expect(idLink.closest(".project-identity")).not.toBeNull();
+  });
+
+  it("renders the remote as a truncated GitHub repo link", () => {
+    const longRemote = "HaDuve/VeryLongRepositoryName";
+    renderPicker({
+      projects: [{ ...portfolio, remote: longRemote }],
+    });
+
+    const remoteLink = screen.getByRole("link", { name: truncateRemote(longRemote) });
+    expect(remoteLink).toHaveAttribute("href", githubRepoUrl(longRemote));
+    expect(remoteLink).toHaveAttribute("target", "_blank");
+    expect(remoteLink).toHaveAttribute("rel", "noreferrer");
+    expect(remoteLink).toHaveAttribute("title", longRemote);
+  });
+
+  it("keeps a short remote display unchanged in the sidebar link", () => {
+    const shortRemote = "o/r";
+    renderPicker({
+      projects: [{ ...portfolio, remote: shortRemote }],
+    });
+
+    const remoteLink = screen.getByRole("link", { name: shortRemote });
+    expect(remoteLink).toHaveAttribute("href", githubRepoUrl(shortRemote));
+    expect(remoteLink).toHaveAttribute("title", shortRemote);
+  });
+
+  it("places the project id link outside the selection label", () => {
+    renderPicker();
+
+    const card = screen.getByRole("checkbox", { name: /portfolio/i }).closest("li");
+    expect(card).not.toBeNull();
+    const identity = within(card!).getByRole("link", { name: "portfolio" });
+    expect(identity.closest("label")).toBeNull();
   });
 
   it("shows a live status indicator on each project card", () => {
