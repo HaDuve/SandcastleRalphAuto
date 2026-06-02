@@ -12,3 +12,10 @@ export function lastLines(text: string, count: number): string {
 export function appendLogChunk(log: string, chunk: string): string {
   return log + chunk;
 }
+
+export type ScrollableLogBody = { scrollTop: number; scrollHeight: number };
+
+/** Pin a log viewport to the newest lines (terminal tail). */
+export function scrollLogBodyToTail(element: ScrollableLogBody): void {
+  element.scrollTop = element.scrollHeight;
+}

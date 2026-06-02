@@ -1758,6 +1758,70 @@ describe("App", () => {
     expect(within(screen.getByRole("region", { name: /^queue$/i })).getByText(/#10/)).toBeInTheDocument();
   });
 
+  it("shows history refresh errors inside the history tile only", async () => {
+    const user = userEvent.setup();
+    let historyFetchCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          historyFetchCount += 1;
+          if (historyFetchCount >= 2) {
+            return new Response(JSON.stringify({ error: "history down" }), { status: 500 });
+          }
+          return new Response(
+            JSON.stringify({
+              history: [
+                {
+                  pr: 99,
+                  issue: 9,
+                  branch: "issue-9",
+                  startedAt: "2026-06-01T00:00:00.000Z",
+                  endedAt: "2026-06-01T01:00:00.000Z",
+                  phases: [
+                    {
+                      phase: "merge",
+                      startedAt: "2026-06-01T00:00:00.000Z",
+                      endedAt: "2026-06-01T01:00:00.000Z",
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await screen.findByText(/#99/);
+
+    const historyRegion = screen.getByRole("region", { name: /^history$/i });
+    await user.click(within(historyRegion).getByRole("button", { name: /refresh history/i }));
+
+    await waitFor(() => {
+      expect(within(historyRegion).getByRole("alert")).toHaveTextContent("history down");
+    });
+    expect(screen.queryByRole("alert")).toBe(within(historyRegion).getByRole("alert"));
+  });
+
   it("preserves SSE log tail when refreshing the log tile on the live phase", async () => {
     const { sources } = installStoppableEventSource({
       connected: { projectId: "portfolio", workerStatus: "running" },
