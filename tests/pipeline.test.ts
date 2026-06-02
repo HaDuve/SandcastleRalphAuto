@@ -304,6 +304,84 @@ const NEXT_SKILL_BY_PHASE: Record<(typeof CANONICAL_PHASES)[number], string> =
     merge: "/next",
   };
 
+describe("runLinearSlice review-tdd → pre-merge babysit", () => {
+  function mockGhForRedCi(): (
+    args: string[],
+  ) => Promise<string> {
+    return async (args) => {
+      if (args[0] === "pr" && args[1] === "view" && args.includes("state")) {
+        return JSON.stringify({ state: "OPEN" });
+      }
+      if (args.includes("mergeable,mergeStateStatus")) {
+        return JSON.stringify({
+          mergeable: "MERGEABLE",
+          mergeStateStatus: "CLEAN",
+        });
+      }
+      if (args[0] === "pr" && args[1] === "checks") {
+        return JSON.stringify([
+          { name: "ci", state: "FAILURE", bucket: "fail", link: "" },
+        ]);
+      }
+      return "";
+    };
+  }
+
+  it("runs babysit before merge when required CI is red after review-tdd", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-pre-merge-babysit-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 87,
+        branch: "issue-87",
+        projectPath: "/tmp/project",
+        stateRoot,
+        fromPhase: "review-tdd",
+        preMergeBabysit: {
+          project: { remote: projectId, autoMerge: true },
+          gh: mockGhForRedCi(),
+        },
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          if (options.phase === "babysit") {
+            return phaseResult("babysit", "/merge", {
+              pr: 87,
+              verdict: "approve",
+            });
+          }
+          if (options.phase === "review-tdd") {
+            return phaseResult("review-tdd", "/merge", {
+              pr: 87,
+              verdict: "approve",
+              blockers: [],
+            });
+          }
+          return phaseResult("merge", "/next", {
+            pr: 87,
+            acceptanceState: "done",
+            mergeReady: true,
+            verdict: "approve",
+          });
+        },
+      },
+    );
+
+    const babysitIndex = phaseCalls.indexOf("babysit");
+    const mergeIndex = phaseCalls.lastIndexOf("merge");
+    expect(babysitIndex).toBeGreaterThanOrEqual(0);
+    expect(mergeIndex).toBeGreaterThan(babysitIndex);
+    expect(result).toMatchObject({
+      status: "ready-for-next",
+      mergeTailBabysitAttempted: true,
+    });
+  });
+});
+
 describe("runLinearSlice merge → babysit recovery", () => {
   const mergeConflictBlockers = [
     "PR #87 not mergeable: mergeStateStatus DIRTY — merge conflict with main",

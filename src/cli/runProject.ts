@@ -10,6 +10,7 @@ import {
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
   type Handoff,
@@ -583,6 +584,10 @@ export async function runProjectSlice(
         branch: branchForIssue(input.issue),
         projectPath: project.path,
         stateRoot,
+        preMergeBabysit: {
+          project,
+          gh: deps.gh ?? resolved.gh,
+        },
       },
       { runPhase: sliceRunner.runPhase },
     );
@@ -776,6 +781,13 @@ async function resolveLoopStart(
         active,
       })) ??
       (await tryReconcileReviewPrBlockedHandoff({
+        projectPath,
+        branch: branchForIssue(active.issue),
+        stateRoot,
+        projectId: project.remote,
+        active,
+      })) ??
+      (await tryReconcileReviewTddProceduralBlockedHandoff({
         projectPath,
         branch: branchForIssue(active.issue),
         stateRoot,
@@ -995,6 +1007,10 @@ export async function loopProject(
                 stateRoot,
                 fromPhase,
                 git: deps.git,
+                preMergeBabysit: {
+                  project,
+                  gh: deps.gh ?? resolved.gh,
+                },
               },
               { runPhase: sliceRunner.runPhase },
             );

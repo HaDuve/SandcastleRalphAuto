@@ -31,6 +31,7 @@ Required JSON (host validates with Zod after this phase):
 - `pr` — optional PR number (set once a PR exists)
 - `phase` — must be `"review-tdd"` for this run (allowed values: "tdd", "create-pr", "review-pr", "review-tdd", "babysit", "merge", "next")
 - `acceptanceState` — one of: "in-progress" | "done" | "blocked". When this phase **finishes successfully**, use `"done"` — **not** `"complete"`, `"finished"`, or other words.
+- **Do not** use `acceptanceState: "blocked"` for procedural merge constraints (author cannot self-approve, branch protection, missing external Approve). Those are handled by **`/merge`** and the merge gate (and **`/babysit`** if CI/conflicts). Finish with `"done"`, `nextSkill: "/merge"`, and `mergeReady: false` when in-scope review **code** work is complete.
 - `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
 - `blockers` — string array (empty when unblocked)
 - `mergeReady` — boolean
@@ -187,5 +188,7 @@ Rules:
 **PR:** #n — link
 
 When **Merge-ready: yes**, `/merge` may proceed without a follow-up `/review-pr` Approve.
+
+**AFK handoff:** If there is no in-scope code left to implement, still write `acceptanceState: "done"` and `nextSkill: "/merge"`. Red required CI after your push is fixed by **`/babysit`** (host may run it before `/merge`), not by blocking this phase.
 <!-- /sandcastle-ralph:skill-snapshot -->
 

@@ -9,6 +9,7 @@ import {
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
   isTransientCursorBlockReason,
@@ -596,6 +597,55 @@ describe("reconcileBlockedHandoff", () => {
 
     expect(resumed).toEqual({ issue: 32, pr: 43 });
     await expect(access(resolveActivePath(stateRoot, projectId))).rejects.toThrow();
+  });
+
+  it("resumes at merge when review-tdd blocked only for procedural merge reasons", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-review-tdd-proc-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const handoff = {
+      project: projectId,
+      issue: 99,
+      branch: "issue-99",
+      pr: 111,
+      phase: "review-tdd",
+      acceptanceState: "blocked",
+      blockers: ["PR author cannot submit an approving review (branch protection)"],
+      mergeReady: false,
+      nextSkill: "/merge",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    } satisfies Handoff;
+    await writeHostHandoff({ stateRoot, projectId, handoff });
+
+    const active: ActiveState = {
+      issue: 99,
+      phase: "review-tdd",
+      branch: "issue-99",
+      pr: 111,
+      status: "blocked",
+      reason: "Handoff acceptanceState is blocked, expected done",
+      resumeSkill: "/review-tdd",
+      startedAt: "2026-06-01T00:00:00.000Z",
+    };
+    await writeActive(projectId, active, stateRoot);
+
+    const reconciled = await tryReconcileReviewTddProceduralBlockedHandoff({
+      projectPath: join(rootDir, "repo"),
+      branch: "issue-99",
+      stateRoot,
+      projectId,
+      active,
+    });
+
+    expect(reconciled).toEqual({
+      issue: 99,
+      branch: "issue-99",
+      pr: 111,
+      phase: "merge",
+      status: "active",
+      startedAt: active.startedAt,
+    });
   });
 
   it("resumes at babysit when merge stalled on blocked acceptance with conflict handoff", async () => {

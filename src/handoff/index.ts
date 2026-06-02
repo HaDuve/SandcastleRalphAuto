@@ -24,6 +24,12 @@ export {
   formatReviewFindingsNote,
 } from "./reviewPrRoute.js";
 export {
+  isProceduralMergeBlockerText,
+  isReviewTddAcceptanceBlockedStallReason,
+  isReviewTddProceduralOnlyBlockedHandoff,
+  normalizeReviewTddProceduralDoneHandoff,
+} from "./reviewTddRoute.js";
+export {
   confirmsCreatePrNoDiffAtWorktree,
   isCreatePrNoDiffBlockedHandoff,
   isCreatePrNoDiffDoneHandoff,
@@ -48,6 +54,7 @@ export {
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
   type CreatePrNoDiffResume,

@@ -23,3 +23,4 @@ export {
   MERGE_GATE_NO_APPROVE_REASON,
 } from "./mergeGateBlockReason.js";
 export { normalizeHandoffForMergeGate } from "./mergeGateHandoff.js";
+export { peekBabysitableMergeGateBlock } from "./peekBabysitableMergeGateBlock.js";

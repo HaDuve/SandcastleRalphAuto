@@ -30,11 +30,19 @@ import {
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
+  isReviewTddProceduralOnlyBlockedHandoff,
+  normalizeReviewTddProceduralDoneHandoff,
   writeHandoff,
   writeHostHandoff,
 } from "../handoff/index.js";
+import type { Project } from "../registry/index.js";
+import {
+  peekBabysitableMergeGateBlock,
+  type GhRunner,
+} from "../merge/index.js";
 import type { GitRunner } from "../handoff/worktreeNoDiff.js";
 import { PHASE_COMPLETE_SIGNAL } from "../runner/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
@@ -152,6 +160,28 @@ async function runPhaseWithCompletionRetry(
   return last ?? (await deps.runPhase(options));
 }
 
+async function persistReviewTddProceduralHandoffIfNeeded(
+  phase: RunnablePhase,
+  result: RunPhaseResult,
+  projectPath: string,
+  stateRoot: string,
+  projectId: string,
+): Promise<RunPhaseResult> {
+  if (phase !== "review-tdd" || !isReviewTddProceduralOnlyBlockedHandoff(result.handoff)) {
+    return result;
+  }
+  const worktreePath = join(
+    projectPath,
+    ".sandcastle",
+    "worktrees",
+    result.branch,
+  );
+  const handoff = normalizeReviewTddProceduralDoneHandoff(result.handoff);
+  await writeHandoff(handoff, worktreePath);
+  await writeHostHandoff({ stateRoot, projectId, handoff });
+  return { ...result, handoff };
+}
+
 async function persistCreatePrNoDiffHandoffIfNeeded(
   phase: RunnablePhase,
   result: RunPhaseResult,
@@ -204,6 +234,14 @@ export type RunLinearSliceOptions = {
   completionSignalJitterRatio?: number;
   /** Total elapsed time cap for completion-signal retries per phase (ms). */
   completionSignalMaxElapsedMs?: number;
+  /**
+   * When set, after a successful `review-tdd` the host may run `/babysit` once
+   * before the `merge` phase if required CI is still red (ADR 0009).
+   */
+  preMergeBabysit?: {
+    project: Pick<Project, "autoMerge" | "remote">;
+    gh: GhRunner;
+  };
 };
 
 export type RunLinearSliceSuccess = {
@@ -471,6 +509,13 @@ export async function runLinearSlice(
         projectId,
         active: existing,
       })) ??
+      (await tryReconcileReviewTddProceduralBlockedHandoff({
+        projectPath,
+        branch,
+        stateRoot,
+        projectId,
+        active: existing,
+      })) ??
       tryReconcileMissingPhaseCompleteBlockedHandoff({ active: existing }) ??
       tryReconcileTransientCursorBlockedHandoff({ active: existing });
     if (reconciled === null) {
@@ -595,20 +640,27 @@ export async function runLinearSlice(
       projectId,
       options.git,
     );
+    const phaseResultAfterReviewTdd = await persistReviewTddProceduralHandoffIfNeeded(
+      phase,
+      phaseResult,
+      projectPath,
+      stateRoot,
+      projectId,
+    );
 
     const outcome = advanceSlice({
       issue,
       branch,
       pr,
       phase,
-      result: phaseResult,
+      result: phaseResultAfterReviewTdd,
     });
 
     if (
       !outcome.ok &&
       phase === "merge" &&
-      phaseResult.completionSignal === PHASE_COMPLETE_SIGNAL &&
-      isMergeDeferredToBabysit(phaseResult.handoff)
+      phaseResultAfterReviewTdd.completionSignal === PHASE_COMPLETE_SIGNAL &&
+      isMergeDeferredToBabysit(phaseResultAfterReviewTdd.handoff)
     ) {
       if (mergeTailBabysitAttempted) {
         await writeActive(
@@ -748,6 +800,47 @@ export async function runLinearSlice(
     phasesCompleted.push(phase);
     pr = outcome.active.pr;
 
+    if (
+      phase === "review-tdd" &&
+      outcome.active.phase === "merge" &&
+      pr !== undefined &&
+      !mergeTailBabysitAttempted &&
+      options.preMergeBabysit
+    ) {
+      const babysitBlock = await peekBabysitableMergeGateBlock(
+        {
+          handoff: phaseResultAfterReviewTdd.handoff,
+          project: options.preMergeBabysit.project,
+          pr,
+        },
+        { gh: options.preMergeBabysit.gh },
+      );
+      if (babysitBlock !== null) {
+        mergeTailBabysitAttempted = true;
+        const recovery = await runRecoverySlice({
+          projectId,
+          issue,
+          branch,
+          projectPath,
+          stateRoot,
+          phase: "babysit",
+          pr,
+          sliceStartedAt,
+          mergeTailBabysitAttempted: true,
+          runPhaseOptions: options.runPhaseOptions,
+          git: options.git,
+          deps,
+        });
+        if (
+          recovery.status === "blocked" ||
+          recovery.status === "awaiting-human"
+        ) {
+          return { ...recovery, phasesCompleted };
+        }
+        pr = recovery.pr;
+      }
+    }
+
     if (outcome.handoffToNext) {
       await clearActive(projectId, stateRoot);
       return {
@@ -756,6 +849,9 @@ export async function runLinearSlice(
         branch,
         pr,
         phasesCompleted,
+        ...(mergeTailBabysitAttempted
+          ? { mergeTailBabysitAttempted: true }
+          : {}),
       };
     }
 

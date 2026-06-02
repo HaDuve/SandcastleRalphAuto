@@ -123,12 +123,16 @@ describe("runProjectSlice", () => {
       },
     );
 
-    expect(sliceOptions).toEqual({
+    expect(sliceOptions).toMatchObject({
       projectId: "HaDuve/Portfolio",
       issue: 10,
       branch: "issue-10",
       projectPath: "/tmp/portfolio",
       stateRoot,
+      preMergeBabysit: {
+        project: portfolio,
+        gh: expect.any(Function),
+      },
     });
     expect(result).toEqual({
       status: "completed",

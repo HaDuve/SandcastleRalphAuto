@@ -22,6 +22,11 @@ import {
   isReviewPrRequestChangesToReviewTdd,
 } from "./reviewPrRoute.js";
 import {
+  isReviewTddAcceptanceBlockedStallReason,
+  isReviewTddProceduralOnlyBlockedHandoff,
+  normalizeReviewTddProceduralDoneHandoff,
+} from "./reviewTddRoute.js";
+import {
   confirmsCreatePrNoDiffAtWorktree,
   isCreatePrNoDiffStallReason,
   normalizeCreatePrNoDiffHandoff,
@@ -202,6 +207,70 @@ export async function tryReconcileSchemaBlockedHandoff(input: {
   });
 
   return next;
+}
+
+/**
+ * When review-tdd marked `acceptanceState: blocked` only for procedural merge constraints,
+ * normalize and resume at `merge` on Start.
+ */
+export async function tryReconcileReviewTddProceduralBlockedHandoff(input: {
+  stateRoot: string;
+  projectId: string;
+  projectPath: string;
+  branch: string;
+  active: ActiveState;
+}): Promise<ActiveState | null> {
+  if (
+    input.active.status !== "blocked" ||
+    !isReviewTddAcceptanceBlockedStallReason(
+      input.active.reason,
+      input.active.phase,
+    )
+  ) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff | undefined;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isReviewTddProceduralOnlyBlockedHandoff(handoff)) {
+    return null;
+  }
+
+  const fixed = normalizeReviewTddProceduralDoneHandoff(handoff);
+  await writeHandoff(fixed, worktreePath);
+  await writeHostHandoff({
+    stateRoot: input.stateRoot,
+    projectId: input.projectId,
+    handoff: fixed,
+  });
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: fixed.pr ?? input.active.pr,
+    phase: "merge",
+    status: "active",
+    startedAt: input.active.startedAt,
+  };
 }
 
 /**
