@@ -78,5 +78,8 @@ export async function confirmsCreatePrNoDiffAtWorktree(
   if (isCreatePrNoDiffDoneHandoff(handoff)) {
     return true;
   }
-  return isCreatePrNoDiffBlockedHandoff(handoff);
+  // Git is source of truth: if the branch is not ahead of origin/main, treat
+  // a blocked create-pr handoff as an empty slice even if the agent omitted
+  // no-diff prose in `blockers`.
+  return handoff.acceptanceState === "blocked";
 }

@@ -77,7 +77,7 @@ describe("createPrNoDiffRoute", () => {
         "/tmp/wt",
         git,
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("normalizes blocked no-diff handoff to done with nextSkill /next", () => {

@@ -1,7 +1,9 @@
 import { join } from "node:path";
 import {
   HandoffError,
+  isCreatePrNoDiffBlockedHandoff,
   isCreatePrNoDiffDoneHandoff,
+  normalizeCreatePrNoDiffHandoff,
   readHostHandoff,
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
@@ -1026,6 +1028,31 @@ export async function loopProject(
             runNextFn,
             deps.gh ?? resolved.gh,
             { emptySliceIssue: hostHandoff.issue },
+          );
+          if (nextResult.status === "blocked") {
+            return nextBlocked(nextResult);
+          }
+          if (nextResult.status === QUEUE_EMPTY) {
+            await mutex.release(project.remote);
+            return { status: "queue-empty", slicesCompleted };
+          }
+          currentIssue = nextResult.issue;
+          fromPhase = "create-pr";
+          continue;
+        }
+        if (
+          hostHandoff !== undefined &&
+          isCreatePrNoDiffBlockedHandoff(hostHandoff)
+        ) {
+          // Defensive: if create-pr no-diff normalization didn't persist,
+          // still treat this as an empty slice and move the queue forward.
+          const fixed = normalizeCreatePrNoDiffHandoff(hostHandoff);
+          const nextResult = await invokeRunNext(
+            project,
+            stateRoot,
+            runNextFn,
+            deps.gh ?? resolved.gh,
+            { emptySliceIssue: fixed.issue },
           );
           if (nextResult.status === "blocked") {
             return nextBlocked(nextResult);

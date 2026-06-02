@@ -203,6 +203,75 @@ describe("reconcileBlockedHandoff", () => {
     });
   });
 
+  it("clears blocked create-pr on no-diff even when blockers are empty", async () => {
+    rootDir = await mkdtemp(
+      join(tmpdir(), "reconcile-create-pr-nodiff-empty-blockers-"),
+    );
+    const projectPath = join(rootDir, "repo");
+    const branch = "issue-95";
+    const handoffDir = join(
+      projectPath,
+      ".sandcastle",
+      "worktrees",
+      branch,
+      ".sandcastle-ralph",
+      "handoff",
+    );
+    await mkdir(handoffDir, { recursive: true });
+    await writeFile(
+      join(handoffDir, "current.json"),
+      JSON.stringify(
+        {
+          project: "HaDuve/SandcastleRalphAuto",
+          issue: 95,
+          branch,
+          phase: "create-pr",
+          acceptanceState: "blocked",
+          blockers: [],
+          mergeReady: false,
+          nextSkill: "/review-pr",
+          startedAt: "2026-06-02T06:53:30.322Z",
+          endedAt: "2026-06-02T06:54:00.000Z",
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const stateRoot = join(rootDir, "state");
+    const active: ActiveState = {
+      issue: 95,
+      phase: "create-pr",
+      branch,
+      status: "blocked",
+      reason: "Handoff acceptanceState is blocked, expected done",
+      resumeSkill: "/create-pr",
+      startedAt: "2026-06-02T06:53:30.322Z",
+    };
+    await writeActive("proj", active, stateRoot);
+
+    const resumed = await tryReconcileCreatePrNoDiffBlockedHandoff({
+      projectPath,
+      branch,
+      stateRoot,
+      projectId: "proj",
+      active,
+      git: noDiffGit,
+    });
+
+    expect(resumed).toEqual({ issue: 95, branch });
+    await expect(access(resolveActivePath(stateRoot, "proj"))).rejects.toThrow();
+
+    const worktreeHandoff = await readHandoff(
+      join(projectPath, ".sandcastle", "worktrees", branch),
+    );
+    expect(worktreeHandoff).toMatchObject({
+      acceptanceState: "done",
+      nextSkill: "/next",
+      blockers: [],
+    });
+  });
+
   it("resumes at create-pr when worktree handoff uses complete synonym", async () => {
     const { projectPath, stateRoot, active } =
       await setupWorktreeHandoff("complete");
