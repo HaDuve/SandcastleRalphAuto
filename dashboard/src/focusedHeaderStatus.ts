@@ -1,8 +1,12 @@
 import { formatPhaseDuration } from "./phaseDuration.js";
-import { resolveActiveSummaryForCard, resolveWorkerStatusForCard } from "./projectStatus.js";
+import {
+  resolveActiveSummaryForCard,
+  resolveWorkerStatusForCard,
+  workerPostureLabel,
+} from "./projectStatus.js";
 import { formatOutcomeLabel } from "./runOutcomeUi.js";
 import type { ActiveSlice, Project, ProjectActiveSummary } from "./types.js";
-import type { WorkerState, WorkerStatus } from "./workerStatus.js";
+import type { WorkerState } from "./workerStatus.js";
 
 export type FocusedStatus = {
   message: string | null;
@@ -34,19 +38,6 @@ const emptyStatus: FocusedStatus = {
   phaseElapsed: null,
 };
 
-function workerLabel(workerStatus: WorkerStatus, activeStatus: ActiveSlice["status"] | undefined): string {
-  if (workerStatus === "paused") {
-    return "paused";
-  }
-  if (workerStatus === "running") {
-    return "running";
-  }
-  if (activeStatus === "blocked" || activeStatus === "awaiting-human") {
-    return "blocked";
-  }
-  return "idle";
-}
-
 function formatSinceStop(stoppedAt: string, now: string): string {
   const elapsed = formatPhaseDuration(stoppedAt, now);
   return elapsed === "—" ? "—" : `${elapsed} ago`;
@@ -75,13 +66,12 @@ export function buildFocusedStatus(
   }
 
   const active = activeSlice ?? resolveActiveSummaryForCard(project, activeSummary);
-  const activeStatus = activeSlice?.status ?? activeSummary?.status;
   const phase = activeSlice?.phase ?? activeSummary?.phase ?? null;
   const issue = activeSlice?.issue ?? activeSummary?.issue ?? null;
   const pr = activeSlice?.pr ?? null;
   const startedAt = activeSlice?.startedAt;
   const lastOutcome = workerState?.lastOutcome ?? project.lastRunOutcome ?? null;
-  const worker = workerLabel(workerStatus, activeStatus);
+  const worker = workerPostureLabel(workerStatus, active);
   const running = workerStatus === "running";
 
   let outcome: string | null = null;

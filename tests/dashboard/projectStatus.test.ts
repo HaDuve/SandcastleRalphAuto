@@ -3,6 +3,7 @@ import {
   formatProjectStatusIndicator,
   resolveActiveSummaryForCard,
   resolveWorkerStatusForCard,
+  workerPostureLabel,
 } from "../../dashboard/src/projectStatus.js";
 import type { Project, ProjectActiveSummary } from "../../dashboard/src/types.js";
 import type { WorkerStatus } from "../../dashboard/src/workerStatus.js";
@@ -12,6 +13,26 @@ const active: ProjectActiveSummary = {
   phase: "review-pr",
   status: "active",
 };
+
+describe("workerPostureLabel", () => {
+  it("returns paused when the worker is paused", () => {
+    expect(workerPostureLabel("paused", active)).toBe("paused");
+  });
+
+  it("returns running when the worker is running even if the slice is blocked", () => {
+    expect(
+      workerPostureLabel("running", { ...active, status: "blocked", phase: "babysit" }),
+    ).toBe("running");
+  });
+
+  it("returns blocked when idle with a blocked slice", () => {
+    expect(workerPostureLabel("idle", { ...active, status: "blocked" })).toBe("blocked");
+  });
+
+  it("returns idle when the worker is idle and the slice is active", () => {
+    expect(workerPostureLabel("idle", null)).toBe("idle");
+  });
+});
 
 describe("formatProjectStatusIndicator", () => {
   it("shows idle when the worker is idle and there is no blocked slice", () => {
