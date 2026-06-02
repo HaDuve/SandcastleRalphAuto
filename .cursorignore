@@ -2,3 +2,4 @@
 .sandcastle/logs/
 state/
 .cursor/debug-*.log
+!.sandcastle-ralph/handoff/
