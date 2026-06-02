@@ -1,20 +1,28 @@
+import { PanelHeader } from "./PanelHeader.js";
 import { STARTING_PLACEHOLDER_PHASE } from "./optimisticStart.js";
 import type { ActiveSlice, Project } from "./types.js";
 
 export type ActivePanelProps = {
   project: Project | null;
   active: ActiveSlice | null;
+  onRefresh?: () => void;
+  refreshError?: string | null;
 };
 
 function formatStartedAt(iso: string): string {
   return iso.replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
 }
 
-export function ActivePanel({ project, active }: ActivePanelProps) {
+export function ActivePanel({
+  project,
+  active,
+  onRefresh,
+  refreshError = null,
+}: ActivePanelProps) {
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <h2>Active slice</h2>
+        <PanelHeader title="Active slice" onRefresh={onRefresh} refreshDisabled />
         <p>Select a project to view the active slice.</p>
       </div>
     );
@@ -23,7 +31,7 @@ export function ActivePanel({ project, active }: ActivePanelProps) {
   if (!active) {
     return (
       <div className="active-panel">
-        <h2>Active slice</h2>
+        <PanelHeader title="Active slice" onRefresh={onRefresh} error={refreshError} />
         <p className="active-idle">No active slice for this project.</p>
       </div>
     );
@@ -32,7 +40,7 @@ export function ActivePanel({ project, active }: ActivePanelProps) {
   if (active.phase === STARTING_PLACEHOLDER_PHASE) {
     return (
       <div className="active-panel">
-        <h2>Active slice</h2>
+        <PanelHeader title="Active slice" onRefresh={onRefresh} error={refreshError} />
         <p className="active-starting">Starting worker…</p>
       </div>
     );
@@ -45,7 +53,7 @@ export function ActivePanel({ project, active }: ActivePanelProps) {
 
   return (
     <div className="active-panel">
-      <h2>Active slice</h2>
+      <PanelHeader title="Active slice" onRefresh={onRefresh} error={refreshError} />
       <dl className="active-details">
         <div>
           <dt>Issue</dt>

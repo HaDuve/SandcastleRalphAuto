@@ -1,16 +1,24 @@
+import { PanelHeader } from "./PanelHeader.js";
 import { formatPhaseDuration } from "./phaseDuration.js";
 import type { HistoryEntry, Project } from "./types.js";
 
 export type HistoryPanelProps = {
   project: Project | null;
   history: HistoryEntry[];
+  onRefresh?: () => void;
+  refreshError?: string | null;
 };
 
-export function HistoryPanel({ project, history }: HistoryPanelProps) {
+export function HistoryPanel({
+  project,
+  history,
+  onRefresh,
+  refreshError = null,
+}: HistoryPanelProps) {
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <h2>History</h2>
+        <PanelHeader title="History" onRefresh={onRefresh} refreshDisabled />
         <p>Select a project to view merged PR history.</p>
       </div>
     );
@@ -18,7 +26,7 @@ export function HistoryPanel({ project, history }: HistoryPanelProps) {
 
   return (
     <div className="history-panel">
-      <h2>History</h2>
+      <PanelHeader title="History" onRefresh={onRefresh} error={refreshError} />
       {history.length === 0 ? (
         <p className="history-empty">No merged history for this project yet.</p>
       ) : (
