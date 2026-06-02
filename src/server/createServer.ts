@@ -4,7 +4,11 @@ import { join, extname, resolve } from "node:path";
 import { findProjectById, type RunProjectDeps } from "../cli/index.js";
 import { listHandoffHistory, readHostHandoff } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
-import { listPhaseLogs, readPhaseLog } from "../phaseLogs/index.js";
+import {
+  listProjectLogs,
+  readProjectLog,
+  type ProjectLogChannel,
+} from "../phaseLogs/index.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
 import { parseRunnablePhase } from "../prompts/phases.js";
 import { readActive, readRunOutcome, readSkips, writeSkips } from "../state/index.js";
@@ -72,8 +76,8 @@ export type DashboardServerOptions = {
   readSkips?: typeof readSkips;
   writeSkips?: typeof writeSkips;
   fetchQueue?: typeof fetchProjectQueue;
-  listPhaseLogs?: typeof listPhaseLogs;
-  readPhaseLog?: typeof readPhaseLog;
+  listProjectLogs?: typeof listProjectLogs;
+  readProjectLog?: typeof readProjectLog;
   listHistory?: typeof listHandoffHistory;
   gh?: GhRunner;
   workerManager?: WorkerManager;
@@ -189,8 +193,8 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
   const readSkipsFn = options.readSkips ?? readSkips;
   const writeSkipsFn = options.writeSkips ?? writeSkips;
   const fetchQueueFn = options.fetchQueue ?? fetchProjectQueue;
-  const listPhaseLogsFn = options.listPhaseLogs ?? listPhaseLogs;
-  const readPhaseLogFn = options.readPhaseLog ?? readPhaseLog;
+  const listProjectLogsFn = options.listProjectLogs ?? listProjectLogs;
+  const readProjectLogFn = options.readProjectLog ?? readProjectLog;
   const listHistoryFn = options.listHistory ?? listHandoffHistory;
   const eventBus = options.eventBus ?? createEventBus();
   const workerManager =
@@ -290,14 +294,19 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
           const phaseParam = searchParams.get("phase");
           const issueParam = searchParams.get("issue");
 
-          if (phaseParam !== null && parseRunnablePhase(phaseParam) === null) {
+          const parseLogChannel = (raw: string): ProjectLogChannel | null => {
+            if (raw === "server") return "server";
+            return parseRunnablePhase(raw);
+          };
+
+          if (phaseParam !== null && parseLogChannel(phaseParam) === null) {
             sendJson(res, 400, { error: "Invalid phase" });
             return;
           }
 
           let issue: number | undefined;
-          let phase =
-            phaseParam === null ? null : parseRunnablePhase(phaseParam);
+          let phase: ProjectLogChannel | null =
+            phaseParam === null ? null : parseLogChannel(phaseParam);
 
           if (active) {
             issue = active.issue;
@@ -320,10 +329,10 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
             return;
           }
 
-          const phases = await listPhaseLogsFn(project.remote, issue, {
+          const phases = await listProjectLogsFn(project.remote, issue, {
             rootDir,
           });
-          const log = await readPhaseLogFn(project.remote, issue, phase, {
+          const log = await readProjectLogFn(project.remote, issue, phase, {
             rootDir,
           });
           sendJson(res, 200, { issue, phase, log, phases });

@@ -1,16 +1,16 @@
 {
   "project": "HaDuve/SandcastleRalphAuto",
-  "issue": 95,
-  "branch": "issue-95",
-  "pr": 102,
+  "issue": 100,
+  "branch": "issue-100",
+  "pr": 112,
   "phase": "merge",
   "acceptanceState": "blocked",
   "verdict": "n/a",
   "blockers": [
-    "Required check failing: ci (see https://github.com/HaDuve/SandcastleRalphAuto/actions/runs/26810328557)"
+    "Required check failing: ci"
   ],
   "mergeReady": false,
-  "nextSkill": "/next",
-  "startedAt": "2026-06-02T10:17:56.132Z",
-  "endedAt": "2026-06-02T10:19:36.915556Z"
+  "nextSkill": "/babysit",
+  "startedAt": "2026-06-02T13:59:07.000Z",
+  "endedAt": "2026-06-02T14:00:20.000Z"
 }

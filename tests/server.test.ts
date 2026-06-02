@@ -300,6 +300,34 @@ describe("dashboard server", () => {
     });
   });
 
+  it("returns the active server log channel alongside phase logs", async () => {
+    const { rootDir, project, stateRoot } = await setupProjectRoot();
+    await seedActiveSliceWithLogs(
+      stateRoot,
+      project,
+      { issue: 7, phase: "review-pr", branch: "issue-7", status: "active" },
+      {
+        "issue-7-server.log": "server output\n",
+        "issue-7-review-pr.log": "review output\n",
+      },
+    );
+
+    const started = await startServer(rootDir, { stateRoot });
+    server = started.server;
+
+    const response = await fetch(
+      `${started.baseUrl}/api/projects/portfolio/log?phase=server`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      issue: 7,
+      phase: "server",
+      log: "server output\n",
+      phases: ["server", "review-pr"],
+    });
+  });
+
   it("returns 404 for log when no active slice", async () => {
     const { rootDir } = await setupProjectRoot();
     const started = await startServer(rootDir);

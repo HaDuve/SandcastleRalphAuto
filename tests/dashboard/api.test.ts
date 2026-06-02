@@ -133,6 +133,7 @@ describe("dashboard API client", () => {
 
     expect(listeners.has("worker-started")).toBe(true);
     expect(listeners.has("phase-log")).toBe(true);
+    expect(listeners.has("server-log")).toBe(true);
 
     listeners.get("worker-started")!.forEach((handler) =>
       handler({
