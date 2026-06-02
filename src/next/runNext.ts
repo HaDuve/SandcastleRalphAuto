@@ -149,14 +149,18 @@ export async function runNext(
     }
   }
 
-  try {
-    await deps.archiveHandoff(project.remote);
-  } catch (error) {
-    const reason =
-      error instanceof HandoffError
-        ? error.message
-        : "Could not archive handoff";
-    return blocked(reason);
+  // Only archive when we have a PR-numbered slice to archive.
+  // Empty slices (create-pr no diff) intentionally omit `pr`.
+  if (pr !== undefined) {
+    try {
+      await deps.archiveHandoff(project.remote);
+    } catch (error) {
+      const reason =
+        error instanceof HandoffError
+          ? error.message
+          : "Could not archive handoff";
+      return blocked(reason);
+    }
   }
 
   const issuesRaw = await deps.gh([
