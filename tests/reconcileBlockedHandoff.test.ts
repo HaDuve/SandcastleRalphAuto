@@ -7,6 +7,7 @@ import {
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
+  tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
@@ -129,6 +130,30 @@ describe("reconcileBlockedHandoff", () => {
       issue: 95,
       phase: "create-pr",
       branch: "issue-95",
+      status: "active",
+      startedAt: active.startedAt,
+    });
+  });
+
+  it("resumes the same phase after missing PHASE_COMPLETE block", async () => {
+    const active: ActiveState = {
+      issue: 97,
+      phase: "review-pr",
+      branch: "issue-97",
+      pr: 108,
+      status: "blocked",
+      reason: "Phase did not emit PHASE_COMPLETE completion signal",
+      resumeSkill: "/review-pr",
+      startedAt: "2026-06-02T10:50:08.165Z",
+    };
+
+    const reconciled = tryReconcileMissingPhaseCompleteBlockedHandoff({ active });
+
+    expect(reconciled).toEqual({
+      issue: 97,
+      phase: "review-pr",
+      branch: "issue-97",
+      pr: 108,
       status: "active",
       startedAt: active.startedAt,
     });

@@ -8,6 +8,7 @@ import {
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
+  tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
@@ -781,6 +782,7 @@ async function resolveLoopStart(
         projectId: project.remote,
         active,
       })) ??
+      tryReconcileMissingPhaseCompleteBlockedHandoff({ active }) ??
       tryReconcileTransientCursorBlockedHandoff({ active });
     if (reconciled !== null) {
       await writeActive(project.remote, reconciled, stateRoot);
