@@ -5,8 +5,16 @@ You are running phase `babysit` AFK. Do not ask questions; use only the handoff 
 
 ## Inputs
 
-1. Read `.sandcastle-ralph/handoff/current.json` (JSON handoff from the prior phase).
+1. Use the inline handoff JSON below.
 2. Load the linked GitHub issue (`project` + `issue` from the handoff).
+
+## Inline handoff (JSON)
+
+The current handoff is included inline below. Do **not** attempt to read `.sandcastle-ralph/handoff/current.json` to start this phase.
+
+```json
+__SANDCASTLE_RALPH_INLINE_HANDOFF_JSON__
+```
 
 ## Git branch
 

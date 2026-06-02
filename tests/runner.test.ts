@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Handoff, writeHandoff, writeHostHandoff } from "../src/handoff/index.js";
+import { INLINE_HANDOFF_JSON_PLACEHOLDER } from "../src/prompts/harness.js";
 import {
   CURSOR_TRUST_SETUP,
   DEFAULT_BABYSIT_MAX_ITERATIONS,
@@ -89,7 +90,10 @@ describe("runPhase", () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "create-pr.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
-    await writeFile(promptFile, "# create-pr\n");
+    await writeFile(
+      promptFile,
+      `# create-pr\n\n## Inline handoff (JSON)\n\n\`\`\`json\n${INLINE_HANDOFF_JSON_PLACEHOLDER}\n\`\`\`\n`,
+    );
     await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
 
     const deps = createMockDeps(
@@ -129,7 +133,12 @@ describe("runPhase", () => {
     expect(runCalls).toHaveLength(1);
     expect(runCalls[0]?.agent).toEqual(mockAgent());
     expect(runCalls[0]?.completionSignal).toBe(PHASE_COMPLETE_SIGNAL);
-    expect(runCalls[0]?.promptFile).toBe(promptFile);
+    expect(runCalls[0]?.promptFile).not.toBe(promptFile);
+    const effectivePrompt = await readFile(runCalls[0]?.promptFile ?? "", "utf8");
+    expect(effectivePrompt).toContain('"project": "HaDuve/SandcastleRalphAuto"');
+    expect(effectivePrompt).toContain('"issue": 6');
+    expect(effectivePrompt).toMatch(/inline handoff/i);
+    expect(effectivePrompt).not.toMatch(/Read `\.sandcastle-ralph\/handoff\/current\.json`/);
     expect(runCalls[0]?.maxIterations).toBe(1);
   });
 
@@ -235,9 +244,12 @@ describe("runPhase", () => {
       deps,
     );
 
-    expect(runCalls[0]?.promptFile).toBe(
+    expect(runCalls[0]?.promptFile).not.toBe(
       join(orchestratorRoot, "prompts", "review-pr.md"),
     );
+    const effectivePrompt = await readFile(runCalls[0]?.promptFile ?? "", "utf8");
+    expect(effectivePrompt).toContain("# Headless harness (SandcastleRalphAuto)");
+    expect(effectivePrompt).toContain('"project": "HaDuve/SandcastleRalphAuto"');
   });
 
   it("uses tddMaxIterations for tdd and single-shot for other phases", async () => {
@@ -247,7 +259,10 @@ describe("runPhase", () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "runner-state-"));
     const promptFile = join(projectPath, "prompts", "tdd.md");
     await mkdir(join(projectPath, "prompts"), { recursive: true });
-    await writeFile(promptFile, "# tdd\n");
+    await writeFile(
+      promptFile,
+      `# tdd\n\n\`\`\`json\n${INLINE_HANDOFF_JSON_PLACEHOLDER}\n\`\`\`\n`,
+    );
     await writeHostHandoff({
       stateRoot,
       projectId: PROJECT_ID,
@@ -304,6 +319,10 @@ describe("runPhase", () => {
       projectId: PROJECT_ID,
       handoff: { ...sampleHandoff, phase: "merge" },
     });
+    await writeFile(
+      join(projectPath, "prompts", "merge.md"),
+      `# merge\n\n\`\`\`json\n${INLINE_HANDOFF_JSON_PLACEHOLDER}\n\`\`\`\n`,
+    );
 
     await runPhase(
       {

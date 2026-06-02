@@ -8,7 +8,8 @@ import {
   type SandboxRunResult,
 } from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../handoff/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 import { type RunnablePhase } from "../prompts/phases.js";
+import { INLINE_HANDOFF_JSON_PLACEHOLDER } from "../prompts/harness.js";
 import {
   DEFAULT_CURSOR_TRANSIENT_BASE_DELAY_MS,
   DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO,
@@ -200,6 +202,19 @@ async function runSandboxWithTransientRetry(
   throw lastError;
 }
 
+async function writeInlineHandoffPromptFile(input: {
+  basePromptFile: string;
+  handoff: Handoff;
+}): Promise<string> {
+  const content = await readFile(input.basePromptFile, "utf8");
+  const renderedHandoff = JSON.stringify(input.handoff, null, 2);
+  const next = content.replace(INLINE_HANDOFF_JSON_PLACEHOLDER, renderedHandoff);
+  const dir = await mkdtemp(join(tmpdir(), "sandcastle-ralph-prompt-"));
+  const out = join(dir, "prompt.md");
+  await writeFile(out, next, "utf8");
+  return out;
+}
+
 export async function runPhase(
   options: RunPhaseOptions,
   deps: RunPhaseDeps = defaultDeps(),
@@ -242,9 +257,17 @@ export async function runPhase(
       });
     }
 
+    const effectivePromptFile =
+      seed !== undefined
+        ? await writeInlineHandoffPromptFile({
+            basePromptFile: promptFile,
+            handoff: seed,
+          })
+        : promptFile;
+
     const baseRunOptions = {
       agent: deps.cursor("auto"),
-      promptFile,
+      promptFile: effectivePromptFile,
       maxIterations: resolveMaxIterations(
         options.phase,
         options.tddMaxIterations ?? DEFAULT_TDD_MAX_ITERATIONS,
