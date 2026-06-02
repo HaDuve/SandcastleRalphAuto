@@ -8,7 +8,11 @@ import { listPhaseLogs, readPhaseLog } from "../phaseLogs/index.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
 import { parseRunnablePhase } from "../prompts/phases.js";
 import { readActive, readRunOutcome, readSkips, writeSkips } from "../state/index.js";
-import { toActiveSummary, workerStatusFor } from "./projectSnapshot.js";
+import {
+  enrichActiveState,
+  enrichActiveSummary,
+  workerStatusFor,
+} from "./projectSnapshot.js";
 import { createEventBus, type EventBus } from "./eventBus.js";
 import { fetchProjectQueue } from "./queue.js";
 import { createWorkerManager, type WorkerManager } from "./workerManager.js";
@@ -163,12 +167,25 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
     return findProjectById(projects, projectId);
   }
 
+  const resolveGh = async (): Promise<GhRunner> => {
+    if (options.gh) {
+      return options.gh;
+    }
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    return async (args) => {
+      const { stdout } = await promisify(execFile)("gh", args);
+      return stdout;
+    };
+  };
+
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const pathname = requestPathname(req);
 
       if (req.method === "GET" && pathname === "/api/projects") {
         const projects = await loadRegistry(rootDir);
+        const gh = await resolveGh();
         const enriched = await Promise.all(
           projects.map(async (project) => {
             const [active, lastRunOutcome] = await Promise.all([
@@ -179,7 +196,7 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
               ...project,
               workerStatus: workerStatusFor(workerManager, project.id),
               lastRunOutcome,
-              active: toActiveSummary(active),
+              active: await enrichActiveSummary(active, project.remote, gh),
             };
           }),
         );
@@ -193,7 +210,10 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
 
         if (req.method === "GET" && projectRoute.action === "active") {
           const active = await readActiveFn(project.remote, stateRoot);
-          sendJson(res, 200, { active });
+          const gh = await resolveGh();
+          sendJson(res, 200, {
+            active: await enrichActiveState(active, project.remote, gh),
+          });
           return;
         }
 
@@ -244,14 +264,7 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         }
 
         if (req.method === "GET" && projectRoute.action === "queue") {
-          const gh =
-            options.gh ??
-            (async (args) => {
-              const { execFile } = await import("node:child_process");
-              const { promisify } = await import("node:util");
-              const { stdout } = await promisify(execFile)("gh", args);
-              return stdout;
-            });
+          const gh = await resolveGh();
           const queue = await fetchQueueFn(project, stateRoot, gh, readSkipsFn);
           sendJson(res, 200, { queue });
           return;

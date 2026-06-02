@@ -3,13 +3,12 @@ import { describe, expect, it } from "vitest";
 import { DashboardLayout } from "../../dashboard/src/DashboardLayout.js";
 
 describe("DashboardLayout", () => {
-  it("orders focused-project regions banner, stepper, active, log, queue, then history", () => {
+  it("orders focused-project regions banner, stepper, log, queue, then history", () => {
     render(
       <DashboardLayout
         picker={<div>picker</div>}
         runOutcome={<div>banner</div>}
         phaseStepper={<div>stepper</div>}
-        active={<div>active body</div>}
         log={<div>log body</div>}
         queue={<div>queue body</div>}
         history={<div>history body</div>}
@@ -20,7 +19,6 @@ describe("DashboardLayout", () => {
     expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual([
       "Run outcome",
       "Phase stepper",
-      "Active",
       "Log",
       "Queue",
       "History",

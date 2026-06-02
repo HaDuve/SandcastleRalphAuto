@@ -22,8 +22,11 @@ function branchForIssue(issue: number): string {
 function summaryToSlice(summary: ProjectActiveSummary): ActiveSlice {
   return {
     issue: summary.issue,
+    title: summary.title,
     phase: summary.phase,
-    branch: branchForIssue(summary.issue),
+    branch: summary.branch ?? branchForIssue(summary.issue),
+    pr: summary.pr,
+    startedAt: summary.startedAt,
     status: summary.status,
   };
 }
@@ -35,9 +38,9 @@ export function optimisticStartContext(input: {
   summary: ProjectActiveSummary | null | undefined;
 }): { summary: ProjectActiveSummary; slice: ActiveSlice | null } {
   if (input.active) {
-    const { issue, phase, status } = input.active;
+    const { issue, title, phase, status, branch, pr, startedAt } = input.active;
     return {
-      summary: { issue, phase, status },
+      summary: { issue, title, phase, status, branch, pr, startedAt },
       slice: input.active,
     };
   }
@@ -62,6 +65,7 @@ export function optimisticStartContext(input: {
       issue: nextIssue,
       phase: "tdd",
       status: "active",
+      branch: branchForIssue(nextIssue),
     };
     return { summary, slice: summaryToSlice(summary) };
   }

@@ -328,7 +328,6 @@ describe("App", () => {
     expect(await screen.findByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /run outcome/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /phase stepper/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /active/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /^log$/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /queue/i })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /history/i })).toBeInTheDocument();
@@ -352,7 +351,6 @@ describe("App", () => {
     expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual([
       "Run outcome",
       "Phase stepper",
-      "Active",
       "Log",
       "Queue",
       "History",
@@ -418,7 +416,7 @@ describe("App", () => {
     expect(screen.getByText(/1h/i)).toBeInTheDocument();
   });
 
-  it("loads queue and active panels for the focused project", async () => {
+  it("loads queue and phase stepper identity for the focused project", async () => {
     vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
 
     const user = userEvent.setup();
@@ -427,11 +425,11 @@ describe("App", () => {
     await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
 
     const queue = await screen.findByRole("region", { name: /queue/i });
-    const active = await screen.findByRole("region", { name: /active/i });
+    const stepper = await screen.findByRole("region", { name: /phase stepper/i });
     expect(within(queue).getByText(/#10/)).toBeInTheDocument();
     expect(within(queue).getByText(/Blocked: needs-info/i)).toBeInTheDocument();
-    expect(within(active).getByText(/#11/)).toBeInTheDocument();
-    expect(within(active).getByText(/issue-11/i)).toBeInTheDocument();
+    expect(within(stepper).getByRole("link", { name: /#11/i })).toBeInTheDocument();
+    expect(within(stepper).getByText(/issue-11/i)).toBeInTheDocument();
   });
 
   it("ignores stale panel fetches when the focused project changes", async () => {
@@ -841,9 +839,9 @@ describe("App", () => {
       within(runOutcome).getByText("review-pr", { selector: ".run-outcome-banner-phase" }),
     ).toBeInTheDocument();
     const queue = await screen.findByRole("region", { name: /queue/i });
-    const active = await screen.findByRole("region", { name: /active/i });
+    const stepper = await screen.findByRole("region", { name: /phase stepper/i });
     expect(within(queue).getByText(/#10/)).toBeInTheDocument();
-    expect(within(active).getByText(/#11/)).toBeInTheDocument();
+    expect(within(stepper).getByRole("link", { name: /#11/i })).toBeInTheDocument();
 
     const controlCalls = fetchMock.mock.calls.filter(([url, init]) => {
       if (!init?.method || init.method !== "POST") {
@@ -1331,8 +1329,7 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
     await screen.findByText(/#10/);
-    const activeRegion = screen.getByRole("region", { name: /^active$/i });
-    expect(within(activeRegion).getByText(/no active slice/i)).toBeInTheDocument();
+
 
     await user.click(screen.getByRole("button", { name: /start portfolio/i }));
 
@@ -1341,7 +1338,6 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: /start portfolio/i })).toBeEnabled();
       expect(screen.queryByRole("button", { name: /pause portfolio/i })).not.toBeInTheDocument();
     });
-    expect(within(activeRegion).getByText(/no active slice/i)).toBeInTheDocument();
     const stepper = screen.getByRole("region", { name: /phase stepper/i });
     expect(within(stepper).queryByRole("listitem", { current: "step" })).not.toBeInTheDocument();
   });
@@ -1390,9 +1386,8 @@ describe("App", () => {
 
     const stepper = screen.getByRole("region", { name: /phase stepper/i });
     expect(within(stepper).getByRole("listitem", { current: "step" })).toHaveTextContent("tdd");
-    const activeRegion = screen.getByRole("region", { name: /^active$/i });
-    expect(within(activeRegion).getByText(/#10/)).toBeInTheDocument();
-    expect(within(activeRegion).getByText(/issue-10/i)).toBeInTheDocument();
+    expect(within(stepper).getByRole("link", { name: /#10/i })).toBeInTheDocument();
+    expect(within(stepper).getByText(/issue-10/i)).toBeInTheDocument();
 
     releaseStart?.();
     await waitFor(() => {
@@ -1610,7 +1605,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(within(queueRegion).getByText(/#20/)).toBeInTheDocument();
     });
-    expect(within(screen.getByRole("region", { name: /^active$/i })).getByText(/#11/)).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: /phase stepper/i })).getByRole("link", { name: /#11/i })).toBeInTheDocument();
   });
 
   it("shows queue refresh errors inside the queue tile only", async () => {

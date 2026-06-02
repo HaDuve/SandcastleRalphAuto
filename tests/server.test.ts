@@ -73,7 +73,15 @@ async function startServer(
   rootDir: string,
   overrides: Omit<DashboardServerOptions, "rootDir"> = {},
 ): Promise<{ server: Server; baseUrl: string }> {
-  const server = createDashboardServer({ rootDir, ...overrides });
+  const gh =
+    overrides.gh ??
+    (async (args: string[]) => {
+      if (args[0] === "issue" && args[1] === "view") {
+        return JSON.stringify({ title: "Test issue title" });
+      }
+      return "{}";
+    });
+  const server = createDashboardServer({ rootDir, ...overrides, gh });
   await new Promise<void>((resolve) =>
     server.listen(0, "127.0.0.1", () => resolve()),
   );
@@ -198,7 +206,13 @@ describe("dashboard server", () => {
             phase: "review-pr",
             stoppedAt: "2026-06-01T12:00:00.000Z",
           },
-          active: { issue: 11, phase: "tdd", status: "active" },
+          active: {
+            issue: 11,
+            title: "Test issue title",
+            phase: "tdd",
+            status: "active",
+            branch: "issue-11",
+          },
         },
       ],
     });
@@ -371,6 +385,7 @@ describe("dashboard server", () => {
     expect(await response.json()).toEqual({
       active: {
         issue: 11,
+        title: "Test issue title",
         phase: "tdd",
         branch: "issue-11",
         status: "active",

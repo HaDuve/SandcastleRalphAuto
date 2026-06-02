@@ -380,6 +380,28 @@ body {
   letter-spacing: 0.01em;
 }
 
+
+.phase-stepper-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.phase-stepper-identity a {
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.phase-stepper-identity a:hover {
+  text-decoration: underline;
+}
+
+.phase-stepper-identity span {
+  color: #9aa7b5;
+  font-size: 0.8125rem;
+}
+
 .phase-stepper-track {
   display: flex;
   flex-wrap: wrap;
