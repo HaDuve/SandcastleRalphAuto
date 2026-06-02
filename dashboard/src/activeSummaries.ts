@@ -10,14 +10,20 @@ export function activeSummariesFromProjects(
   return summaries;
 }
 
-export function activeSummaryFromSlice(active: ActiveSlice | null): ProjectActiveSummary | null {
+export function activeSummaryFromSlice(
+  active: ActiveSlice | null,
+): ProjectActiveSummary | null {
   if (!active) {
     return null;
   }
   return {
     issue: active.issue,
+    title: active.title,
     phase: active.phase,
     status: active.status,
+    branch: active.branch,
+    pr: active.pr,
+    startedAt: active.startedAt,
   };
 }
 

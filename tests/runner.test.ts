@@ -671,6 +671,92 @@ describe("runPhase", () => {
 
     expect(createSandboxCalls[0]?.sandbox).toBe(customSandbox);
   });
+
+  it("retries sandbox.run on transient resource_exhausted with exponential backoff", async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-retry-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-retry-wt-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-retry-state-"));
+    const promptFile = join(projectPath, "prompts", "create-pr.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# create-pr\n");
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
+
+    let runCount = 0;
+    const deps = createMockDeps({
+      worktreePath,
+      runImpl: async () => {
+        runCount += 1;
+        if (runCount < 3) {
+          throw new Error(
+            "cursor exited with code 1:\nT: [resource_exhausted] Error\n",
+          );
+        }
+        return {
+          commits: [{ sha: "retry-ok" }],
+          completionSignal: PHASE_COMPLETE_SIGNAL,
+          logFilePath: join(projectPath, "run.log"),
+          iterations: [],
+          stdout: "",
+        };
+      },
+    });
+
+    const result = await runPhase(
+      {
+        phase: "create-pr",
+        branch: "issue-6-runner",
+        projectPath,
+        projectId: PROJECT_ID,
+        stateRoot,
+        promptFile,
+        cursorTransientMaxAttempts: 4,
+        cursorTransientBaseDelayMs: 0,
+        cursorTransientMaxDelayMs: 0,
+        cursorTransientJitterRatio: 0,
+      },
+      deps,
+    );
+
+    expect(runCount).toBe(3);
+    expect(result.commits).toEqual([{ sha: "retry-ok" }]);
+  });
+
+  it("throws after exhausting transient resource_exhausted retries", async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), "runner-retry-ex-"));
+    const worktreePath = await mkdtemp(join(tmpdir(), "runner-retry-ex-wt-"));
+    const stateRoot = await mkdtemp(join(tmpdir(), "runner-retry-ex-state-"));
+    const promptFile = join(projectPath, "prompts", "create-pr.md");
+    await mkdir(join(projectPath, "prompts"), { recursive: true });
+    await writeFile(promptFile, "# create-pr\n");
+    await writeHostHandoff({ stateRoot, projectId: PROJECT_ID, handoff: sampleHandoff });
+
+    const deps = createMockDeps({
+      worktreePath,
+      runImpl: async () => {
+        throw new Error(
+          "cursor exited with code 1:\nT: [resource_exhausted] Error\n",
+        );
+      },
+    });
+
+    await expect(
+      runPhase(
+        {
+          phase: "create-pr",
+          branch: "issue-6-runner",
+          projectPath,
+          projectId: PROJECT_ID,
+          stateRoot,
+          promptFile,
+          cursorTransientMaxAttempts: 2,
+          cursorTransientBaseDelayMs: 0,
+          cursorTransientMaxDelayMs: 0,
+          cursorTransientJitterRatio: 0,
+        },
+        deps,
+      ),
+    ).rejects.toThrow(/exhausted 2 Sandcastle attempts/);
+  });
 });
 
 describe("resolveOrchestratorRoot", () => {

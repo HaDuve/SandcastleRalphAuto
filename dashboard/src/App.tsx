@@ -23,7 +23,6 @@ import {
   focusedPhase,
   optimisticStartContext,
 } from "./optimisticStart.js";
-import { ActivePanel } from "./ActivePanel.js";
 import { buildFocusedStatus } from "./focusedHeaderStatus.js";
 import { FocusedHeaderLine } from "./FocusedHeaderLine.js";
 import { DashboardLayout } from "./DashboardLayout.js";
@@ -145,10 +144,15 @@ export function App() {
   const syncActiveSummary = useCallback(async (projectId: string) => {
     try {
       const nextActive = await fetchActive(projectId);
-      setActiveSummaries((current) => ({
-        ...current,
-        [projectId]: activeSummaryFromSlice(nextActive),
-      }));
+      setActiveSummaries((current) => {
+        if (nextActive === null) {
+          return current;
+        }
+        return {
+          ...current,
+          [projectId]: activeSummaryFromSlice(nextActive),
+        };
+      });
       if (focusedProjectIdRef.current === projectId) {
         setActive(nextActive);
       }
@@ -173,10 +177,15 @@ export function App() {
         return;
       }
       setActive(nextActive);
-      setActiveSummaries((current) => ({
-        ...current,
-        [projectId]: activeSummaryFromSlice(nextActive),
-      }));
+      setActiveSummaries((current) => {
+        if (nextActive === null) {
+          return current;
+        }
+        return {
+          ...current,
+          [projectId]: activeSummaryFromSlice(nextActive),
+        };
+      });
       return nextActive;
     },
     [],
@@ -201,24 +210,6 @@ export function App() {
     }
   }, [applyActiveRefresh, clearTileError, setTileError]);
 
-  const refreshActiveSlice = useCallback(async () => {
-    const projectId = focusedProjectIdRef.current;
-    if (!projectId) {
-      return;
-    }
-    try {
-      await applyActiveRefresh(projectId);
-      clearTileError("active");
-    } catch (error: unknown) {
-      if (focusedProjectIdRef.current !== projectId) {
-        return;
-      }
-      setTileError(
-        "active",
-        error instanceof Error ? error.message : "Failed to refresh active slice",
-      );
-    }
-  }, [applyActiveRefresh, clearTileError, setTileError]);
 
   const refreshQueue = useCallback(async () => {
     const projectId = focusedProjectIdRef.current;
@@ -285,12 +276,11 @@ export function App() {
   const refreshAllFocusedTiles = useCallback(async () => {
     await Promise.all([
       refreshPhaseStepper(),
-      refreshActiveSlice(),
       refreshLog(),
       refreshQueue(),
       refreshHistory(),
     ]);
-  }, [refreshActiveSlice, refreshHistory, refreshLog, refreshPhaseStepper, refreshQueue]);
+  }, [refreshHistory, refreshLog, refreshPhaseStepper, refreshQueue]);
 
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
@@ -306,10 +296,15 @@ export function App() {
       setQueue(nextQueue);
       setActive(nextActive);
       setHistory(nextHistory);
-      setActiveSummaries((current) => ({
-        ...current,
-        [projectId]: activeSummaryFromSlice(nextActive),
-      }));
+      setActiveSummaries((current) => {
+        if (nextActive === null) {
+          return current;
+        }
+        return {
+          ...current,
+          [projectId]: activeSummaryFromSlice(nextActive),
+        };
+      });
     } catch (error: unknown) {
       if (focusedProjectIdRef.current !== projectId) {
         return;
@@ -443,10 +438,15 @@ export function App() {
         setQueue(nextQueue);
         setActive(nextActive);
         setHistory(nextHistory);
-        setActiveSummaries((current) => ({
-          ...current,
-          [projectId]: activeSummaryFromSlice(nextActive),
-        }));
+        setActiveSummaries((current) => {
+          if (nextActive === null) {
+            return current;
+          }
+          return {
+            ...current,
+            [projectId]: activeSummaryFromSlice(nextActive),
+          };
+        });
       } catch (error: unknown) {
         if (cancelled || focusedProjectIdRef.current !== projectId) {
           return;
@@ -719,17 +719,10 @@ export function App() {
         phaseStepper={
           <PhaseStepper
             project={focusedProject}
+            summary={focusedProjectId === null ? null : activeSummaries[focusedProjectId] ?? null}
             currentPhase={focusedDisplayPhase}
             onRefresh={() => void refreshPhaseStepper()}
             refreshError={tileErrors.phaseStepper}
-          />
-        }
-        active={
-          <ActivePanel
-            project={focusedProject}
-            active={active}
-            onRefresh={() => void refreshActiveSlice()}
-            refreshError={tileErrors.active}
           />
         }
         log={

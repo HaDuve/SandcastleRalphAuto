@@ -29,10 +29,12 @@ export {
 } from "./mergeBabysitRoute.js";
 export {
   isHandoffSchemaBlockReason,
+  isTransientCursorBlockReason,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
+  tryReconcileTransientCursorBlockedHandoff,
   type MergeGateOnlyResume,
 } from "./reconcileBlockedHandoff.js";
 export {

@@ -41,7 +41,7 @@ describe("optimisticStartContext", () => {
       catalogActive: null,
       summary: null,
     });
-    expect(result.summary).toEqual({ issue: 11, phase: "review-pr", status: "active" });
+    expect(result.summary).toMatchObject({ issue: 11, phase: "review-pr", status: "active", branch: "issue-11" });
     expect(result.slice).toEqual(active);
   });
 
@@ -66,7 +66,7 @@ describe("optimisticStartContext", () => {
       catalogActive: null,
       summary: null,
     });
-    expect(result.summary).toEqual({ issue: 10, phase: "tdd", status: "active" });
+    expect(result.summary).toEqual({ issue: 10, phase: "tdd", status: "active", branch: "issue-10" });
     expect(result.slice).toMatchObject({ issue: 10, phase: "tdd", branch: "issue-10" });
   });
 

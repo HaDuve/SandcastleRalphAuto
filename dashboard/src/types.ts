@@ -8,8 +8,12 @@ export type RunOutcome = {
 
 export type ProjectActiveSummary = {
   issue: number;
+  title?: string;
   phase: string;
   status: "active" | "blocked" | "awaiting-human";
+  branch?: string;
+  pr?: number;
+  startedAt?: string;
 };
 
 export type Project = {
@@ -36,6 +40,7 @@ export type QueueIssue = {
 
 export type ActiveSlice = {
   issue: number;
+  title?: string;
   phase: string;
   branch: string;
   pr?: number;

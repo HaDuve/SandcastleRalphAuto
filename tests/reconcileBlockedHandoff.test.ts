@@ -8,6 +8,8 @@ import {
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
+  tryReconcileTransientCursorBlockedHandoff,
+  isTransientCursorBlockReason,
 } from "../src/handoff/reconcileBlockedHandoff.js";
 import { readHostHandoff, writeHostHandoff } from "../src/handoff/hostStore.js";
 import { readHandoff } from "../src/handoff/io.js";
@@ -80,6 +82,44 @@ describe("reconcileBlockedHandoff", () => {
   it("detects handoff schema block reasons", () => {
     expect(isHandoffSchemaBlockReason("Invalid handoff schema: x")).toBe(true);
     expect(isHandoffSchemaBlockReason("Phase failed")).toBe(false);
+  });
+
+  it("detects transient Cursor block reasons", () => {
+    expect(
+      isTransientCursorBlockReason(
+        "cursor exited with code 1:\nT: [resource_exhausted] Error\n",
+      ),
+    ).toBe(true);
+    expect(
+      isTransientCursorBlockReason(
+        "cursor exited with code 1:\nT: [resource_exhausted] Error\n (exhausted 5 Sandcastle attempts with exponential backoff)",
+      ),
+    ).toBe(false);
+    expect(isTransientCursorBlockReason("Phase did not emit PHASE_COMPLETE")).toBe(
+      false,
+    );
+  });
+
+  it("resumes the same phase after transient Cursor block", async () => {
+    const active: ActiveState = {
+      issue: 95,
+      phase: "create-pr",
+      branch: "issue-95",
+      status: "blocked",
+      reason: "cursor exited with code 1:\nT: [resource_exhausted] Error\n",
+      resumeSkill: "/create-pr",
+      startedAt: "2026-06-02T05:56:48.422Z",
+    };
+
+    const reconciled = tryReconcileTransientCursorBlockedHandoff({ active });
+
+    expect(reconciled).toEqual({
+      issue: 95,
+      phase: "create-pr",
+      branch: "issue-95",
+      status: "active",
+      startedAt: active.startedAt,
+    });
   });
 
   it("resumes at create-pr when worktree handoff uses complete synonym", async () => {

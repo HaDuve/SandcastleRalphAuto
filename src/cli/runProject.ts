@@ -6,6 +6,7 @@ import {
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
+  tryReconcileTransientCursorBlockedHandoff,
   type Handoff,
 } from "../handoff/index.js";
 import {
@@ -712,7 +713,8 @@ async function resolveLoopStart(
         stateRoot,
         projectId: project.remote,
         active,
-      }));
+      })) ??
+      tryReconcileTransientCursorBlockedHandoff({ active });
     if (reconciled !== null) {
       await writeActive(project.remote, reconciled, stateRoot);
       if (!isRunnablePhase(reconciled.phase)) {
