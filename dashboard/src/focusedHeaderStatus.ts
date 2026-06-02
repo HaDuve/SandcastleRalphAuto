@@ -1,4 +1,5 @@
 import { formatPhaseDuration } from "./phaseDuration.js";
+import { formatTimestampLocal } from "./timeFormat.js";
 import {
   resolveActiveSummaryForCard,
   resolveWorkerStatusForCard,
@@ -19,6 +20,7 @@ export type FocusedStatus = {
   pr: number | null;
   outcome: string | null;
   reason: string | null;
+  stoppedAt: string | null;
   sinceStop: string | null;
   phaseElapsed: string | null;
 };
@@ -34,6 +36,7 @@ const emptyStatus: FocusedStatus = {
   pr: null,
   outcome: null,
   reason: null,
+  stoppedAt: null,
   sinceStop: null,
   phaseElapsed: null,
 };
@@ -76,6 +79,7 @@ export function buildFocusedStatus(
 
   let outcome: string | null = null;
   let reason: string | null = null;
+  let stoppedAt: string | null = null;
   let sinceStop: string | null = null;
   let phaseElapsed: string | null = null;
 
@@ -84,6 +88,7 @@ export function buildFocusedStatus(
   } else if (!running && lastOutcome) {
     outcome = formatOutcomeLabel(lastOutcome.outcome);
     reason = lastOutcome.reason ?? null;
+    stoppedAt = formatTimestampLocal(lastOutcome.stoppedAt) ?? null;
     sinceStop = formatSinceStop(lastOutcome.stoppedAt, now);
   }
 
@@ -98,6 +103,7 @@ export function buildFocusedStatus(
     pr,
     outcome,
     reason,
+    stoppedAt,
     sinceStop,
     phaseElapsed,
   };

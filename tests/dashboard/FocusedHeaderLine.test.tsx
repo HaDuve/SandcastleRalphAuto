@@ -90,12 +90,14 @@ describe("FocusedHeaderLine", () => {
           phaseElapsed: null,
           outcome: "Blocked",
           reason: "CI failing",
+          stoppedAt: "2026-06-01 00:45:00 UTC",
           sinceStop: "15m ago",
         }}
       />,
     );
 
     expect(screen.getByText(/Blocked — CI failing/)).toBeTruthy();
-    expect(screen.getByText(/stopped 15m ago/)).toBeTruthy();
+    expect(screen.getByText(/stopped 2026-06-01/)).toBeTruthy();
+    expect(screen.getByText(/\(15m ago\)/)).toBeTruthy();
   });
 });

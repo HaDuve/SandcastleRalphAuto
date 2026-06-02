@@ -24,7 +24,7 @@ export function FocusedHeaderLine({ status }: FocusedHeaderLineProps) {
     );
   }
 
-  const { id, remote, path, worker, phase, issue, pr, outcome, reason, sinceStop, phaseElapsed } =
+  const { id, remote, path, worker, phase, issue, pr, outcome, reason, stoppedAt, sinceStop, phaseElapsed } =
     status;
 
   return (
@@ -103,10 +103,13 @@ export function FocusedHeaderLine({ status }: FocusedHeaderLineProps) {
           </span>
         </>
       ) : null}
-      {sinceStop ? (
+      {stoppedAt || sinceStop ? (
         <>
           <Separator />
-          <span>stopped {sinceStop}</span>
+          <span>
+            stopped {stoppedAt ?? "(missing)"}
+            {sinceStop ? ` (${sinceStop})` : null}
+          </span>
         </>
       ) : null}
     </p>

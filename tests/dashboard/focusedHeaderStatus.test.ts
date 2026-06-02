@@ -47,6 +47,7 @@ describe("buildFocusedStatus", () => {
       pr: null,
       outcome: null,
       reason: null,
+      stoppedAt: null,
       sinceStop: null,
       phaseElapsed: null,
     });
@@ -122,6 +123,7 @@ describe("buildFocusedStatus", () => {
       worker: "idle",
       outcome: "Blocked",
       reason: "CI failing",
+      stoppedAt: expect.stringMatching(/2026-06-01/),
       sinceStop: "15m ago",
       phaseElapsed: null,
     });

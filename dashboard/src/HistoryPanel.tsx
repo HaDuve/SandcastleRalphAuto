@@ -1,5 +1,6 @@
 import { PanelHeader } from "./PanelHeader.js";
 import { formatPhaseDuration } from "./phaseDuration.js";
+import { formatTimestampRangeLocal } from "./timeFormat.js";
 import type { HistoryEntry, Project } from "./types.js";
 
 export type HistoryPanelProps = {
@@ -48,6 +49,13 @@ export function HistoryPanel({
                       <span className="history-phase-duration">
                         {formatPhaseDuration(phase.startedAt, phase.endedAt)}
                       </span>
+                      {formatTimestampRangeLocal(phase.startedAt, phase.endedAt) ? (
+                        <span className="history-phase-times">
+                          {formatTimestampRangeLocal(phase.startedAt, phase.endedAt)}
+                        </span>
+                      ) : (
+                        <span className="history-phase-times">(missing)</span>
+                      )}
                     </li>
                   ))}
                 </ul>
