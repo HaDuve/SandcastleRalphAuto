@@ -13,6 +13,7 @@ import {
 } from "../state/runOutcomeFromWorker.js";
 import { type EventBus } from "./eventBus.js";
 import { reapProcessTree } from "./reapProcessTree.js";
+import { installServerConsoleCapture } from "./serverLog.js";
 
 export type WorkerManagerDeps = {
   loopProject?: typeof loopProject;
@@ -67,6 +68,7 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
   const now = deps.now ?? (() => new Date());
   const reapProcessTreeFn =
     deps.reapProcessTree ?? ((rootPid: number) => reapProcessTree(rootPid));
+  const serverLog = installServerConsoleCapture({ eventBus: deps.eventBus });
   const workers = new Map<string, WorkerEntry>();
 
   return {
@@ -87,85 +89,94 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
 
       const resolvedProjectPath = resolve(project.path);
       const resolvedRootDir = resolve(input.rootDir);
-      if (resolvedProjectPath === resolvedRootDir) {
-        console.warn(
-          `[sandcastle] AFK project "${project.id}" runs on the open workspace (${resolvedProjectPath}). ` +
-            "Cursor extension-host memory often grows when agent CLI and IDE share the same folder. " +
-            "Prefer a separate git clone in projects.json, or close this workspace during long AFK runs.",
-        );
-      }
+      const run = async () => {
+        if (resolvedProjectPath === resolvedRootDir) {
+          console.warn(
+            `[sandcastle] AFK project "${project.id}" runs on the open workspace (${resolvedProjectPath}). ` +
+              "Cursor extension-host memory often grows when agent CLI and IDE share the same folder. " +
+              "Prefer a separate git clone in projects.json, or close this workspace during long AFK runs.",
+          );
+        }
 
-      const control = createWorkerControl(entry);
-      const runDeps: RunProjectDeps = {
-        ...input.deps,
-        control,
-        livePhaseLog: true,
-        onPhaseLog: (chunk) => {
-          deps.eventBus.emit({ type: "phase-log", projectId: project.id, chunk });
-          input.deps?.onPhaseLog?.(chunk);
-        },
-        onAgentStream: (envelope: AgentStreamEnvelope) => {
-          if (envelope.event.type === "text" && envelope.event.message) {
-            const chunk = envelope.event.message.endsWith("\n")
-              ? envelope.event.message
-              : `${envelope.event.message}\n`;
+        const control = createWorkerControl(entry);
+        const runDeps: RunProjectDeps = {
+          ...input.deps,
+          control,
+          livePhaseLog: true,
+          onPhaseLog: (chunk) => {
             deps.eventBus.emit({ type: "phase-log", projectId: project.id, chunk });
-          }
-          const streamKey = `${envelope.issue}:${envelope.phase}`;
-          if (!entry.streamedPhaseKeys.has(streamKey)) {
-            entry.streamedPhaseKeys.add(streamKey);
-            deps.eventBus.emit({
-              type: "stream",
-              projectId: project.id,
-              issue: envelope.issue,
-              phase: envelope.phase,
+            input.deps?.onPhaseLog?.(chunk);
+          },
+          onAgentStream: (envelope: AgentStreamEnvelope) => {
+            if (envelope.event.type === "text" && envelope.event.message) {
+              const chunk = envelope.event.message.endsWith("\n")
+                ? envelope.event.message
+                : `${envelope.event.message}\n`;
+              deps.eventBus.emit({ type: "phase-log", projectId: project.id, chunk });
+            }
+            const streamKey = `${envelope.issue}:${envelope.phase}`;
+            if (!entry.streamedPhaseKeys.has(streamKey)) {
+              entry.streamedPhaseKeys.add(streamKey);
+              deps.eventBus.emit({
+                type: "stream",
+                projectId: project.id,
+                issue: envelope.issue,
+                phase: envelope.phase,
+              });
+            }
+            input.deps?.onAgentStream?.(envelope);
+          },
+          runPhase: async (options) => {
+            const runPhaseFn =
+              input.deps?.runPhase ??
+              (await import("../runner/index.js")).runPhase;
+            return serverLog.runWithBranch(options.branch, async () =>
+              runPhaseFn({ ...options, signal: control.signal }),
+            );
+          },
+        };
+
+        deps.eventBus.emit({ type: "worker-started", projectId: project.id });
+
+        return loopProjectFn(
+          { projectId: project.id, rootDir: input.rootDir, stateRoot: input.stateRoot },
+          runDeps,
+        )
+          .then(async (result) => {
+            const lastRunOutcome = await persistRunOutcomeFromLoopResult(result, {
+              project,
+              stateRoot: input.stateRoot,
+              stoppedAt: now().toISOString(),
             });
-          }
-          input.deps?.onAgentStream?.(envelope);
-        },
-        runPhase: async (options) => {
-          const runPhaseFn =
-            input.deps?.runPhase ??
-            (await import("../runner/index.js")).runPhase;
-          return runPhaseFn({ ...options, signal: control.signal });
-        },
+            deps.eventBus.emit({
+              type: "worker-stopped",
+              projectId: project.id,
+              lastRunOutcome,
+            });
+            return result;
+          })
+          .catch(async (error: unknown) => {
+            const lastRunOutcome = await persistRunOutcomeFromWorkerError(error, {
+              project,
+              stateRoot: input.stateRoot,
+              stoppedAt: now().toISOString(),
+            });
+            deps.eventBus.emit({
+              type: "worker-stopped",
+              projectId: project.id,
+              lastRunOutcome,
+            });
+            return undefined;
+          })
+          .finally(() => {
+            workers.delete(project.id);
+          });
       };
 
-      deps.eventBus.emit({ type: "worker-started", projectId: project.id });
-
-      entry.promise = loopProjectFn(
-        { projectId: project.id, rootDir: input.rootDir, stateRoot: input.stateRoot },
-        runDeps,
-      )
-        .then(async (result) => {
-          const lastRunOutcome = await persistRunOutcomeFromLoopResult(result, {
-            project,
-            stateRoot: input.stateRoot,
-            stoppedAt: now().toISOString(),
-          });
-          deps.eventBus.emit({
-            type: "worker-stopped",
-            projectId: project.id,
-            lastRunOutcome,
-          });
-          return result;
-        })
-        .catch(async (error: unknown) => {
-          const lastRunOutcome = await persistRunOutcomeFromWorkerError(error, {
-            project,
-            stateRoot: input.stateRoot,
-            stoppedAt: now().toISOString(),
-          });
-          deps.eventBus.emit({
-            type: "worker-stopped",
-            projectId: project.id,
-            lastRunOutcome,
-          });
-          return undefined;
-        })
-        .finally(() => {
-          workers.delete(project.id);
-        });
+      entry.promise = serverLog.runWithProject(
+        { projectId: project.id, projectPath: project.path },
+        async () => run(),
+      );
 
       return { status: "started" };
     },

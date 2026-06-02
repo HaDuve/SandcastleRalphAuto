@@ -22,6 +22,7 @@ const PROJECT_EVENT_TYPES = [
   "worker-paused",
   "worker-resumed",
   "phase-log",
+  "server-log",
   "stream",
 ] as const;
 

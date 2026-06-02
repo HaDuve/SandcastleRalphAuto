@@ -2,7 +2,13 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { listPhaseLogs, readPhaseLog, startTailPhaseLog } from "../src/phaseLogs/index.js";
+import {
+  listPhaseLogs,
+  listProjectLogs,
+  readPhaseLog,
+  readProjectLog,
+  startTailPhaseLog,
+} from "../src/phaseLogs/index.js";
 
 describe("phase logs service", () => {
   async function setupProject(): Promise<{
@@ -73,6 +79,35 @@ describe("phase logs service", () => {
     await expect(readPhaseLog(projectId, 42, "tdd", { rootDir })).resolves.toBe(
       null,
     );
+  });
+
+  it("includes server log channel when present alongside phase logs", async () => {
+    const { rootDir, projectPath, projectId } = await setupProject();
+    const logsDir = join(projectPath, ".sandcastle", "logs");
+    await mkdir(logsDir, { recursive: true });
+    await writeFile(join(logsDir, "issue-42-server.log"), "server output\n");
+    await writeFile(join(logsDir, "issue-42-tdd.log"), "tdd output\n");
+
+    await expect(listProjectLogs(projectId, 42, { rootDir })).resolves.toEqual([
+      "server",
+      "tdd",
+    ]);
+  });
+
+  it("reads server log via project log API and returns null when missing", async () => {
+    const { rootDir, projectPath, projectId } = await setupProject();
+    const logsDir = join(projectPath, ".sandcastle", "logs");
+    await mkdir(logsDir, { recursive: true });
+    await writeFile(join(logsDir, "issue-42-server.log"), "hello server\n");
+
+    await expect(readProjectLog(projectId, 42, "server", { rootDir })).resolves.toBe(
+      "hello server\n",
+    );
+    await expect(readProjectLog(projectId, 42, "server", { rootDir })).resolves.toBe(
+      "hello server\n",
+    );
+
+    await expect(readProjectLog(projectId, 7, "server", { rootDir })).resolves.toBeNull();
   });
 
   it("includes recovery phase logs in runnable pipeline order", async () => {
