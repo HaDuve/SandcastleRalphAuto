@@ -53,6 +53,14 @@ _Avoid_: blocked (blocked = a failed/halted slice; skip = operator exclusion)
 An operator dismissing a Project's card from the dashboard view. Per-browser only (client `localStorage`), reversible via "show all," and never touches `projects.json` or any Run. Operates on a Project; a Skip operates on an issue.
 _Avoid_: remove (implies deleting from the registry), skip (skip = issue exclusion)
 
+**Header status**:
+The dashboard top bar beside the product title: a **focused** line (one Project the operator is viewing) plus a **fleet** line (aggregate counts across Projects). Answers "what is this project doing?" and "what is the whole bench doing?" without reading each sidebar card.
+_Avoid_: status field (ambiguous — sidebar cards also show status; say header status or fleet summary)
+
+**Fleet summary**:
+The secondary header line: counts of Projects by worker/run posture (e.g. running, paused, blocked, idle). Distinct from a single Project's focused line.
+_Avoid_: global status (vague)
+
 ## Example dialogue
 
 > **Dev:** When a worker finishes a slice, does it reuse the same agent for `/next`?
