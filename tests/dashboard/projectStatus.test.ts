@@ -20,9 +20,7 @@ describe("workerPostureLabel", () => {
   });
 
   it("returns running when the worker is running even if the slice is blocked", () => {
-    expect(
-      workerPostureLabel("running", { ...active, status: "blocked", phase: "babysit" }),
-    ).toBe("running");
+    expect(workerPostureLabel("running", { status: "blocked" })).toBe("running");
   });
 
   it("returns blocked when idle with a blocked slice", () => {

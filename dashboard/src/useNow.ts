@@ -4,10 +4,10 @@ export function useNow(intervalMs = 10_000): string {
   const [now, setNow] = useState(() => new Date().toISOString());
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const timer = setInterval(() => {
       setNow(new Date().toISOString());
     }, intervalMs);
-    return () => window.clearInterval(timer);
+    return () => clearInterval(timer);
   }, [intervalMs]);
 
   return now;
