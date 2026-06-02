@@ -53,5 +53,6 @@ describe("HistoryPanel", () => {
     expect(screen.getByText(/issue #9/i)).toBeInTheDocument();
     expect(screen.getByText(/merge/i)).toBeInTheDocument();
     expect(screen.getByText(/1h/i)).toBeInTheDocument();
+    expect(screen.getByText(/2026-06-01.*→.*2026-06-01/)).toBeInTheDocument();
   });
 });

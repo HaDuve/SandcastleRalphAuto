@@ -2,6 +2,7 @@ import { PanelHeader } from "./PanelHeader.js";
 import { githubIssueUrl, githubPrUrl } from "./linkTargets.js";
 import { buildPhaseStepperSteps } from "./phaseStepperSteps.js";
 import type { Project, ProjectActiveSummary } from "./types.js";
+import { formatTimestampLocal } from "./timeFormat.js";
 
 export type PhaseStepperProps = {
   project: Project | null;
@@ -12,19 +13,8 @@ export type PhaseStepperProps = {
   refreshError?: string | null;
 };
 
-function formatStartedAt(iso: string): string {
-  return iso.replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
-}
-
 function formatStateMtime(ms: number | null | undefined): string | null {
-  if (ms === null || ms === undefined) {
-    return null;
-  }
-  try {
-    return new Date(ms).toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
-  } catch {
-    return null;
-  }
+  return formatTimestampLocal(ms ?? null);
 }
 
 export function PhaseStepper({
@@ -68,7 +58,7 @@ export function PhaseStepper({
           </a>
         ) : null}
         {summary?.branch ? <span>{summary.branch}</span> : null}
-        {summary?.startedAt ? <span>{formatStartedAt(summary.startedAt)}</span> : null}
+        {summary?.startedAt ? <span>{formatTimestampLocal(summary.startedAt)}</span> : null}
         {active?.debug ? (
           <>
             {formatStateMtime(active.debug.activeMtimeMs) ? (

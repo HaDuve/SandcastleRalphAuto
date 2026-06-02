@@ -70,5 +70,6 @@ describe("PhaseStepper", () => {
     );
     expect(screen.getByText(/issue-95/)).toBeInTheDocument();
     expect(screen.getByText(/2026-06-01/)).toBeInTheDocument();
+    expect(screen.queryByText(/T12:00:00\.000Z/)).toBeNull();
   });
 });
