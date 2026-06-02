@@ -1,3 +1,6 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   confirmsCreatePrNoDiffAtWorktree,
@@ -52,6 +55,7 @@ describe("createPrNoDiffRoute", () => {
   });
 
   it("confirms no-diff only when git and handoff agree", async () => {
+    const worktreePath = await mkdtemp(join(tmpdir(), "nodiff-wt-"));
     const git: GitRunner = async (args) => {
       if (args[0] === "rev-list") {
         return { stdout: "0\n", exitCode: 0 };
@@ -69,15 +73,39 @@ describe("createPrNoDiffRoute", () => {
     } satisfies Handoff;
 
     expect(
-      await confirmsCreatePrNoDiffAtWorktree(handoff, "/tmp/wt", git),
+      await confirmsCreatePrNoDiffAtWorktree(handoff, worktreePath, git),
     ).toBe(true);
     expect(
       await confirmsCreatePrNoDiffAtWorktree(
         { ...handoff, blockers: ["unrelated blocker"] },
-        "/tmp/wt",
+        worktreePath,
         git,
       ),
     ).toBe(true);
+  });
+
+  it("falls back to blocker text when worktree is missing", async () => {
+    const handoff = {
+      ...baseHandoff,
+      acceptanceState: "blocked",
+      blockers: ["0 commits vs origin/main"],
+      nextSkill: "/review-pr",
+    } satisfies Handoff;
+
+    expect(
+      await confirmsCreatePrNoDiffAtWorktree(
+        handoff,
+        "/tmp/does-not-exist-very-likely",
+        undefined,
+      ),
+    ).toBe(true);
+    expect(
+      await confirmsCreatePrNoDiffAtWorktree(
+        { ...handoff, blockers: ["some other failure"] },
+        "/tmp/does-not-exist-very-likely",
+        undefined,
+      ),
+    ).toBe(false);
   });
 
   it("normalizes blocked no-diff handoff to done with nextSkill /next", () => {

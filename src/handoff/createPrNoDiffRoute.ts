@@ -1,4 +1,5 @@
 import type { Handoff } from "./schema.js";
+import { stat } from "node:fs/promises";
 import {
   worktreeHasNoDiffVsOriginMain,
   type GitRunner,
@@ -72,8 +73,21 @@ export async function confirmsCreatePrNoDiffAtWorktree(
   if (handoff.phase !== "create-pr") {
     return false;
   }
-  if (!(await worktreeHasNoDiffVsOriginMain(worktreePath, git))) {
-    return false;
+  // If the worktree is missing (sandbox cleaned up), fall back to blocker text.
+  try {
+    await stat(worktreePath);
+  } catch {
+    return (
+      isCreatePrNoDiffDoneHandoff(handoff) || isCreatePrNoDiffBlockedHandoff(handoff)
+    );
+  }
+
+  const noDiff = await worktreeHasNoDiffVsOriginMain(worktreePath, git);
+  if (!noDiff) {
+    // Git could be unavailable or origin/main missing; fall back to blocker text.
+    return (
+      isCreatePrNoDiffDoneHandoff(handoff) || isCreatePrNoDiffBlockedHandoff(handoff)
+    );
   }
   if (isCreatePrNoDiffDoneHandoff(handoff)) {
     return true;
