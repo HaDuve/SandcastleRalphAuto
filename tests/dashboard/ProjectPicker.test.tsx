@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectPicker } from "../../dashboard/src/ProjectPicker.js";
-import type { Project, ProjectActiveSummary } from "../../dashboard/src/types.js";
+import type { Project } from "../../dashboard/src/types.js";
 import type { WorkerState, WorkerStatus } from "../../dashboard/src/workerStatus.js";
 
 function workerState(status: WorkerStatus): WorkerState {
@@ -33,7 +33,6 @@ function renderPicker(
     projects: Project[];
     selectedIds: Set<string>;
     workerStates: Record<string, WorkerState>;
-    activeSummaries: Record<string, ProjectActiveSummary | null>;
     onStart: (projectId: string) => void;
     onPause: (projectId: string) => void;
     onResume: (projectId: string) => void;
@@ -48,7 +47,6 @@ function renderPicker(
       projects={overrides.projects ?? [portfolio]}
       selectedIds={overrides.selectedIds ?? new Set()}
       workerStates={overrides.workerStates ?? {}}
-      activeSummaries={overrides.activeSummaries ?? {}}
       hasHiddenProjects={overrides.hasHiddenProjects ?? false}
       onSelectedChange={() => {}}
       onStart={overrides.onStart ?? (() => {})}
@@ -71,21 +69,15 @@ describe("ProjectPicker", () => {
   it("does not render a per-card status string", () => {
     renderPicker({
       workerStates: { portfolio: workerState("running") },
-      activeSummaries: {
-        portfolio: { issue: 11, phase: "create-pr", status: "active" },
-      },
     });
 
     expect(screen.queryByText("running · create-pr")).not.toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("does not show blocked text on the card when active is blocked but worker is running", () => {
+  it("does not show blocked text on the card when worker is running", () => {
     renderPicker({
       workerStates: { portfolio: workerState("running") },
-      activeSummaries: {
-        portfolio: { issue: 11, phase: "babysit", status: "blocked" },
-      },
     });
 
     expect(screen.queryByText(/running ·/i)).not.toBeInTheDocument();
@@ -199,7 +191,6 @@ describe("ProjectPicker", () => {
         projects={[other]}
         selectedIds={new Set()}
         workerStates={{}}
-        activeSummaries={{}}
         hasHiddenProjects
         onSelectedChange={() => {}}
         onStart={() => {}}

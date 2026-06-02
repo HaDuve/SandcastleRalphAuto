@@ -1,5 +1,5 @@
 import { projectCardClass } from "./runOutcomeUi.js";
-import type { Project, ProjectActiveSummary } from "./types.js";
+import type { Project } from "./types.js";
 import type { WorkerState, WorkerStatus } from "./workerStatus.js";
 import { canHideProject, isControlReady, stoppedRunOutcome } from "./workerStatus.js";
 
@@ -7,7 +7,6 @@ export type ProjectPickerProps = {
   projects: Project[];
   selectedIds: Set<string>;
   workerStates: Record<string, WorkerState>;
-  activeSummaries: Record<string, ProjectActiveSummary | null>;
   hasHiddenProjects: boolean;
   onSelectedChange: (projectId: string, selected: boolean) => void;
   onStart: (projectId: string) => void;
