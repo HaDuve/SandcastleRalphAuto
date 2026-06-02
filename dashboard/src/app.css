@@ -455,3 +455,27 @@ button:disabled {
 [role="alert"] {
   color: #f87171;
 }
+
+.panel-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.75rem;
+  min-height: 1.75rem;
+}
+
+.refresh-spinner {
+  display: inline-block;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid #4a5568;
+  border-top-color: #e7ecf3;
+  border-radius: 50%;
+  animation: refresh-spinner-spin 0.75s linear infinite;
+}
+
+@keyframes refresh-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

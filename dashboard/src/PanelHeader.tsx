@@ -4,6 +4,7 @@ export type PanelHeaderProps = {
   title: string;
   onRefresh?: () => void;
   refreshDisabled?: boolean;
+  refreshing?: boolean;
   error?: string | null;
   actions?: ReactNode;
 };
@@ -12,9 +13,13 @@ export function PanelHeader({
   title,
   onRefresh,
   refreshDisabled = false,
+  refreshing = false,
   error = null,
   actions,
 }: PanelHeaderProps) {
+  const refreshBusy = refreshing;
+  const refreshButtonDisabled = refreshDisabled || refreshBusy;
+
   return (
     <div className="panel-header">
       <div className="panel-header-row">
@@ -24,11 +29,17 @@ export function PanelHeader({
           {onRefresh ? (
             <button
               type="button"
+              className="panel-refresh-button"
               aria-label={`Refresh ${title}`}
-              disabled={refreshDisabled}
+              aria-busy={refreshBusy || undefined}
+              disabled={refreshButtonDisabled}
               onClick={onRefresh}
             >
-              Refresh
+              {refreshBusy ? (
+                <span className="refresh-spinner" aria-hidden="true" />
+              ) : (
+                "Refresh"
+              )}
             </button>
           ) : null}
         </div>

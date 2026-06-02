@@ -7,6 +7,7 @@ export type QueuePanelProps = {
   queue: QueueIssue[];
   onSkipToggle: (issue: number, skipped: boolean) => void;
   onRefresh?: () => void;
+  refreshing?: boolean;
   refreshError?: string | null;
 };
 
@@ -15,12 +16,13 @@ export function QueuePanel({
   queue,
   onSkipToggle,
   onRefresh,
+  refreshing = false,
   refreshError = null,
 }: QueuePanelProps) {
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <PanelHeader title="Queue" onRefresh={onRefresh} refreshDisabled />
+        <PanelHeader title="Queue" onRefresh={onRefresh} refreshDisabled refreshing={refreshing} />
         <p>Select a project to view the issue queue.</p>
       </div>
     );
@@ -28,7 +30,7 @@ export function QueuePanel({
 
   return (
     <div className="queue-panel">
-      <PanelHeader title="Queue" onRefresh={onRefresh} error={refreshError} />
+      <PanelHeader title="Queue" onRefresh={onRefresh} refreshing={refreshing} error={refreshError} />
       {queue.length === 0 ? (
         <p className="queue-empty">No open issues with the AFK label.</p>
       ) : (

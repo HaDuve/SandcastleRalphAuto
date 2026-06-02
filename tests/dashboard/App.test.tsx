@@ -1608,6 +1608,68 @@ describe("App", () => {
     expect(within(screen.getByRole("region", { name: /phase stepper/i })).getByRole("link", { name: /#11/i })).toBeInTheDocument();
   });
 
+  it("shows a spinner on the queue Refresh button while the tile refresh is in flight", async () => {
+    let queueFetchCount = 0;
+    let releaseQueueRefresh: (() => void) | undefined;
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          queueFetchCount += 1;
+          if (queueFetchCount === 1) {
+            return new Response(
+              JSON.stringify({
+                queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+              }),
+              { status: 200 },
+            );
+          }
+          await new Promise<void>((resolve) => {
+            releaseQueueRefresh = resolve;
+          });
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 20, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await screen.findByText(/#10/);
+
+    const queueRegion = screen.getByRole("region", { name: /^queue$/i });
+    const refreshButton = within(queueRegion).getByRole("button", { name: /refresh queue/i });
+    void user.click(refreshButton);
+
+    await waitFor(() => {
+      expect(refreshButton).toBeDisabled();
+      expect(refreshButton).toHaveAttribute("aria-busy", "true");
+      expect(refreshButton.querySelector(".refresh-spinner")).not.toBeNull();
+    });
+
+    releaseQueueRefresh?.();
+    await waitFor(() => {
+      expect(refreshButton).toBeEnabled();
+      expect(refreshButton).toHaveTextContent("Refresh");
+      expect(within(queueRegion).getByText(/#20/)).toBeInTheDocument();
+    });
+  });
+
   it("shows queue refresh errors inside the queue tile only", async () => {
     const user = userEvent.setup();
     let queueFetchCount = 0;
