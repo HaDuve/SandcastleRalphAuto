@@ -10,7 +10,12 @@ export function lastLines(text: string, count: number): string {
 }
 
 export function appendLogChunk(log: string, chunk: string): string {
-  return log + chunk;
+  const MAX_LOG_CHARS = 512_000;
+  const next = log + chunk;
+  if (next.length <= MAX_LOG_CHARS) {
+    return next;
+  }
+  return next.slice(-MAX_LOG_CHARS);
 }
 
 export type ScrollableLogBody = { scrollTop: number; scrollHeight: number };

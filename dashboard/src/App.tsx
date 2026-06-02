@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   fetchActive,
@@ -318,18 +318,39 @@ export function App() {
     }
   }, []);
 
+  const selectedProjectIdsKey = useMemo(
+    () => [...selectedIds].sort().join("\0"),
+    [selectedIds],
+  );
+  const refreshPanelsRef = useRef(refreshPanels);
+  const syncActiveSummaryRef = useRef(syncActiveSummary);
+
+  useEffect(() => {
+    refreshPanelsRef.current = refreshPanels;
+  }, [refreshPanels]);
+
+  useEffect(() => {
+    syncActiveSummaryRef.current = syncActiveSummary;
+  }, [syncActiveSummary]);
+
   useEffect(() => {
     if (!catalogReady) {
       return;
     }
+    const projectIds = selectedProjectIdsKey.split("\0").filter(Boolean);
     const unsubscribes: Array<() => void> = [];
-    for (const projectId of selectedIds) {
+    for (const projectId of projectIds) {
       unsubscribes.push(
         subscribeProjectEvents(projectId, (event) => {
-          setWorkerStates((current) => ({
-            ...current,
-            [projectId]: applyWorkerEvent(current[projectId], event),
-          }));
+          if (
+            event.type === "connected" ||
+            event.type.startsWith("worker-")
+          ) {
+            setWorkerStates((current) => ({
+              ...current,
+              [projectId]: applyWorkerEvent(current[projectId], event),
+            }));
+          }
           if (event.type === "worker-stopped" && event.lastRunOutcome) {
             const lastRunOutcome = event.lastRunOutcome;
             setProjects((current) =>
@@ -342,10 +363,16 @@ export function App() {
           }
           if (event.type === "stream" && event.phase) {
             const nextPhase = event.phase;
-            setActiveSummaries((current) => ({
-              ...current,
-              [projectId]: withActivePhase(current[projectId], nextPhase, event.issue),
-            }));
+            setActiveSummaries((current) => {
+              const summary = current[projectId];
+              if (summary?.phase === nextPhase) {
+                return current;
+              }
+              return {
+                ...current,
+                [projectId]: withActivePhase(summary, nextPhase, event.issue),
+              };
+            });
             if (projectId === focusedProjectIdRef.current) {
               setActive((current) =>
                 current && current.phase !== nextPhase
@@ -356,13 +383,13 @@ export function App() {
           }
           if (event.type === "worker-started") {
             if (projectId === focusedProjectIdRef.current) {
-              void refreshPanels(projectId);
+              void refreshPanelsRef.current(projectId);
             }
           }
           if (event.type === "worker-stopped") {
-            void syncActiveSummary(projectId);
+            void syncActiveSummaryRef.current(projectId);
             if (projectId === focusedProjectIdRef.current) {
-              void refreshPanels(projectId);
+              void refreshPanelsRef.current(projectId);
             }
           }
           if (projectId !== focusedProjectIdRef.current) {
@@ -379,7 +406,7 @@ export function App() {
         unsubscribe();
       }
     };
-  }, [catalogReady, refreshPanels, selectedIds, syncActiveSummary]);
+  }, [catalogReady, selectedProjectIdsKey]);
 
   useAutoRefresh({
     enabled: catalogReady && focusedProjectId !== null,

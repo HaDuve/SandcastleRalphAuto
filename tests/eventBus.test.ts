@@ -19,12 +19,6 @@ describe("createEventBus", () => {
         projectId: "portfolio",
         issue: 12,
         phase: "tdd",
-        event: {
-          type: "text",
-          message: "still delivered",
-          iteration: 1,
-          timestamp: new Date("2026-06-01T12:00:00.000Z"),
-        },
       });
     }).not.toThrow();
 

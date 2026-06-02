@@ -1,5 +1,4 @@
 import { type RunnablePhase } from "../prompts/phases.js";
-import { type AgentStreamEvent } from "../runner/index.js";
 import { type RunOutcome } from "../state/index.js";
 
 export type DashboardEvent =
@@ -13,7 +12,6 @@ export type DashboardEvent =
       projectId: string;
       issue: number;
       phase: RunnablePhase;
-      event: AgentStreamEvent;
     };
 
 export type EventListener = (event: DashboardEvent) => void;

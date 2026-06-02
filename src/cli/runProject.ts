@@ -122,6 +122,8 @@ export type RunProjectDeps = {
   }) => Promise<void>;
   readLogFile?: (path: string) => Promise<string>;
   onPhaseLog?: (chunk: string) => void;
+  /** When true, phase-log is forwarded live (e.g. dashboard stream); skip file tail. */
+  livePhaseLog?: boolean;
   tailPhaseLogPollIntervalMs?: number;
   onAgentStream?: (envelope: AgentStreamEnvelope) => void;
   mutex?: ProjectMutex;
@@ -312,6 +314,10 @@ function startPhaseLogTail(
   deps: RunProjectDeps,
 ): TailPhaseLogHandle | undefined {
   if (!deps.onPhaseLog || !deps.readLogFile) {
+    return undefined;
+  }
+  // Live dashboard runs forward text via phase-log during the phase.
+  if (deps.livePhaseLog) {
     return undefined;
   }
   const logPath = resolvePhaseLogPath({

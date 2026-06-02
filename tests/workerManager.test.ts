@@ -98,9 +98,43 @@ describe("createWorkerManager", () => {
       projectId: "portfolio",
       issue: 12,
       phase: "tdd",
-      event: streamEnvelope.event,
     });
     expect(manager.isRunning("portfolio")).toBe(false);
+  });
+
+  it("forwards text agent output as phase-log chunks", async () => {
+    const eventBus = createEventBus();
+    const events: DashboardEvent[] = [];
+    eventBus.subscribe("portfolio", (event) => events.push(event));
+
+    const manager = createWorkerManager({
+      eventBus,
+      loopProject: async (_input, deps) => {
+        deps!.onAgentStream?.({
+          issue: 12,
+          phase: "tdd",
+          event: {
+            type: "text",
+            message: "planning tests",
+            iteration: 1,
+            timestamp: new Date("2026-06-01T12:00:00.000Z"),
+          },
+        });
+        return { status: "queue-empty", slicesCompleted: 0 };
+      },
+    });
+
+    await manager.start(portfolio, {
+      rootDir: "/tmp",
+      stateRoot: "/tmp/state",
+    });
+    await waitForWorkerToFinish(manager, "portfolio");
+
+    expect(events).toContainEqual({
+      type: "phase-log",
+      projectId: "portfolio",
+      chunk: "planning tests\n",
+    });
   });
 
   it("allows restarting a project after kill releases the mutex", async () => {

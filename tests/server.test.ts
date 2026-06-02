@@ -528,7 +528,6 @@ describe("dashboard server", () => {
   it("streams incremental phase-log over SSE before the worker stops", async () => {
     const { rootDir, project, stateRoot } = await setupProjectRoot();
     const eventBus = createEventBus();
-    let content = "";
 
     const runProjectDeps: RunProjectDeps = {
       mutex: createInMemoryProjectMutex(),
@@ -550,9 +549,19 @@ describe("dashboard server", () => {
         };
       },
       runPhase: async (options) => {
-        content = "alpha\n";
+        options.onAgentStreamEvent?.({
+          type: "text",
+          message: "alpha\n",
+          iteration: 1,
+          timestamp: new Date("2026-06-01T12:00:00.000Z"),
+        });
         await new Promise((resolve) => setTimeout(resolve, 80));
-        content = "alpha\nbeta\n";
+        options.onAgentStreamEvent?.({
+          type: "text",
+          message: "beta\n",
+          iteration: 2,
+          timestamp: new Date("2026-06-01T12:00:01.000Z"),
+        });
         await new Promise((resolve) => setTimeout(resolve, 80));
         return {
           commits: [],
@@ -564,8 +573,6 @@ describe("dashboard server", () => {
           },
         };
       },
-      readLogFile: async () => content,
-      tailPhaseLogPollIntervalMs: 30,
       runNext: async () => ({ status: QUEUE_EMPTY }),
       runMergeGate: async () => ({ status: "auto-merge-queued" }),
       waitForMergedPr: async () => {},
@@ -756,12 +763,6 @@ describe("dashboard server", () => {
       projectId: "portfolio",
       issue: 12,
       phase: "tdd",
-      event: {
-        type: "text",
-        message: "planning tests",
-        iteration: 1,
-        timestamp: new Date("2026-06-01T12:00:00.000Z"),
-      },
     });
 
     while (events.length < 2) {
@@ -792,12 +793,6 @@ describe("dashboard server", () => {
       projectId: "portfolio",
       issue: 12,
       phase: "tdd",
-      event: {
-        type: "text",
-        message: "planning tests",
-        iteration: 1,
-        timestamp: "2026-06-01T12:00:00.000Z",
-      },
     });
   });
 
@@ -916,13 +911,6 @@ describe("dashboard server", () => {
         projectId: "portfolio",
         issue: 12,
         phase: "tdd",
-        event: {
-          type: "toolCall",
-          name: "read_file",
-          formattedArgs: "path=src/foo.ts",
-          iteration: 1,
-          timestamp: new Date("2026-06-01T12:00:00.000Z"),
-        },
       });
     }).not.toThrow();
 

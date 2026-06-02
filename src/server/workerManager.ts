@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import {
   loopProject,
   type AgentStreamEnvelope,
@@ -35,6 +36,7 @@ type WorkerEntry = {
   abortController: AbortController;
   paused: boolean;
   promise: Promise<LoopProjectResult | undefined>;
+  streamedPhaseKeys: Set<string>;
 };
 
 function createWorkerControl(entry: WorkerEntry): WorkerControl {
@@ -69,25 +71,46 @@ export function createWorkerManager(deps: WorkerManagerDeps): WorkerManager {
         abortController,
         paused: false,
         promise: Promise.resolve(undefined),
+        streamedPhaseKeys: new Set(),
       };
       workers.set(project.id, entry);
+
+      const resolvedProjectPath = resolve(project.path);
+      const resolvedRootDir = resolve(input.rootDir);
+      if (resolvedProjectPath === resolvedRootDir) {
+        console.warn(
+          `[sandcastle] AFK project "${project.id}" runs on the open workspace (${resolvedProjectPath}). ` +
+            "Cursor extension-host memory often grows when agent CLI and IDE share the same folder. " +
+            "Prefer a separate git clone in projects.json, or close this workspace during long AFK runs.",
+        );
+      }
 
       const control = createWorkerControl(entry);
       const runDeps: RunProjectDeps = {
         ...input.deps,
         control,
+        livePhaseLog: true,
         onPhaseLog: (chunk) => {
           deps.eventBus.emit({ type: "phase-log", projectId: project.id, chunk });
           input.deps?.onPhaseLog?.(chunk);
         },
         onAgentStream: (envelope: AgentStreamEnvelope) => {
-          deps.eventBus.emit({
-            type: "stream",
-            projectId: project.id,
-            issue: envelope.issue,
-            phase: envelope.phase,
-            event: envelope.event,
-          });
+          if (envelope.event.type === "text" && envelope.event.message) {
+            const chunk = envelope.event.message.endsWith("\n")
+              ? envelope.event.message
+              : `${envelope.event.message}\n`;
+            deps.eventBus.emit({ type: "phase-log", projectId: project.id, chunk });
+          }
+          const streamKey = `${envelope.issue}:${envelope.phase}`;
+          if (!entry.streamedPhaseKeys.has(streamKey)) {
+            entry.streamedPhaseKeys.add(streamKey);
+            deps.eventBus.emit({
+              type: "stream",
+              projectId: project.id,
+              issue: envelope.issue,
+              phase: envelope.phase,
+            });
+          }
           input.deps?.onAgentStream?.(envelope);
         },
         runPhase: async (options) => {

@@ -16,4 +16,11 @@ describe("logLines", () => {
     scrollLogBodyToTail(element);
     expect(element.scrollTop).toBe(320);
   });
+
+  it("caps retained log text to the most recent characters", () => {
+    const long = "x".repeat(600_000);
+    const capped = appendLogChunk(long, "tail");
+    expect(capped.length).toBeLessThanOrEqual(512_000);
+    expect(capped.endsWith("tail")).toBe(true);
+  });
 });
