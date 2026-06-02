@@ -49,8 +49,10 @@ import { useAutoRefresh } from "./useAutoRefresh.js";
 import {
   AUTO_REFRESH_INTERVAL_MS,
   EMPTY_TILE_ERRORS,
+  EMPTY_TILE_REFRESHING,
   type DashboardTile,
   type TileErrors,
+  type TileRefreshing,
 } from "./dashboardTiles.js";
 import type { LogRefreshHandler } from "./LogPanel.js";
 import { applyWorkerEvent, canHideProject, stoppedRunOutcome, type WorkerState } from "./workerStatus.js";
@@ -76,6 +78,7 @@ export function App() {
   const logPhaseLogHandlerRef = useRef<((chunk: string) => void) | null>(null);
   const logRefreshHandlerRef = useRef<LogRefreshHandler>(null);
   const [tileErrors, setTileErrors] = useState<TileErrors>(EMPTY_TILE_ERRORS);
+  const [tileRefreshing, setTileRefreshingState] = useState<TileRefreshing>(EMPTY_TILE_REFRESHING);
 
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
   const focusedLastOutcome =
@@ -172,6 +175,24 @@ export function App() {
     setTileErrors((current) => ({ ...current, [tile]: message }));
   }, []);
 
+  const updateTileRefreshing = useCallback((tile: DashboardTile, refreshing: boolean) => {
+    setTileRefreshingState((current) =>
+      current[tile] === refreshing ? current : { ...current, [tile]: refreshing },
+    );
+  }, []);
+
+  const runTileRefresh = useCallback(
+    async (tile: DashboardTile, refresh: () => Promise<void>) => {
+      updateTileRefreshing(tile, true);
+      try {
+        await refresh();
+      } finally {
+        updateTileRefreshing(tile, false);
+      }
+    },
+    [updateTileRefreshing],
+  );
+
   const applyActiveRefresh = useCallback(
     async (projectId: string) => {
       const nextActive = await fetchActive(projectId);
@@ -194,86 +215,94 @@ export function App() {
   );
 
   const refreshPhaseStepper = useCallback(async () => {
-    const projectId = focusedProjectIdRef.current;
-    if (!projectId) {
-      return;
-    }
-    try {
-      await applyActiveRefresh(projectId);
-      clearTileError("phaseStepper");
-    } catch (error: unknown) {
-      if (focusedProjectIdRef.current !== projectId) {
+    await runTileRefresh("phaseStepper", async () => {
+      const projectId = focusedProjectIdRef.current;
+      if (!projectId) {
         return;
       }
-      setTileError(
-        "phaseStepper",
-        error instanceof Error ? error.message : "Failed to refresh phase stepper",
-      );
-    }
-  }, [applyActiveRefresh, clearTileError, setTileError]);
+      try {
+        await applyActiveRefresh(projectId);
+        clearTileError("phaseStepper");
+      } catch (error: unknown) {
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        setTileError(
+          "phaseStepper",
+          error instanceof Error ? error.message : "Failed to refresh phase stepper",
+        );
+      }
+    });
+  }, [applyActiveRefresh, clearTileError, runTileRefresh, setTileError]);
 
 
   const refreshQueue = useCallback(async () => {
-    const projectId = focusedProjectIdRef.current;
-    if (!projectId) {
-      return;
-    }
-    try {
-      const nextQueue = await fetchQueue(projectId);
-      if (focusedProjectIdRef.current !== projectId) {
+    await runTileRefresh("queue", async () => {
+      const projectId = focusedProjectIdRef.current;
+      if (!projectId) {
         return;
       }
-      setQueue(nextQueue);
-      clearTileError("queue");
-    } catch (error: unknown) {
-      if (focusedProjectIdRef.current !== projectId) {
-        return;
+      try {
+        const nextQueue = await fetchQueue(projectId);
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        setQueue(nextQueue);
+        clearTileError("queue");
+      } catch (error: unknown) {
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        setTileError("queue", error instanceof Error ? error.message : "Failed to refresh queue");
       }
-      setTileError("queue", error instanceof Error ? error.message : "Failed to refresh queue");
-    }
-  }, [clearTileError, setTileError]);
+    });
+  }, [clearTileError, runTileRefresh, setTileError]);
 
   const refreshHistory = useCallback(async () => {
-    const projectId = focusedProjectIdRef.current;
-    if (!projectId) {
-      return;
-    }
-    try {
-      const nextHistory = await fetchHistory(projectId);
-      if (focusedProjectIdRef.current !== projectId) {
+    await runTileRefresh("history", async () => {
+      const projectId = focusedProjectIdRef.current;
+      if (!projectId) {
         return;
       }
-      setHistory(nextHistory);
-      clearTileError("history");
-    } catch (error: unknown) {
-      if (focusedProjectIdRef.current !== projectId) {
-        return;
+      try {
+        const nextHistory = await fetchHistory(projectId);
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        setHistory(nextHistory);
+        clearTileError("history");
+      } catch (error: unknown) {
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        setTileError(
+          "history",
+          error instanceof Error ? error.message : "Failed to refresh history",
+        );
       }
-      setTileError(
-        "history",
-        error instanceof Error ? error.message : "Failed to refresh history",
-      );
-    }
-  }, [clearTileError, setTileError]);
+    });
+  }, [clearTileError, runTileRefresh, setTileError]);
 
   const refreshLog = useCallback(async () => {
-    const projectId = focusedProjectIdRef.current;
-    if (!projectId) {
-      return;
-    }
-    try {
-      await logRefreshHandlerRef.current?.();
-      if (focusedProjectIdRef.current !== projectId) {
+    await runTileRefresh("log", async () => {
+      const projectId = focusedProjectIdRef.current;
+      if (!projectId) {
         return;
       }
-      clearTileError("log");
-    } catch (error: unknown) {
-      if (focusedProjectIdRef.current !== projectId) {
-        return;
+      try {
+        await logRefreshHandlerRef.current?.();
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        clearTileError("log");
+      } catch (error: unknown) {
+        if (focusedProjectIdRef.current !== projectId) {
+          return;
+        }
+        setTileError("log", error instanceof Error ? error.message : "Failed to refresh log");
       }
-      setTileError("log", error instanceof Error ? error.message : "Failed to refresh log");
-    }
-  }, [clearTileError, setTileError]);
+    });
+  }, [clearTileError, runTileRefresh, setTileError]);
 
   const refreshAllFocusedTiles = useCallback(async () => {
     await Promise.all([
@@ -418,6 +447,7 @@ export function App() {
       setActive(null);
       setHistory([]);
       setTileErrors(EMPTY_TILE_ERRORS);
+      setTileRefreshingState(EMPTY_TILE_REFRESHING);
       return;
     }
 
@@ -725,6 +755,7 @@ export function App() {
             currentPhase={focusedDisplayPhase}
             active={active}
             onRefresh={() => void refreshPhaseStepper()}
+            refreshing={tileRefreshing.phaseStepper}
             refreshError={tileErrors.phaseStepper}
           />
         }
@@ -740,6 +771,7 @@ export function App() {
               logRefreshHandlerRef.current = handler;
             }}
             onRefresh={() => void refreshLog()}
+            refreshing={tileRefreshing.log}
             refreshError={tileErrors.log}
           />
         }
@@ -749,6 +781,7 @@ export function App() {
             queue={queue}
             onSkipToggle={(issue, skipped) => void handleSkipToggle(issue, skipped)}
             onRefresh={() => void refreshQueue()}
+            refreshing={tileRefreshing.queue}
             refreshError={tileErrors.queue}
           />
         }
@@ -757,6 +790,7 @@ export function App() {
             project={focusedProject}
             history={history}
             onRefresh={() => void refreshHistory()}
+            refreshing={tileRefreshing.history}
             refreshError={tileErrors.history}
           />
         }

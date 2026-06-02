@@ -24,6 +24,7 @@ export type LogPanelProps = {
   registerPhaseLogHandler?: (handler: PhaseLogHandler) => void;
   registerRefreshHandler?: (handler: LogRefreshHandler) => void;
   onRefresh?: () => void;
+  refreshing?: boolean;
   refreshError?: string | null;
 };
 
@@ -69,6 +70,7 @@ export function LogPanel({
   registerPhaseLogHandler,
   registerRefreshHandler,
   onRefresh,
+  refreshing = false,
   refreshError = null,
 }: LogPanelProps) {
   const [logText, setLogText] = useState("");
@@ -277,7 +279,7 @@ export function LogPanel({
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <PanelHeader title="Log" onRefresh={onRefresh} refreshDisabled />
+        <PanelHeader title="Log" onRefresh={onRefresh} refreshDisabled refreshing={refreshing} />
         <p>Select a project to view the agent log.</p>
       </div>
     );
@@ -291,6 +293,7 @@ export function LogPanel({
         <PanelHeader
           title="Log"
           onRefresh={handleRefreshClick}
+          refreshing={refreshing}
           error={refreshError}
         />
         <p className="log-idle">No active slice — log will appear when an issue is running.</p>
@@ -303,6 +306,7 @@ export function LogPanel({
       <PanelHeader
         title="Log"
         onRefresh={handleRefreshClick}
+        refreshing={refreshing}
         error={refreshError}
         actions={
           <button type="button" onClick={() => setExpanded((value) => !value)}>

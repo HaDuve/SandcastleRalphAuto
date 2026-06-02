@@ -10,6 +10,7 @@ export type PhaseStepperProps = {
   currentPhase: string | null;
   active?: { debug?: { activeMtimeMs: number | null; workerLockPid: number | null } } | null;
   onRefresh?: () => void;
+  refreshing?: boolean;
   refreshError?: string | null;
 };
 
@@ -23,12 +24,13 @@ export function PhaseStepper({
   currentPhase,
   active = null,
   onRefresh,
+  refreshing = false,
   refreshError = null,
 }: PhaseStepperProps) {
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <PanelHeader title="Phase stepper" onRefresh={onRefresh} refreshDisabled />
+        <PanelHeader title="Phase stepper" onRefresh={onRefresh} refreshDisabled refreshing={refreshing} />
         <p>Select a project to view the phase stepper.</p>
       </div>
     );
@@ -79,6 +81,7 @@ export function PhaseStepper({
       <PanelHeader
         title="Phase stepper"
         onRefresh={onRefresh}
+        refreshing={refreshing}
         error={refreshError}
         actions={actions}
       />

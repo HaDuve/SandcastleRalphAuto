@@ -7,6 +7,7 @@ export type HistoryPanelProps = {
   project: Project | null;
   history: HistoryEntry[];
   onRefresh?: () => void;
+  refreshing?: boolean;
   refreshError?: string | null;
 };
 
@@ -14,12 +15,13 @@ export function HistoryPanel({
   project,
   history,
   onRefresh,
+  refreshing = false,
   refreshError = null,
 }: HistoryPanelProps) {
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <PanelHeader title="History" onRefresh={onRefresh} refreshDisabled />
+        <PanelHeader title="History" onRefresh={onRefresh} refreshDisabled refreshing={refreshing} />
         <p>Select a project to view merged PR history.</p>
       </div>
     );
@@ -27,7 +29,7 @@ export function HistoryPanel({
 
   return (
     <div className="history-panel">
-      <PanelHeader title="History" onRefresh={onRefresh} error={refreshError} />
+      <PanelHeader title="History" onRefresh={onRefresh} refreshing={refreshing} error={refreshError} />
       {history.length === 0 ? (
         <p className="history-empty">No merged history for this project yet.</p>
       ) : (
