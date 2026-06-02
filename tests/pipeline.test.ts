@@ -608,6 +608,59 @@ describe("runLinearSlice", () => {
     });
   });
 
+  it("retries a phase once when PHASE_COMPLETE is missing, then continues", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+    let reviewPrRuns = 0;
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          const phase = options.phase as CanonicalPhase;
+          if (options.phase === "review-pr") {
+            reviewPrRuns += 1;
+            if (reviewPrRuns === 1) {
+              return {
+                ...phaseResult("review-pr", NEXT_SKILL_BY_PHASE["review-pr"], {
+                  pr: 42,
+                }),
+                completionSignal: undefined,
+              };
+            }
+          }
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase], { pr: 42 });
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual([
+      "tdd",
+      "create-pr",
+      "review-pr",
+      "review-pr",
+      "review-tdd",
+      "merge",
+    ]);
+    expect(result).toEqual({
+      status: "ready-for-next",
+      issue: 7,
+      branch: "issue-7-pipeline",
+      pr: 42,
+      phasesCompleted: [...CANONICAL_PHASES],
+    });
+    await expect(readActive(projectId, stateRoot)).resolves.toBeNull();
+  });
+
   it("persists blocked state with current-phase resumeSkill when runPhase throws", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
     const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
@@ -713,5 +766,54 @@ describe("runLinearSlice", () => {
       active: awaitingHuman,
       phasesCompleted: [],
     });
+  });
+
+  it("on Start, retries the current blocked phase when missing PHASE_COMPLETE", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+
+    await writeActive(
+      projectId,
+      {
+        issue: 7,
+        phase: "review-pr",
+        branch: "issue-7-pipeline",
+        pr: 42,
+        status: "blocked",
+        reason: "Phase did not emit PHASE_COMPLETE completion signal",
+        resumeSkill: "/review-pr",
+        startedAt: "2026-06-01T00:00:00.000Z",
+      },
+      stateRoot,
+    );
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          const phase = options.phase as CanonicalPhase;
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase], { pr: 42 });
+        },
+      },
+    );
+
+    expect(phaseCalls).toEqual(["review-pr", "review-tdd", "merge"]);
+    expect(result).toEqual({
+      status: "ready-for-next",
+      issue: 7,
+      branch: "issue-7-pipeline",
+      pr: 42,
+      phasesCompleted: ["review-pr", "review-tdd", "merge"],
+    });
+    await expect(readActive(projectId, stateRoot)).resolves.toBeNull();
   });
 });

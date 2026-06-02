@@ -22,6 +22,7 @@ import {
   isMergeDeferredToBabysit,
   normalizeCreatePrNoDiffHandoff,
   tryReconcileCreatePrNoDiffBlockedHandoff,
+  tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
@@ -35,6 +36,39 @@ import { phasesCompletedThroughCreatePr } from "./phasesCompleted.js";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function sleep(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runPhaseWithCompletionRetry(
+  deps: RunLinearSliceDeps,
+  options: RunPhaseOptions,
+  input: {
+    /** Total attempts to get a PHASE_COMPLETE signal (1 = no retry). */
+    maxAttempts: number;
+    /** Small delay between attempts to avoid tight loops. */
+    delayMs: number;
+  },
+): Promise<RunPhaseResult> {
+  let last: RunPhaseResult | null = null;
+  for (let attempt = 1; attempt <= input.maxAttempts; attempt++) {
+    const result = await deps.runPhase(options);
+    last = result;
+    if (result.completionSignal === PHASE_COMPLETE_SIGNAL) {
+      return result;
+    }
+    if (attempt < input.maxAttempts) {
+      await sleep(input.delayMs);
+    }
+  }
+  // If we get here, we exhausted retries; return last result so advanceSlice can
+  // mark the phase blocked with the canonical "missing completion signal" reason.
+  return last ?? (await deps.runPhase(options));
 }
 
 async function persistCreatePrNoDiffHandoffIfNeeded(
@@ -193,14 +227,23 @@ async function runRecoverySlice(
 
   let result: RunPhaseResult;
   try {
-    result = await deps.runPhase({
-      phase,
-      branch,
-      projectPath,
-      projectId,
-      stateRoot,
-      ...runPhaseOptions,
-    });
+    result = await runPhaseWithCompletionRetry(
+      deps,
+      {
+        phase,
+        branch,
+        projectPath,
+        projectId,
+        stateRoot,
+        ...runPhaseOptions,
+      },
+      {
+        // Babysit already loops internally (maxIterations), so completion should be reliable.
+        // Still give it one small retry in case the agent flakes out before emitting PHASE_COMPLETE.
+        maxAttempts: 2,
+        delayMs: 1_000,
+      },
+    );
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
@@ -287,8 +330,8 @@ export async function runLinearSlice(
   options: RunLinearSliceOptions,
   deps: RunLinearSliceDeps = defaultDeps(),
 ): Promise<RunLinearSliceResult> {
-  const { projectId, issue, branch, projectPath, stateRoot, fromPhase } =
-    options;
+  const { projectId, issue, branch, projectPath, stateRoot } = options;
+  let fromPhase = options.fromPhase;
   const phasesCompleted: CanonicalPhase[] = [];
   let pr: number | undefined;
 
@@ -332,13 +375,20 @@ export async function runLinearSlice(
         projectId,
         active: existing,
       })) ??
+      tryReconcileMissingPhaseCompleteBlockedHandoff({ active: existing }) ??
       tryReconcileTransientCursorBlockedHandoff({ active: existing });
     if (reconciled === null) {
       return { status: "blocked", active: existing, phasesCompleted };
     }
     await writeActive(projectId, reconciled, stateRoot);
+    if (fromPhase === undefined) {
+      fromPhase = reconciled.phase;
+    }
   } else if (existing?.status === "awaiting-human") {
     return { status: "awaiting-human", active: existing, phasesCompleted };
+  } else if (existing?.status === "active" && fromPhase === undefined) {
+    // If the UI presses Start while a slice is active, resume from its current phase.
+    fromPhase = existing.phase;
   }
 
   if (fromPhase !== undefined && isRecoveryPhase(fromPhase)) {
@@ -388,14 +438,25 @@ export async function runLinearSlice(
 
     let result: RunPhaseResult;
     try {
-      result = await deps.runPhase({
-        phase,
-        branch,
-        projectPath,
-        projectId,
-        stateRoot,
-        ...options.runPhaseOptions,
-      });
+      const completionRetryMaxAttempts = phase === "tdd" ? 1 : 2;
+      result = await runPhaseWithCompletionRetry(
+        deps,
+        {
+          phase,
+          branch,
+          projectPath,
+          projectId,
+          stateRoot,
+          ...options.runPhaseOptions,
+        },
+        {
+          // `tdd` is the only canonical phase that is intentionally multi-iteration.
+          // Other phases default to maxIterations=1, so a missing completion signal
+          // is often just a transient agent flake; retry once before blocking.
+          maxAttempts: completionRetryMaxAttempts,
+          delayMs: 1_000,
+        },
+      );
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
@@ -479,14 +540,18 @@ export async function runLinearSlice(
 
       let mergeRetryResult: RunPhaseResult;
       try {
-        mergeRetryResult = await deps.runPhase({
-          phase: "merge",
-          branch,
-          projectPath,
-          projectId,
-          stateRoot,
-          ...options.runPhaseOptions,
-        });
+        mergeRetryResult = await runPhaseWithCompletionRetry(
+          deps,
+          {
+            phase: "merge",
+            branch,
+            projectPath,
+            projectId,
+            stateRoot,
+            ...options.runPhaseOptions,
+          },
+          { maxAttempts: 2, delayMs: 1_000 },
+        );
       } catch (error) {
         if (isAbortError(error)) {
           throw error;

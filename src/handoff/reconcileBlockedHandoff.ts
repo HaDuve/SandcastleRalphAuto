@@ -44,6 +44,15 @@ export function isTransientCursorBlockReason(reason: string | undefined): boolea
   );
 }
 
+export function isMissingPhaseCompleteBlockReason(
+  reason: string | undefined,
+): boolean {
+  return (
+    reason !== undefined &&
+    reason.includes("Phase did not emit PHASE_COMPLETE completion signal")
+  );
+}
+
 /**
  * When a phase failed only due to transient Cursor `resource_exhausted` after
  * in-run retries, allow dashboard Start to resume the same phase.
@@ -54,6 +63,35 @@ export function tryReconcileTransientCursorBlockedHandoff(input: {
   if (
     input.active.status !== "blocked" ||
     !isTransientCursorBlockReason(input.active.reason)
+  ) {
+    return null;
+  }
+
+  const phase = parseRunnablePhase(input.active.phase);
+  if (phase === null) {
+    return null;
+  }
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: input.active.pr,
+    phase,
+    status: "active",
+    startedAt: input.active.startedAt,
+  };
+}
+
+/**
+ * When a phase completed its single iteration without emitting PHASE_COMPLETE,
+ * treat the slice as retryable on dashboard Start and re-run the same phase.
+ */
+export function tryReconcileMissingPhaseCompleteBlockedHandoff(input: {
+  active: ActiveState;
+}): ActiveState | null {
+  if (
+    input.active.status !== "blocked" ||
+    !isMissingPhaseCompleteBlockReason(input.active.reason)
   ) {
     return null;
   }

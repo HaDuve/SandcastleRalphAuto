@@ -42,9 +42,11 @@ export {
 export {
   isHandoffSchemaBlockReason,
   isTransientCursorBlockReason,
+  isMissingPhaseCompleteBlockReason,
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
+  tryReconcileMissingPhaseCompleteBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
