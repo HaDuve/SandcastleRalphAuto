@@ -192,4 +192,28 @@ describe("LogPanel", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/projects/portfolio/log?phase=tdd");
   });
+  it("re-anchors collapsed preview scroll when phase-log chunks append", async () => {
+    let tailHandler: ((chunk: string) => void) | null = null;
+    vi.stubGlobal("fetch", stubLogFetch("seed\n"));
+
+    render(
+      <LogPanel
+        project={portfolio}
+        activePhase="review-pr"
+        registerPhaseLogHandler={(handler) => {
+          tailHandler = handler;
+        }}
+      />,
+    );
+
+    const preview = await screen.findByTestId("log-preview");
+    Object.defineProperty(preview, "scrollHeight", { value: 120, configurable: true });
+
+    tailHandler!("live\n");
+
+    await waitFor(() => {
+      expect(preview.scrollTop).toBe(120);
+    });
+  });
+
 });
