@@ -1,8 +1,3 @@
-import {
-  formatProjectStatusIndicator,
-  resolveActiveSummaryForCard,
-  resolveWorkerStatusForCard,
-} from "./projectStatus.js";
 import { projectCardClass } from "./runOutcomeUi.js";
 import type { Project, ProjectActiveSummary } from "./types.js";
 import type { WorkerState, WorkerStatus } from "./workerStatus.js";
@@ -31,7 +26,6 @@ export function ProjectPicker({
   projects,
   selectedIds,
   workerStates,
-  activeSummaries,
   hasHiddenProjects,
   onSelectedChange,
   onStart,
@@ -59,16 +53,9 @@ export function ProjectPicker({
           const killDisabled = !controlsReady || status === "idle";
           const hideDisabled = !canHideProject(status);
           const cardClass = projectCardClass(stoppedRunOutcome(workerStates[project.id]));
-          const statusLabel = formatProjectStatusIndicator(
-            resolveWorkerStatusForCard(project, workerStates[project.id]),
-            resolveActiveSummaryForCard(project, activeSummaries[project.id]),
-          );
 
           return (
             <li key={project.id} className={cardClass}>
-              <span className="project-status-indicator" role="status">
-                {statusLabel}
-              </span>
               <label>
                 <input
                   type="checkbox"
@@ -78,41 +65,51 @@ export function ProjectPicker({
                 {project.id}
                 <span className="project-remote"> ({project.remote})</span>
               </label>
-              <button
-                type="button"
-                disabled={startDisabled}
-                onClick={() => onStart(project.id)}
-              >
-                Start {project.id}
-              </button>
-              <button
-                type="button"
-                disabled={pauseDisabled}
-                onClick={() => onPause(project.id)}
-              >
-                Pause {project.id}
-              </button>
-              <button
-                type="button"
-                disabled={resumeDisabled}
-                onClick={() => onResume(project.id)}
-              >
-                Resume {project.id}
-              </button>
-              <button
-                type="button"
-                disabled={killDisabled}
-                onClick={() => onKill(project.id)}
-              >
-                Kill {project.id}
-              </button>
-              <button
-                type="button"
-                disabled={hideDisabled}
-                onClick={() => onHide(project.id)}
-              >
-                Hide {project.id}
-              </button>
+              {!startDisabled ? (
+                <button
+                  type="button"
+                  aria-label={`Start ${project.id}`}
+                  onClick={() => onStart(project.id)}
+                >
+                  Start
+                </button>
+              ) : null}
+              {!pauseDisabled ? (
+                <button
+                  type="button"
+                  aria-label={`Pause ${project.id}`}
+                  onClick={() => onPause(project.id)}
+                >
+                  Pause
+                </button>
+              ) : null}
+              {!resumeDisabled ? (
+                <button
+                  type="button"
+                  aria-label={`Resume ${project.id}`}
+                  onClick={() => onResume(project.id)}
+                >
+                  Resume
+                </button>
+              ) : null}
+              {!killDisabled ? (
+                <button
+                  type="button"
+                  aria-label={`Kill ${project.id}`}
+                  onClick={() => onKill(project.id)}
+                >
+                  Kill
+                </button>
+              ) : null}
+              {!hideDisabled ? (
+                <button
+                  type="button"
+                  aria-label={`Hide ${project.id}`}
+                  onClick={() => onHide(project.id)}
+                >
+                  Hide
+                </button>
+              ) : null}
             </li>
           );
         })}

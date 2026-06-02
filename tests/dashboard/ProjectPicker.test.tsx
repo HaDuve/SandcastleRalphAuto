@@ -68,7 +68,7 @@ describe("ProjectPicker", () => {
     expect(screen.getByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
   });
 
-  it("shows a live status indicator on each project card", () => {
+  it("does not render a per-card status string", () => {
     renderPicker({
       workerStates: { portfolio: workerState("running") },
       activeSummaries: {
@@ -76,10 +76,11 @@ describe("ProjectPicker", () => {
       },
     });
 
-    expect(screen.getByText("running · create-pr")).toBeInTheDocument();
+    expect(screen.queryByText("running · create-pr")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("shows running after start even when the active summary is still marked blocked", () => {
+  it("does not show blocked text on the card when active is blocked but worker is running", () => {
     renderPicker({
       workerStates: { portfolio: workerState("running") },
       activeSummaries: {
@@ -87,24 +88,8 @@ describe("ProjectPicker", () => {
       },
     });
 
-    expect(screen.getByText("running · babysit")).toBeInTheDocument();
+    expect(screen.queryByText(/running ·/i)).not.toBeInTheDocument();
     expect(screen.queryByText("blocked")).not.toBeInTheDocument();
-  });
-
-  it("shows running status from the projects snapshot when the card is unchecked", () => {
-    renderPicker({
-      projects: [
-        {
-          ...portfolio,
-          workerStatus: "running",
-          active: { issue: 11, phase: "review-pr", status: "active" },
-        },
-      ],
-      selectedIds: new Set(),
-      workerStates: {},
-    });
-
-    expect(screen.getByText("running · review-pr")).toBeInTheDocument();
   });
 
   it("calls start only for checked projects", async () => {
@@ -116,7 +101,7 @@ describe("ProjectPicker", () => {
       onStart,
     });
 
-    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+    await user.click(screen.getByRole("button", { name: "Start portfolio" }));
 
     expect(onStart).toHaveBeenCalledWith("portfolio");
   });
@@ -130,20 +115,31 @@ describe("ProjectPicker", () => {
       onPause,
     });
 
-    await user.click(screen.getByRole("button", { name: /pause portfolio/i }));
+    await user.click(screen.getByRole("button", { name: "Pause portfolio" }));
 
     expect(onPause).toHaveBeenCalledWith("portfolio");
   });
 
-  it("disables Start and enables Kill when the project worker is running", () => {
+  it("omits Start and shows Pause and Kill when the worker is running", () => {
     renderPicker({
       selectedIds: new Set(["portfolio"]),
       workerStates: { portfolio: workerState("running") },
     });
 
-    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Start portfolio" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Kill portfolio" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause portfolio" })).toBeInTheDocument();
+  });
+
+  it("uses short visible labels with project id in aria-label only", () => {
+    renderPicker({
+      selectedIds: new Set(["portfolio"]),
+      workerStates: { portfolio: workerState("idle") },
+    });
+
+    const start = screen.getByRole("button", { name: "Start portfolio" });
+    expect(start).toHaveTextContent("Start");
+    expect(start).not.toHaveTextContent("portfolio");
   });
 
   it("calls kill for a checked running project", async () => {
@@ -155,12 +151,12 @@ describe("ProjectPicker", () => {
       onKill,
     });
 
-    await user.click(screen.getByRole("button", { name: /kill portfolio/i }));
+    await user.click(screen.getByRole("button", { name: "Kill portfolio" }));
 
     expect(onKill).toHaveBeenCalledWith("portfolio");
   });
 
-  it("enables Resume when the worker is paused", async () => {
+  it("shows Resume and omits Pause when the worker is paused", async () => {
     const user = userEvent.setup();
     const onResume = vi.fn();
     renderPicker({
@@ -169,21 +165,21 @@ describe("ProjectPicker", () => {
       onResume,
     });
 
-    expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Resume portfolio" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause portfolio" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /resume portfolio/i }));
+    await user.click(screen.getByRole("button", { name: "Resume portfolio" }));
 
     expect(onResume).toHaveBeenCalledWith("portfolio");
   });
 
-  it("disables all controls while worker status is unknown", () => {
+  it("omits all controls while worker status is unknown", () => {
     renderPicker({ selectedIds: new Set(["portfolio"]) });
 
-    expect(screen.getByRole("button", { name: /start portfolio/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /pause portfolio/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /resume portfolio/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /kill portfolio/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /start portfolio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pause portfolio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /resume portfolio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /kill portfolio/i })).not.toBeInTheDocument();
   });
 
   it("removes a project from the list when Hide is clicked", async () => {
@@ -195,7 +191,7 @@ describe("ProjectPicker", () => {
     });
 
     expect(screen.getByRole("checkbox", { name: /portfolio/i })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /hide portfolio/i }));
+    await user.click(screen.getByRole("button", { name: "Hide portfolio" }));
 
     expect(onHide).toHaveBeenCalledWith("portfolio");
     rerender(
@@ -219,13 +215,13 @@ describe("ProjectPicker", () => {
     expect(screen.getByRole("checkbox", { name: /other/i })).toBeInTheDocument();
   });
 
-  it("disables Hide while the project worker is running", () => {
+  it("omits Hide while the project worker is running", () => {
     renderPicker({
       selectedIds: new Set(["portfolio"]),
       workerStates: { portfolio: workerState("running") },
     });
 
-    expect(screen.getByRole("button", { name: /hide portfolio/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /hide portfolio/i })).not.toBeInTheDocument();
   });
 
   it("does not color-code the sidebar while the worker is running", () => {
