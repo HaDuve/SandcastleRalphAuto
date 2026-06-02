@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, extname, resolve } from "node:path";
 import { findProjectById, type RunProjectDeps } from "../cli/index.js";
-import { listHandoffHistory } from "../handoff/index.js";
+import { listHandoffHistory, readHostHandoff } from "../handoff/index.js";
 import { type GhRunner } from "../merge/index.js";
 import { listPhaseLogs, readPhaseLog } from "../phaseLogs/index.js";
 import { loadRegistryFromRoot, type Project } from "../registry/index.js";
@@ -179,6 +179,30 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
     };
   };
 
+
+  async function resolveActiveStateForDashboard(project: Project) {
+    const active = await readActiveFn(project.remote, stateRoot);
+    if (active) {
+      return active;
+    }
+    if (!workerManager.isRunning(project.id)) {
+      return null;
+    }
+    try {
+      const handoff = await readHostHandoff({ stateRoot, projectId: project.remote });
+      return {
+        issue: handoff.issue,
+        phase: handoff.phase,
+        branch: handoff.branch,
+        pr: handoff.pr,
+        status: "active",
+        startedAt: handoff.startedAt,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   return createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const pathname = requestPathname(req);
@@ -189,7 +213,7 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         const enriched = await Promise.all(
           projects.map(async (project) => {
             const [active, lastRunOutcome] = await Promise.all([
-              readActiveFn(project.remote, stateRoot),
+              resolveActiveStateForDashboard(project),
               readRunOutcomeFn(project.remote, stateRoot),
             ]);
             return {
@@ -209,7 +233,7 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         const project = await resolveProject(projectRoute.projectId);
 
         if (req.method === "GET" && projectRoute.action === "active") {
-          const active = await readActiveFn(project.remote, stateRoot);
+          const active = await resolveActiveStateForDashboard(project);
           const gh = await resolveGh();
           sendJson(res, 200, {
             active: await enrichActiveState(active, project.remote, gh),
