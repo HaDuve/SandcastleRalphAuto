@@ -347,6 +347,12 @@ export function App() {
     }));
   }, []);
 
+  type OptimisticStartSnapshot = {
+    workerStatus: WorkerState["status"];
+    summary: ProjectActiveSummary | null;
+    active: ActiveSlice | null;
+  };
+
   const applyOptimisticStart = useCallback(
     (projectId: string) => {
       const project = projects.find((entry) => entry.id === projectId);
@@ -368,10 +374,30 @@ export function App() {
     [active, activeSummaries, projects, queue],
   );
 
+  const revertOptimisticStart = useCallback(
+    (projectId: string, snapshot: OptimisticStartSnapshot) => {
+      setWorkerStatus(projectId, snapshot.workerStatus);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: snapshot.summary,
+      }));
+      if (focusedProjectIdRef.current === projectId) {
+        setActive(snapshot.active);
+      }
+    },
+    [setWorkerStatus],
+  );
+
   const runControl = useCallback(
     async (action: "start" | "pause" | "resume" | "kill", projectId: string) => {
       setControlError(null);
+      let startSnapshot: OptimisticStartSnapshot | null = null;
       if (action === "start") {
+        startSnapshot = {
+          workerStatus: workerStates[projectId]?.status ?? "idle",
+          summary: activeSummaries[projectId] ?? null,
+          active: focusedProjectIdRef.current === projectId ? active : null,
+        };
         flushSync(() => {
           applyOptimisticStart(projectId);
         });
@@ -407,10 +433,21 @@ export function App() {
           await refreshPanels(projectId);
         }
       } catch (error: unknown) {
+        if (action === "start" && startSnapshot) {
+          revertOptimisticStart(projectId, startSnapshot);
+        }
         setControlError(error instanceof Error ? error.message : "Control request failed");
       }
     },
-    [applyOptimisticStart, refreshPanels, setWorkerStatus],
+    [
+      active,
+      activeSummaries,
+      applyOptimisticStart,
+      refreshPanels,
+      revertOptimisticStart,
+      setWorkerStatus,
+      workerStates,
+    ],
   );
 
   const focusedDisplayPhase =

@@ -1190,6 +1190,54 @@ describe("App", () => {
     expect(screen.getByText("merge", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
   });
 
+  it("reverts optimistic start when Start API rejects", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url.endsWith("/start") && init?.method === "POST") {
+          return new Response(JSON.stringify({ status: "already-running" }), { status: 409 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await screen.findByText(/#10/);
+    const activeRegion = screen.getByRole("region", { name: /^active$/i });
+    expect(within(activeRegion).getByText(/no active slice/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start portfolio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/already running/i);
+      expect(screen.getByRole("button", { name: /start portfolio/i })).toBeEnabled();
+      expect(screen.queryByRole("button", { name: /pause portfolio/i })).not.toBeInTheDocument();
+    });
+    expect(within(activeRegion).getByText(/no active slice/i)).toBeInTheDocument();
+    const stepper = screen.getByRole("region", { name: /phase stepper/i });
+    expect(within(stepper).queryByRole("listitem", { current: "step" })).not.toBeInTheDocument();
+  });
+
   it("updates phase stepper and active slice optimistically when Start is clicked", async () => {
     let releaseStart: (() => void) | undefined;
     const startGate = new Promise<void>((resolve) => {
