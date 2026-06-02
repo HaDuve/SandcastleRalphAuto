@@ -382,13 +382,18 @@ describe("dashboard server", () => {
     const response = await fetch(`${started.baseUrl}/api/projects/portfolio/active`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
+    const body = await response.json();
+    expect(body).toMatchObject({
       active: {
         issue: 11,
         title: "Test issue title",
         phase: "tdd",
         branch: "issue-11",
         status: "active",
+      },
+      debug: {
+        activePath: expect.any(String),
+        workerLockPath: expect.any(String),
       },
     });
   });

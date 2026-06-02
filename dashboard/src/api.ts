@@ -96,8 +96,14 @@ export async function fetchQueue(projectId: string): Promise<QueueIssue[]> {
 
 export async function fetchActive(projectId: string): Promise<ActiveSlice | null> {
   const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/active`);
-  const body = await parseJson<{ active: ActiveSlice | null }>(response);
-  return body.active;
+  const body = await parseJson<{
+    active: ActiveSlice | null;
+    debug?: ActiveSlice["debug"];
+  }>(response);
+  if (!body.active) {
+    return null;
+  }
+  return { ...body.active, debug: body.debug };
 }
 
 export async function fetchHistory(projectId: string): Promise<HistoryEntry[]> {

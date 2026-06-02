@@ -27,6 +27,41 @@ const MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+async function readStateDebug(
+  stateRoot: string,
+  projectId: string,
+): Promise<{
+  activePath: string;
+  activeMtimeMs: number | null;
+  activeBytes: number | null;
+  workerLockPath: string;
+  workerLockPid: number | null;
+}> {
+  const activePath = join(stateRoot, projectId, "active.json");
+  const workerLockPath = join(stateRoot, projectId, ".worker.lock");
+
+  let activeMtimeMs: number | null = null;
+  let activeBytes: number | null = null;
+  try {
+    const info = await stat(activePath);
+    activeMtimeMs = info.mtimeMs;
+    activeBytes = info.size;
+  } catch {
+    // ignore missing active.json
+  }
+
+  let workerLockPid: number | null = null;
+  try {
+    const raw = await readFile(workerLockPath, "utf8");
+    const pid = Number.parseInt(raw.trim(), 10);
+    workerLockPid = Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    // ignore missing/invalid lock file
+  }
+
+  return { activePath, activeMtimeMs, activeBytes, workerLockPath, workerLockPid };
+}
+
 export type DashboardServerOptions = {
   rootDir: string;
   stateRoot?: string;
@@ -213,6 +248,7 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
           const gh = await resolveGh();
           sendJson(res, 200, {
             active: await enrichActiveState(active, project.remote, gh),
+            debug: await readStateDebug(stateRoot, project.remote),
           });
           return;
         }

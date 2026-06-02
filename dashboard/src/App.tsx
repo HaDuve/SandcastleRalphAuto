@@ -721,6 +721,7 @@ export function App() {
             project={focusedProject}
             summary={focusedProjectId === null ? null : activeSummaries[focusedProjectId] ?? null}
             currentPhase={focusedDisplayPhase}
+            active={active}
             onRefresh={() => void refreshPhaseStepper()}
             refreshError={tileErrors.phaseStepper}
           />

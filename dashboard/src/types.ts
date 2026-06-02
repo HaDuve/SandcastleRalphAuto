@@ -48,6 +48,13 @@ export type ActiveSlice = {
   reason?: string;
   resumeSkill?: string;
   startedAt?: string;
+  debug?: {
+    activePath: string;
+    activeMtimeMs: number | null;
+    activeBytes: number | null;
+    workerLockPath: string;
+    workerLockPid: number | null;
+  };
 };
 
 export type HistoryPhase = {
