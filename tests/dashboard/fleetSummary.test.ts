@@ -76,6 +76,26 @@ describe("summarizeFleet", () => {
     });
   });
 
+  it("counts blocked from project lastRunOutcome when worker state is missing", () => {
+    const visible = [
+      baseProject("portfolio", {
+        lastRunOutcome: {
+          outcome: "error",
+          reason: "crash",
+          stoppedAt: "2026-06-01T00:00:00.000Z",
+        },
+      }),
+    ];
+
+    expect(summarizeFleet(visible, {}, {}, 0)).toEqual({
+      running: 0,
+      paused: 0,
+      blocked: 1,
+      idle: 0,
+      hidden: 0,
+    });
+  });
+
   it("counts blocked from last run outcome when idle", () => {
     const visible = [
       baseProject("portfolio", {
@@ -102,6 +122,25 @@ describe("summarizeFleet", () => {
       paused: 0,
       blocked: 1,
       idle: 0,
+      hidden: 0,
+    });
+  });
+
+  it("counts killed last outcome as idle", () => {
+    const visible = [
+      baseProject("portfolio", {
+        lastRunOutcome: {
+          outcome: "killed",
+          stoppedAt: "2026-06-01T00:00:00.000Z",
+        },
+      }),
+    ];
+
+    expect(summarizeFleet(visible, {}, {}, 0)).toEqual({
+      running: 0,
+      paused: 0,
+      blocked: 0,
+      idle: 1,
       hidden: 0,
     });
   });

@@ -208,6 +208,107 @@ describe("App", () => {
     expect(alert).toHaveTextContent(/catalog down|failed to load projects/i);
   });
 
+  it("shows No project selected in the focused header when nothing is focused", async () => {
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio, other]));
+
+    render(<App />);
+
+    const focused = await screen.findByLabelText(/focused project/i);
+    expect(focused).toHaveTextContent("No project selected");
+  });
+
+  it("shows Connecting in the focused header when the worker state is unknown", async () => {
+    installStoppableEventSource();
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal("fetch", stubProjectsFetch([portfolio]));
+
+    render(<App />);
+
+    const focused = await screen.findByLabelText(/focused project/i);
+    expect(focused).toHaveTextContent("Connecting…");
+  });
+
+  it("renders the focused project line with links above the fleet summary", async () => {
+    installStoppableEventSource({
+      connected: { projectId: "portfolio", workerStatus: "running" },
+    });
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                pr: 99,
+                status: "active",
+                startedAt: "2026-06-01T12:00:00.000Z",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url.endsWith("/start") && init?.method === "POST") {
+          return new Response(JSON.stringify({ status: "started" }), { status: 202 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+
+    const focused = await screen.findByLabelText(/focused project/i);
+    expect(focused).toHaveTextContent(/portfolio/);
+    expect(focused).toHaveTextContent(/running/);
+    expect(within(focused).getByRole("link", { name: "portfolio" })).toHaveAttribute(
+      "href",
+      "cursor://file//tmp/portfolio",
+    );
+
+    await waitFor(() => {
+      expect(within(focused).getByRole("link", { name: "PR #99" })).toHaveAttribute(
+        "href",
+        "https://github.com/HaDuve/Portfolio/pull/99",
+      );
+    });
+    expect(focused).toHaveTextContent(/tdd/);
+
+    const fleet = screen.getByLabelText(/fleet summary/i);
+    const statusColumn = focused.closest(".app-header-status");
+    expect(statusColumn).toContainElement(focused);
+    expect(statusColumn).toContainElement(fleet);
+    expect(
+      Array.from(statusColumn?.querySelectorAll(".app-header-focused, .app-header-fleet") ?? []).map(
+        (node) => node.className,
+      ),
+    ).toEqual(["app-header-focused", "app-header-fleet"]);
+  });
+
   it("loads projects from the local API and renders the dashboard shell", async () => {
     vi.stubGlobal(
       "fetch",
@@ -325,10 +426,12 @@ describe("App", () => {
 
     await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
 
-    expect(await screen.findByText(/#10/)).toBeInTheDocument();
-    expect(screen.getByText(/Blocked: needs-info/i)).toBeInTheDocument();
-    expect(screen.getByText(/#11/)).toBeInTheDocument();
-    expect(screen.getByText(/issue-11/i)).toBeInTheDocument();
+    const queue = await screen.findByRole("region", { name: /queue/i });
+    const active = await screen.findByRole("region", { name: /active/i });
+    expect(within(queue).getByText(/#10/)).toBeInTheDocument();
+    expect(within(queue).getByText(/Blocked: needs-info/i)).toBeInTheDocument();
+    expect(within(active).getByText(/#11/)).toBeInTheDocument();
+    expect(within(active).getByText(/issue-11/i)).toBeInTheDocument();
   });
 
   it("ignores stale panel fetches when the focused project changes", async () => {
@@ -732,10 +835,15 @@ describe("App", () => {
 
     const checkbox = await screen.findByRole("checkbox", { name: /portfolio/i });
     expect(checkbox).toBeChecked();
-    expect(screen.getByText(/CI failed/i)).toBeInTheDocument();
-    expect(screen.getByText("review-pr", { selector: ".run-outcome-banner-phase" })).toBeInTheDocument();
-    expect(await screen.findByText(/#10/)).toBeInTheDocument();
-    expect(screen.getByText(/#11/)).toBeInTheDocument();
+    const runOutcome = screen.getByRole("region", { name: /run outcome/i });
+    expect(within(runOutcome).getByText(/CI failed/i)).toBeInTheDocument();
+    expect(
+      within(runOutcome).getByText("review-pr", { selector: ".run-outcome-banner-phase" }),
+    ).toBeInTheDocument();
+    const queue = await screen.findByRole("region", { name: /queue/i });
+    const active = await screen.findByRole("region", { name: /active/i });
+    expect(within(queue).getByText(/#10/)).toBeInTheDocument();
+    expect(within(active).getByText(/#11/)).toBeInTheDocument();
 
     const controlCalls = fetchMock.mock.calls.filter(([url, init]) => {
       if (!init?.method || init.method !== "POST") {

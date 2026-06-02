@@ -45,6 +45,25 @@ body {
   min-width: 0;
 }
 
+.app-header-focused {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  color: #e7ecf3;
+}
+
+.app-header-focused-link {
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.app-header-focused-link:hover {
+  text-decoration: underline;
+}
+
+.app-header-focused-sep {
+  color: #9aa7b5;
+}
+
 .app-header-fleet {
   margin: 0;
   font-size: 0.875rem;
