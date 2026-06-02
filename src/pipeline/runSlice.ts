@@ -1,4 +1,5 @@
-import { unlink } from "node:fs/promises";
+import { appendFile, mkdir, unlink } from "node:fs/promises";
+import { dirname } from "node:path";
 import { join } from "node:path";
 import {
   CANONICAL_PHASES,
@@ -11,6 +12,11 @@ import {
   type RunPhaseOptions,
   type RunPhaseResult,
 } from "../runner/index.js";
+import {
+  DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO,
+  jitterDelayMs,
+  transientCursorBackoffDelayMs,
+} from "../runner/transientCursorError.js";
 import {
   readActive,
   resolveActivePath,
@@ -33,6 +39,7 @@ import type { GitRunner } from "../handoff/worktreeNoDiff.js";
 import { PHASE_COMPLETE_SIGNAL } from "../runner/index.js";
 import { advanceSlice, skillForPhase } from "./advance.js";
 import { phasesCompletedThroughCreatePr } from "./phasesCompleted.js";
+import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -45,25 +52,99 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isRetryablePhaseOutputError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message;
+  return (
+    message.includes("Invalid handoff schema:") ||
+    message.includes("Invalid JSON in handoff:") ||
+    message.includes("Handoff not found:") ||
+    message.includes("Cannot read handoff:")
+  );
+}
+
+async function appendPhaseRetryLog(
+  logFilePath: string | undefined,
+  message: string,
+): Promise<void> {
+  if (!logFilePath) {
+    return;
+  }
+  await mkdir(dirname(logFilePath), { recursive: true });
+  await appendFile(logFilePath, `${message.trimEnd()}\n`);
+}
+
 async function runPhaseWithCompletionRetry(
   deps: RunLinearSliceDeps,
   options: RunPhaseOptions,
   input: {
     /** Total attempts to get a PHASE_COMPLETE signal (1 = no retry). */
     maxAttempts: number;
-    /** Small delay between attempts to avoid tight loops. */
-    delayMs: number;
+    /** Base delay for exponential backoff between attempts. */
+    baseDelayMs: number;
+    /** Cap per retry wait (ms). */
+    maxDelayMs: number;
+    /** Jitter ratio applied to backoff delays (0.2 = ±20%). */
+    jitterRatio: number;
+    /** Total elapsed time cap for all attempts (ms). */
+    maxElapsedMs: number;
   },
 ): Promise<RunPhaseResult> {
+  const startedAtMs = Date.now();
   let last: RunPhaseResult | null = null;
   for (let attempt = 1; attempt <= input.maxAttempts; attempt++) {
-    const result = await deps.runPhase(options);
+    const elapsedMs = Date.now() - startedAtMs;
+    if (elapsedMs >= input.maxElapsedMs) {
+      break;
+    }
+    let result: RunPhaseResult;
+    try {
+      result = await deps.runPhase(options);
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      if (!isRetryablePhaseOutputError(error) || attempt >= input.maxAttempts) {
+        throw error;
+      }
+      const logPath = resolvePhaseLogPath({
+        projectPath: options.projectPath,
+        branch: options.branch,
+        phase: options.phase,
+      });
+      const backoffMs = transientCursorBackoffDelayMs(
+        attempt + 1,
+        input.baseDelayMs,
+        input.maxDelayMs,
+      );
+      const delayMs = jitterDelayMs(backoffMs, input.jitterRatio);
+      await appendPhaseRetryLog(
+        logPath,
+        `\n--- Transient phase output error (attempt ${attempt}/${input.maxAttempts}): ${(error as Error).message.trim()} — retrying in ${delayMs}ms ---`,
+      );
+      await sleep(delayMs);
+      continue;
+    }
     last = result;
     if (result.completionSignal === PHASE_COMPLETE_SIGNAL) {
       return result;
     }
     if (attempt < input.maxAttempts) {
-      await sleep(input.delayMs);
+      const backoffMs = transientCursorBackoffDelayMs(
+        // `transientCursorBackoffDelayMs` returns 0 for attempt<=1; shift by 1
+        // so attempt 1 → baseDelayMs.
+        attempt + 1,
+        input.baseDelayMs,
+        input.maxDelayMs,
+      );
+      const delayMs = jitterDelayMs(backoffMs, input.jitterRatio);
+      await appendPhaseRetryLog(
+        result.logFilePath,
+        `\n--- Missing PHASE_COMPLETE (attempt ${attempt}/${input.maxAttempts}) — retrying in ${delayMs}ms ---`,
+      );
+      await sleep(delayMs);
     }
   }
   // If we get here, we exhausted retries; return last result so advanceSlice can
@@ -111,6 +192,18 @@ export type RunLinearSliceOptions = {
     RunPhaseOptions,
     "phase" | "branch" | "projectPath"
   >;
+  /** Total attempts to recover missing PHASE_COMPLETE before blocking. */
+  completionSignalMaxAttempts?: number;
+  /** Separate cap for `/tdd` completion-signal attempts (defaults smaller). */
+  tddCompletionSignalMaxAttempts?: number;
+  /** Base delay for exponential backoff between completion-signal attempts. */
+  completionSignalBaseDelayMs?: number;
+  /** Cap per completion-signal retry wait (ms). */
+  completionSignalMaxDelayMs?: number;
+  /** Jitter ratio applied to completion-signal retry delays. */
+  completionSignalJitterRatio?: number;
+  /** Total elapsed time cap for completion-signal retries per phase (ms). */
+  completionSignalMaxElapsedMs?: number;
 };
 
 export type RunLinearSliceSuccess = {
@@ -241,7 +334,10 @@ async function runRecoverySlice(
         // Babysit already loops internally (maxIterations), so completion should be reliable.
         // Still give it one small retry in case the agent flakes out before emitting PHASE_COMPLETE.
         maxAttempts: 2,
-        delayMs: 1_000,
+        baseDelayMs: 1_000,
+        maxDelayMs: 10_000,
+        jitterRatio: DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO,
+        maxElapsedMs: 60_000,
       },
     );
   } catch (error) {
@@ -425,6 +521,14 @@ export async function runLinearSlice(
 
   let mergeTailBabysitAttempted = false;
 
+  const completionSignalBaseDelayMs = options.completionSignalBaseDelayMs ?? 1_000;
+  const completionSignalMaxDelayMs = options.completionSignalMaxDelayMs ?? 30_000;
+  const completionSignalJitterRatio =
+    options.completionSignalJitterRatio ?? DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO;
+  const completionSignalMaxElapsedMs = options.completionSignalMaxElapsedMs ?? 15 * 60_000;
+  const completionSignalMaxAttempts = options.completionSignalMaxAttempts ?? 5;
+  const tddCompletionSignalMaxAttempts = options.tddCompletionSignalMaxAttempts ?? 3;
+
   for (const phase of CANONICAL_PHASES.slice(phaseStartIndex)) {
     const activeBeforeRun: ActiveState = {
       issue,
@@ -438,7 +542,10 @@ export async function runLinearSlice(
 
     let result: RunPhaseResult;
     try {
-      const completionRetryMaxAttempts = phase === "tdd" ? 1 : 2;
+      const completionRetryMaxAttempts =
+        phase === "tdd"
+          ? tddCompletionSignalMaxAttempts
+          : completionSignalMaxAttempts;
       result = await runPhaseWithCompletionRetry(
         deps,
         {
@@ -454,7 +561,10 @@ export async function runLinearSlice(
           // Other phases default to maxIterations=1, so a missing completion signal
           // is often just a transient agent flake; retry once before blocking.
           maxAttempts: completionRetryMaxAttempts,
-          delayMs: 1_000,
+          baseDelayMs: completionSignalBaseDelayMs,
+          maxDelayMs: completionSignalMaxDelayMs,
+          jitterRatio: completionSignalJitterRatio,
+          maxElapsedMs: completionSignalMaxElapsedMs,
         },
       );
     } catch (error) {
@@ -550,7 +660,13 @@ export async function runLinearSlice(
             stateRoot,
             ...options.runPhaseOptions,
           },
-          { maxAttempts: 2, delayMs: 1_000 },
+          {
+            maxAttempts: completionSignalMaxAttempts,
+            baseDelayMs: completionSignalBaseDelayMs,
+            maxDelayMs: completionSignalMaxDelayMs,
+            jitterRatio: completionSignalJitterRatio,
+            maxElapsedMs: completionSignalMaxElapsedMs,
+          },
         );
       } catch (error) {
         if (isAbortError(error)) {

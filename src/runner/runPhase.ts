@@ -34,7 +34,10 @@ import {
   sleep,
   transientCursorBackoffDelayMs,
 } from "./transientCursorError.js";
-import { ensureCursorignoreAllowsHandoff } from "./cursorignore.js";
+import {
+  ensureCursorignoreAllowsHandoff,
+  ensureCursorignoreAllowsSandcastleWorktrees,
+} from "./cursorignore.js";
 
 export const PHASE_COMPLETE_SIGNAL = "<promise>PHASE_COMPLETE</promise>";
 
@@ -124,7 +127,9 @@ function resolveMaxIterations(
   if (phase === "babysit") {
     return babysitMaxIterations;
   }
-  return 1;
+  // Non-TDD phases are usually single-pass; give them one self-correction cycle
+  // so they can still emit PHASE_COMPLETE after a small mistake.
+  return 2;
 }
 
 function resolveLogPath(
@@ -236,6 +241,9 @@ export async function runPhase(
   });
 
   try {
+    // Ensure Cursor can read sandbox worktrees from the project root.
+    await ensureCursorignoreAllowsSandcastleWorktrees(options.projectPath);
+
     // Defense-in-depth: ensure Cursor can read the handoff dir in this worktree.
     await ensureCursorignoreAllowsHandoff(sandbox.worktreePath);
 

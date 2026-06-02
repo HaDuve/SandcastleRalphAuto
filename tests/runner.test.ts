@@ -139,7 +139,7 @@ describe("runPhase", () => {
     expect(effectivePrompt).toContain('"issue": 6');
     expect(effectivePrompt).toMatch(/inline handoff/i);
     expect(effectivePrompt).not.toMatch(/Read `\.sandcastle-ralph\/handoff\/current\.json`/);
-    expect(runCalls[0]?.maxIterations).toBe(1);
+    expect(runCalls[0]?.maxIterations).toBe(2);
   });
 
   it("ensures .cursorignore un-ignores the handoff directory before the agent runs", async () => {
@@ -379,7 +379,7 @@ describe("runPhase", () => {
       deps,
     );
 
-    expect(runCalls[0]?.maxIterations).toBe(1);
+    expect(runCalls[0]?.maxIterations).toBe(2);
   });
 
   it("uses babysitMaxIterations for babysit and single-shot for other non-tdd phases", async () => {

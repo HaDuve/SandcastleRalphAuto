@@ -661,6 +661,159 @@ describe("runLinearSlice", () => {
     await expect(readActive(projectId, stateRoot)).resolves.toBeNull();
   });
 
+  it("blocks after exhausting completion-signal retry attempts", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+    let reviewPrRuns = 0;
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+        completionSignalMaxAttempts: 5,
+        completionSignalBaseDelayMs: 1,
+        completionSignalMaxDelayMs: 1,
+        completionSignalMaxElapsedMs: 60_000,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          const phase = options.phase as CanonicalPhase;
+          if (options.phase === "review-pr") {
+            reviewPrRuns += 1;
+            return {
+              ...phaseResult("review-pr", NEXT_SKILL_BY_PHASE["review-pr"], {
+                pr: 42,
+              }),
+              completionSignal: undefined,
+            };
+          }
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase], { pr: 42 });
+        },
+      },
+    );
+
+    expect(reviewPrRuns).toBe(5);
+    expect(phaseCalls).toEqual([
+      "tdd",
+      "create-pr",
+      "review-pr",
+      "review-pr",
+      "review-pr",
+      "review-pr",
+      "review-pr",
+    ]);
+    expect(result.status).toBe("blocked");
+    if (result.status === "blocked") {
+      expect(result.active).toMatchObject({
+        phase: "review-pr",
+        status: "blocked",
+        reason: "Phase did not emit PHASE_COMPLETE completion signal",
+        resumeSkill: "/review-pr",
+      });
+    }
+  });
+
+  it("retries when runPhase throws a transient handoff parse error", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const phaseCalls: RunPhaseOptions["phase"][] = [];
+    let reviewTddRuns = 0;
+
+    const result = await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+        completionSignalMaxAttempts: 3,
+        completionSignalBaseDelayMs: 1,
+        completionSignalMaxDelayMs: 1,
+        completionSignalMaxElapsedMs: 60_000,
+      },
+      {
+        runPhase: async (options) => {
+          phaseCalls.push(options.phase);
+          const phase = options.phase as CanonicalPhase;
+          if (options.phase === "review-tdd") {
+            reviewTddRuns += 1;
+            if (reviewTddRuns === 1) {
+              throw new Error("Invalid handoff schema: expected string, received number");
+            }
+          }
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase], { pr: 42 });
+        },
+      },
+    );
+
+    expect(reviewTddRuns).toBe(2);
+    expect(phaseCalls).toEqual([
+      "tdd",
+      "create-pr",
+      "review-pr",
+      "review-tdd",
+      "review-tdd",
+      "merge",
+    ]);
+    expect(result).toEqual({
+      status: "ready-for-next",
+      issue: 7,
+      branch: "issue-7-pipeline",
+      pr: 42,
+      phasesCompleted: [...CANONICAL_PHASES],
+    });
+  });
+
+  it("writes a retry note to the phase log when runPhase throws a transient handoff parse error", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
+    const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    let reviewTddRuns = 0;
+
+    await runLinearSlice(
+      {
+        projectId,
+        issue: 7,
+        branch: "issue-7-pipeline",
+        projectPath,
+        stateRoot,
+        completionSignalMaxAttempts: 2,
+        completionSignalBaseDelayMs: 1,
+        completionSignalMaxDelayMs: 1,
+        completionSignalMaxElapsedMs: 60_000,
+      },
+      {
+        runPhase: async (options) => {
+          if (options.phase === "review-tdd") {
+            reviewTddRuns += 1;
+            if (reviewTddRuns === 1) {
+              throw new Error("Invalid handoff schema: expected string, received number");
+            }
+          }
+          const phase = options.phase as CanonicalPhase;
+          return phaseResult(phase, NEXT_SKILL_BY_PHASE[phase], { pr: 42 });
+        },
+      },
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const { resolvePhaseLogPath } = await import("../src/phaseLogs/index.js");
+    const logPath = resolvePhaseLogPath({
+      projectPath,
+      branch: "issue-7-pipeline",
+      phase: "review-tdd",
+    });
+    const content = await readFile(logPath, "utf8");
+    expect(content).toContain("Transient phase output error");
+  });
+
   it("persists blocked state with current-phase resumeSkill when runPhase throws", async () => {
     const stateRoot = await mkdtemp(join(tmpdir(), "pipeline-state-"));
     const projectPath = await mkdtemp(join(tmpdir(), "pipeline-project-"));
