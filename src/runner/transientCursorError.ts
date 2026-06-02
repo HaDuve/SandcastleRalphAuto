@@ -13,8 +13,16 @@ export const DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO = 0.2;
 export function isTransientCursorErrorMessage(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
+    // Provider overload / quota.
     normalized.includes("resource_exhausted") ||
-    normalized.includes("error_resource_exhausted")
+    normalized.includes("error_resource_exhausted") ||
+    // DNS / network flakiness that commonly resolves on retry.
+    // Example: "Error: [unavailable] getaddrinfo ENOTFOUND api2.cursor.sh"
+    normalized.includes("getaddrinfo enotfound") ||
+    normalized.includes("getaddrinfo eai_again") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("etimedout") ||
+    normalized.includes("socket hang up")
   );
 }
 
