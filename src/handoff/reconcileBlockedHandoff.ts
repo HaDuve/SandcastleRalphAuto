@@ -12,6 +12,10 @@ import { readHostHandoff, writeHostHandoff } from "./hostStore.js";
 import { readHandoff, writeHandoff } from "./io.js";
 import type { Handoff } from "./schema.js";
 import {
+  isMergeAcceptanceBlockedStallReason,
+  isMergeDeferredToBabysit,
+} from "./mergeBabysitRoute.js";
+import {
   formatReviewFindingsNote,
   isReviewPrBlockersStallReason,
   isReviewPrRequestChangesToReviewTdd,
@@ -167,6 +171,63 @@ export async function tryReconcileReviewPrBlockedHandoff(input: {
     status: "active",
     startedAt: input.active.startedAt,
     ...(note !== null ? { reason: note } : {}),
+  };
+}
+
+/**
+ * When merge completed with blocked acceptance (conflicts/CI) but the host stalled
+ * before `/babysit`, resume the recovery phase on Start (ADR 0006).
+ */
+export async function tryReconcileMergeDeferredBabysitHandoff(input: {
+  stateRoot: string;
+  projectId: string;
+  projectPath: string;
+  branch: string;
+  active: ActiveState;
+}): Promise<ActiveState | null> {
+  if (
+    input.active.status !== "blocked" ||
+    input.active.phase !== "merge" ||
+    !isMergeAcceptanceBlockedStallReason(
+      input.active.reason,
+      input.active.phase,
+    )
+  ) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isMergeDeferredToBabysit(handoff)) {
+    return null;
+  }
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: handoff.pr ?? input.active.pr,
+    phase: "babysit",
+    status: "active",
+    startedAt: input.active.startedAt,
   };
 }
 

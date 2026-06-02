@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
   HandoffError,
   readHostHandoff,
+  tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
@@ -563,7 +564,7 @@ export async function runProjectSlice(
       gh: deps.gh ?? resolved.gh,
       runLinearSliceFn,
       sliceRunner,
-      babysitAttempted: false,
+      babysitAttempted: sliceForMerge.mergeTailBabysitAttempted ?? false,
     });
 
     if (mergeOutcome.source === "recovery-slice") {
@@ -687,6 +688,22 @@ async function resolveLoopStart(
         kind: "ready",
         issue: reconciled.issue,
         fromPhase: reconciled.phase,
+      };
+    }
+
+    const mergeBabysit = await tryReconcileMergeDeferredBabysitHandoff({
+      projectPath,
+      branch: branchForIssue(active.issue),
+      stateRoot,
+      projectId: project.remote,
+      active,
+    });
+    if (mergeBabysit !== null) {
+      await writeActive(project.remote, mergeBabysit, stateRoot);
+      return {
+        kind: "ready",
+        issue: mergeBabysit.issue,
+        fromPhase: "babysit",
       };
     }
 
@@ -872,7 +889,7 @@ export async function loopProject(
         gh: deps.gh ?? resolved.gh,
         runLinearSliceFn,
         sliceRunner,
-        babysitAttempted: false,
+        babysitAttempted: sliceForMerge.mergeTailBabysitAttempted ?? false,
       });
 
       if (mergeOutcome.source === "recovery-slice") {

@@ -137,11 +137,7 @@ describe("App", () => {
     const checkboxes = within(sidebar).getAllByRole("checkbox");
     expect(checkboxes).toHaveLength(13);
     for (const project of manyProjects) {
-      expect(
-        checkboxes.some((checkbox) =>
-          checkbox.closest("label")?.textContent?.includes(project.id),
-        ),
-      ).toBe(true);
+      expect(within(sidebar).getByRole("link", { name: project.id })).toBeInTheDocument();
     }
   });
 

@@ -1,3 +1,8 @@
+import {
+  cursorWorkspaceLink,
+  githubRepoUrl,
+  truncateRemote,
+} from "./linkTargets.js";
 import { projectCardClass } from "./runOutcomeUi.js";
 import type { Project } from "./types.js";
 import type { WorkerState, WorkerStatus } from "./workerStatus.js";
@@ -55,14 +60,27 @@ export function ProjectPicker({
 
           return (
             <li key={project.id} className={cardClass}>
-              <label>
+              <div className="project-identity">
+                <a className="project-id-link" href={cursorWorkspaceLink(project.path)}>
+                  {project.id}
+                </a>
+                <a
+                  className="project-remote-link"
+                  href={githubRepoUrl(project.remote)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={project.remote}
+                >
+                  {truncateRemote(project.remote)}
+                </a>
+              </div>
+              <label className="project-select">
                 <input
                   type="checkbox"
                   checked={checked}
+                  aria-label={`Select ${project.id}`}
                   onChange={(event) => onSelectedChange(project.id, event.target.checked)}
                 />
-                {project.id}
-                <span className="project-remote"> ({project.remote})</span>
               </label>
               {!startDisabled ? (
                 <button

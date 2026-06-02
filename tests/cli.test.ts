@@ -642,6 +642,88 @@ describe("loopProject", () => {
     expect(events).toEqual(["acquire", "release"]);
   });
 
+  it("reconciles blocked merge on Start into babysit recovery", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "cli-merge-babysit-reconcile-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const scProject: Project = {
+      ...portfolio,
+      id: "sandcastle",
+      remote: projectId,
+      path: join(rootDir, "repo"),
+    };
+    await writeHostHandoff({
+      stateRoot,
+      projectId,
+      handoff: {
+        project: projectId,
+        issue: 80,
+        branch: "issue-80",
+        pr: 87,
+        phase: "merge",
+        acceptanceState: "blocked",
+        verdict: "approve",
+        blockers: [
+          "PR #87 not mergeable: mergeStateStatus DIRTY — merge conflict with main",
+        ],
+        mergeReady: false,
+        nextSkill: "/next",
+        startedAt: "2026-06-01T00:00:00.000Z",
+        endedAt: "2026-06-01T01:00:00.000Z",
+      } satisfies Handoff,
+    });
+    await writeActive(
+      projectId,
+      {
+        issue: 80,
+        phase: "merge",
+        branch: "issue-80",
+        pr: 87,
+        status: "blocked",
+        reason: "Handoff acceptanceState is blocked, expected done",
+        resumeSkill: "/merge",
+        startedAt: "2026-06-01T00:00:00.000Z",
+      },
+      stateRoot,
+    );
+
+    const sliceOptions: RunLinearSliceOptions[] = [];
+
+    await loopProject(
+      { projectId: "sandcastle", rootDir, stateRoot },
+      {
+        loadRegistry: async () => [scProject],
+        runLinearSlice: async (options) => {
+          sliceOptions.push(options);
+          return {
+            status: "recovery-complete",
+            issue: options.issue,
+            branch: options.branch,
+            pr: 87,
+          };
+        },
+        runMergeGate: async () => ({ status: "auto-merge-queued" as const }),
+        waitForMergedPr: async () => {},
+        runNext: async () => ({ status: QUEUE_EMPTY }),
+        mutex: {
+          acquire: async () => {},
+          release: async () => {},
+        },
+      },
+    );
+
+    expect(sliceOptions).toHaveLength(1);
+    expect(sliceOptions[0]).toMatchObject({
+      issue: 80,
+      fromPhase: "babysit",
+    });
+    await expect(readActive(projectId, stateRoot)).resolves.toMatchObject({
+      phase: "babysit",
+      status: "active",
+      pr: 87,
+    });
+  });
+
   it("reconciles merge-gate block on Start without re-running linear slice", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "cli-merge-reconcile-"));
     const stateRoot = join(rootDir, "state");

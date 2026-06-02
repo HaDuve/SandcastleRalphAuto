@@ -273,15 +273,33 @@ body {
   padding-left: 0.5rem;
 }
 
+.project-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.project-id-link,
+.project-remote-link {
+  color: #60a5fa;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.project-id-link:hover,
+.project-remote-link:hover {
+  text-decoration: underline;
+}
+
+.project-remote-link {
+  color: #9aa7b5;
+  font-size: 0.875rem;
+}
+
 .dashboard-sidebar label {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-}
-
-.project-remote {
-  color: #9aa7b5;
-  font-size: 0.875rem;
 }
 
 .project-status-indicator {

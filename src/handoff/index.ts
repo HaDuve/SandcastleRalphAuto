@@ -24,7 +24,12 @@ export {
   formatReviewFindingsNote,
 } from "./reviewPrRoute.js";
 export {
+  isMergeDeferredToBabysit,
+  isMergeAcceptanceBlockedStallReason,
+} from "./mergeBabysitRoute.js";
+export {
   isHandoffSchemaBlockReason,
+  tryReconcileMergeDeferredBabysitHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
