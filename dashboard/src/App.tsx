@@ -37,6 +37,7 @@ import {
   writeFocusedProjectId,
   writeSelectedIds,
 } from "./selectedProjects.js";
+import { formatFleetLine, summarizeFleet } from "./fleetSummary.js";
 import { applyWorkerEvent, canHideProject, stoppedRunOutcome, type WorkerState } from "./workerStatus.js";
 import "./app.css";
 
@@ -63,6 +64,9 @@ export function App() {
   const focusedLastOutcome =
     focusedProjectId === null ? null : stoppedRunOutcome(workerStates[focusedProjectId]);
   const visibleProjects = projects.filter((project) => !hiddenIds.has(project.id));
+  const fleetLine = formatFleetLine(
+    summarizeFleet(visibleProjects, workerStates, activeSummaries, hiddenIds.size),
+  );
 
   useEffect(() => {
     focusedProjectIdRef.current = focusedProjectId;
@@ -409,10 +413,17 @@ export function App() {
   return (
     <div className="app-root">
       <header className="app-header">
-        <h1>Sandcastle Ralph Auto</h1>
-        {loadError ? <p role="alert">{loadError}</p> : null}
-        {controlError ? <p role="alert">{controlError}</p> : null}
-        {panelError ? <p role="alert">{panelError}</p> : null}
+        <div className="app-header-title">
+          <h1>Sandcastle Ralph Auto</h1>
+        </div>
+        <div className="app-header-status">
+          <p className="app-header-fleet" aria-label="Fleet summary">
+            {fleetLine}
+          </p>
+          {loadError ? <p role="alert">{loadError}</p> : null}
+          {controlError ? <p role="alert">{controlError}</p> : null}
+          {panelError ? <p role="alert">{panelError}</p> : null}
+        </div>
       </header>
       <DashboardLayout
         picker={
