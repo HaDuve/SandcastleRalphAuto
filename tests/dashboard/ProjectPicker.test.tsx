@@ -79,6 +79,18 @@ describe("ProjectPicker", () => {
     expect(screen.getByText("running · create-pr")).toBeInTheDocument();
   });
 
+  it("shows running after start even when the active summary is still marked blocked", () => {
+    renderPicker({
+      workerStates: { portfolio: workerState("running") },
+      activeSummaries: {
+        portfolio: { issue: 11, phase: "babysit", status: "blocked" },
+      },
+    });
+
+    expect(screen.getByText("running · babysit")).toBeInTheDocument();
+    expect(screen.queryByText("blocked")).not.toBeInTheDocument();
+  });
+
   it("shows running status from the projects snapshot when the card is unchecked", () => {
     renderPicker({
       projects: [
