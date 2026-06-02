@@ -125,6 +125,36 @@ body {
   min-height: 0;
 }
 
+
+.panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.panel-header-row h2 {
+  margin: 0;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-error {
+  margin: 0;
+  color: #ff8a8a;
+  font-size: 0.875rem;
+}
+
 .log-panel-header {
   display: flex;
   align-items: center;

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../dashboard/src/App.js";
@@ -1547,4 +1547,596 @@ describe("App", () => {
       expect(screen.queryByRole("button", { name: /hide portfolio/i })).not.toBeInTheDocument();
     });
   });
+
+  it("refreshes the queue tile without updating other panels", async () => {
+    let queueFetchCount = 0;
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          queueFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              queue:
+                queueFetchCount <= 1
+                  ? [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }]
+                  : [{ number: 20, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url.endsWith("/log")) {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "log line\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    expect(await screen.findByText(/#10/)).toBeInTheDocument();
+
+    const queueRegion = screen.getByRole("region", { name: /^queue$/i });
+    await user.click(within(queueRegion).getByRole("button", { name: /refresh queue/i }));
+
+    await waitFor(() => {
+      expect(within(queueRegion).getByText(/#20/)).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole("region", { name: /^active$/i })).getByText(/#11/)).toBeInTheDocument();
+  });
+
+  it("shows queue refresh errors inside the queue tile only", async () => {
+    const user = userEvent.setup();
+    let queueFetchCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          queueFetchCount += 1;
+          if (queueFetchCount >= 2) {
+            return new Response(JSON.stringify({ error: "queue down" }), { status: 500 });
+          }
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await screen.findByText(/#10/);
+
+    const queueRegion = screen.getByRole("region", { name: /^queue$/i });
+    await user.click(within(queueRegion).getByRole("button", { name: /refresh queue/i }));
+
+    await waitFor(() => {
+      expect(within(queueRegion).getByRole("alert")).toHaveTextContent("queue down");
+    });
+    expect(screen.queryByRole("alert")).toBe(within(queueRegion).getByRole("alert"));
+  });
+
+
+  it("refreshes the history tile without updating other panels", async () => {
+    let historyFetchCount = 0;
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          historyFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              history:
+                historyFetchCount <= 1
+                  ? [
+                      {
+                        pr: 99,
+                        issue: 9,
+                        branch: "issue-9",
+                        startedAt: "2026-06-01T00:00:00.000Z",
+                        endedAt: "2026-06-01T01:00:00.000Z",
+                        phases: [
+                          {
+                            phase: "merge",
+                            startedAt: "2026-06-01T00:00:00.000Z",
+                            endedAt: "2026-06-01T01:00:00.000Z",
+                          },
+                        ],
+                      },
+                    ]
+                  : [
+                      {
+                        pr: 100,
+                        issue: 10,
+                        branch: "issue-10",
+                        startedAt: "2026-06-02T00:00:00.000Z",
+                        endedAt: "2026-06-02T01:00:00.000Z",
+                        phases: [
+                          {
+                            phase: "merge",
+                            startedAt: "2026-06-02T00:00:00.000Z",
+                            endedAt: "2026-06-02T01:00:00.000Z",
+                          },
+                        ],
+                      },
+                    ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/log")) {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "log line\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    expect(await screen.findByText(/#99/)).toBeInTheDocument();
+
+    const historyRegion = screen.getByRole("region", { name: /^history$/i });
+    await user.click(within(historyRegion).getByRole("button", { name: /refresh history/i }));
+
+    await waitFor(() => {
+      expect(within(historyRegion).getByText(/#100/)).toBeInTheDocument();
+    });
+    expect(within(screen.getByRole("region", { name: /^queue$/i })).getByText(/#10/)).toBeInTheDocument();
+  });
+
+  it("shows history refresh errors inside the history tile only", async () => {
+    const user = userEvent.setup();
+    let historyFetchCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(
+            JSON.stringify({
+              queue: [{ number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true }],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/active")) {
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          historyFetchCount += 1;
+          if (historyFetchCount >= 2) {
+            return new Response(JSON.stringify({ error: "history down" }), { status: 500 });
+          }
+          return new Response(
+            JSON.stringify({
+              history: [
+                {
+                  pr: 99,
+                  issue: 9,
+                  branch: "issue-9",
+                  startedAt: "2026-06-01T00:00:00.000Z",
+                  endedAt: "2026-06-01T01:00:00.000Z",
+                  phases: [
+                    {
+                      phase: "merge",
+                      startedAt: "2026-06-01T00:00:00.000Z",
+                      endedAt: "2026-06-01T01:00:00.000Z",
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
+    await screen.findByText(/#99/);
+
+    const historyRegion = screen.getByRole("region", { name: /^history$/i });
+    await user.click(within(historyRegion).getByRole("button", { name: /refresh history/i }));
+
+    await waitFor(() => {
+      expect(within(historyRegion).getByRole("alert")).toHaveTextContent("history down");
+    });
+    expect(screen.queryByRole("alert")).toBe(within(historyRegion).getByRole("alert"));
+  });
+
+  it("preserves SSE log tail when refreshing the log tile on the live phase", async () => {
+    const { sources } = installStoppableEventSource({
+      connected: { projectId: "portfolio", workerStatus: "running" },
+    });
+    let logFetchCount = 0;
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url === "/api/projects/portfolio/log") {
+          logFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: logFetchCount === 1 ? "seed\n" : "seed\nrefreshed\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByText("seed")).toBeInTheDocument();
+
+    await act(async () => {
+      for (const source of sources) {
+        source.emit("phase-log", {
+          type: "phase-log",
+          projectId: "portfolio",
+          chunk: "live-tail\n",
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("log-preview")).toHaveTextContent("live-tail");
+    });
+
+    const logRegion = screen.getByRole("region", { name: /^log$/i });
+    await user.click(within(logRegion).getByRole("button", { name: /refresh log/i }));
+
+    await waitFor(() => {
+      const preview = screen.getByTestId("log-preview");
+      expect(preview).toHaveTextContent("refreshed");
+      expect(preview).toHaveTextContent("live-tail");
+    });
+  });
+
+  it("auto-refreshes all focused tiles every 30 seconds while visible", async () => {
+    vi.useFakeTimers();
+    let activeFetchCount = 0;
+    let queueFetchCount = 0;
+    let historyFetchCount = 0;
+    let logFetchCount = 0;
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          queueFetchCount += 1;
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          activeFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          historyFetchCount += 1;
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url === "/api/projects/portfolio/log") {
+          logFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "log\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const initialActive = activeFetchCount;
+    const initialQueue = queueFetchCount;
+    const initialHistory = historyFetchCount;
+    const initialLog = logFetchCount;
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+
+    expect(activeFetchCount).toBeGreaterThan(initialActive);
+    expect(queueFetchCount).toBeGreaterThan(initialQueue);
+    expect(historyFetchCount).toBeGreaterThan(initialHistory);
+    expect(logFetchCount).toBeGreaterThan(initialLog);
+
+    vi.useRealTimers();
+  });
+
+  it("pauses auto-refresh while hidden and catches up on unhide after 30 seconds", async () => {
+    vi.useFakeTimers();
+    type VisibilityDocument = {
+      visibilityState: string;
+      dispatchEvent: (event: Event) => boolean;
+    };
+    const doc = (globalThis as unknown as { document: VisibilityDocument }).document;
+    let activeFetchCount = 0;
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  ...portfolio,
+                  workerStatus: "running",
+                  active: { issue: 11, phase: "tdd", status: "active" },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          activeFetchCount += 1;
+          return new Response(
+            JSON.stringify({
+              active: {
+                issue: 11,
+                phase: "tdd",
+                branch: "issue-11",
+                status: "active",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        if (url === "/api/projects/portfolio/log") {
+          return new Response(
+            JSON.stringify({
+              issue: 11,
+              phase: "tdd",
+              log: "log\n",
+              phases: ["tdd"],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+    const afterFirstTick = activeFetchCount;
+
+    await act(async () => {
+      Object.defineProperty(doc, "visibilityState", {
+        configurable: true,
+        get: () => "hidden",
+      });
+      doc.dispatchEvent(new Event("visibilitychange"));
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+    });
+    expect(activeFetchCount).toBe(afterFirstTick);
+
+    await act(async () => {
+      Object.defineProperty(doc, "visibilityState", {
+        configurable: true,
+        get: () => "visible",
+      });
+      doc.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+    expect(activeFetchCount).toBeGreaterThan(afterFirstTick);
+
+    vi.useRealTimers();
+  });
+
+  it("stops auto-refresh when the focused project is cleared", async () => {
+    vi.useFakeTimers();
+    let activeFetchCount = 0;
+    localStorage.setItem(SELECTED_IDS_STORAGE_KEY, JSON.stringify(["portfolio"]));
+    localStorage.setItem(FOCUSED_PROJECT_ID_STORAGE_KEY, JSON.stringify("portfolio"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") {
+          return new Response(JSON.stringify({ projects: [portfolio] }), { status: 200 });
+        }
+        if (url.endsWith("/queue")) {
+          return new Response(JSON.stringify({ queue: [] }), { status: 200 });
+        }
+        if (url.endsWith("/active")) {
+          activeFetchCount += 1;
+          return new Response(JSON.stringify({ active: null }), { status: 200 });
+        }
+        if (url.endsWith("/history")) {
+          return new Response(JSON.stringify({ history: [] }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
+      }),
+    );
+
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+    const whileFocused = activeFetchCount;
+
+    const checkbox = screen.getByRole("checkbox", { name: /portfolio/i });
+    await act(async () => {
+      fireEvent.click(checkbox);
+      vi.advanceTimersByTime(60_000);
+      await Promise.resolve();
+    });
+
+    expect(activeFetchCount).toBe(whileFocused);
+    vi.useRealTimers();
+  });
+
 });

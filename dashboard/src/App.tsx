@@ -46,6 +46,14 @@ import {
 } from "./selectedProjects.js";
 import { formatFleetLine, summarizeFleet } from "./fleetSummary.js";
 import { useNow } from "./useNow.js";
+import { useAutoRefresh } from "./useAutoRefresh.js";
+import {
+  AUTO_REFRESH_INTERVAL_MS,
+  EMPTY_TILE_ERRORS,
+  type DashboardTile,
+  type TileErrors,
+} from "./dashboardTiles.js";
+import type { LogRefreshHandler } from "./LogPanel.js";
 import { applyWorkerEvent, canHideProject, stoppedRunOutcome, type WorkerState } from "./workerStatus.js";
 import "./app.css";
 
@@ -67,6 +75,8 @@ export function App() {
   const [panelError, setPanelError] = useState<string | null>(null);
   const focusedProjectIdRef = useRef(focusedProjectId);
   const logPhaseLogHandlerRef = useRef<((chunk: string) => void) | null>(null);
+  const logRefreshHandlerRef = useRef<LogRefreshHandler>(null);
+  const [tileErrors, setTileErrors] = useState<TileErrors>(EMPTY_TILE_ERRORS);
 
   const focusedProject = projects.find((project) => project.id === focusedProjectId) ?? null;
   const focusedLastOutcome =
@@ -146,6 +156,141 @@ export function App() {
       // Sidebar sync is best-effort; panel errors surface on explicit refresh.
     }
   }, []);
+
+
+  const clearTileError = useCallback((tile: DashboardTile) => {
+    setTileErrors((current) => (current[tile] === null ? current : { ...current, [tile]: null }));
+  }, []);
+
+  const setTileError = useCallback((tile: DashboardTile, message: string) => {
+    setTileErrors((current) => ({ ...current, [tile]: message }));
+  }, []);
+
+  const applyActiveRefresh = useCallback(
+    async (projectId: string) => {
+      const nextActive = await fetchActive(projectId);
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setActive(nextActive);
+      setActiveSummaries((current) => ({
+        ...current,
+        [projectId]: activeSummaryFromSlice(nextActive),
+      }));
+      return nextActive;
+    },
+    [],
+  );
+
+  const refreshPhaseStepper = useCallback(async () => {
+    const projectId = focusedProjectIdRef.current;
+    if (!projectId) {
+      return;
+    }
+    try {
+      await applyActiveRefresh(projectId);
+      clearTileError("phaseStepper");
+    } catch (error: unknown) {
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setTileError(
+        "phaseStepper",
+        error instanceof Error ? error.message : "Failed to refresh phase stepper",
+      );
+    }
+  }, [applyActiveRefresh, clearTileError, setTileError]);
+
+  const refreshActiveSlice = useCallback(async () => {
+    const projectId = focusedProjectIdRef.current;
+    if (!projectId) {
+      return;
+    }
+    try {
+      await applyActiveRefresh(projectId);
+      clearTileError("active");
+    } catch (error: unknown) {
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setTileError(
+        "active",
+        error instanceof Error ? error.message : "Failed to refresh active slice",
+      );
+    }
+  }, [applyActiveRefresh, clearTileError, setTileError]);
+
+  const refreshQueue = useCallback(async () => {
+    const projectId = focusedProjectIdRef.current;
+    if (!projectId) {
+      return;
+    }
+    try {
+      const nextQueue = await fetchQueue(projectId);
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setQueue(nextQueue);
+      clearTileError("queue");
+    } catch (error: unknown) {
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setTileError("queue", error instanceof Error ? error.message : "Failed to refresh queue");
+    }
+  }, [clearTileError, setTileError]);
+
+  const refreshHistory = useCallback(async () => {
+    const projectId = focusedProjectIdRef.current;
+    if (!projectId) {
+      return;
+    }
+    try {
+      const nextHistory = await fetchHistory(projectId);
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setHistory(nextHistory);
+      clearTileError("history");
+    } catch (error: unknown) {
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setTileError(
+        "history",
+        error instanceof Error ? error.message : "Failed to refresh history",
+      );
+    }
+  }, [clearTileError, setTileError]);
+
+  const refreshLog = useCallback(async () => {
+    const projectId = focusedProjectIdRef.current;
+    if (!projectId) {
+      return;
+    }
+    try {
+      await logRefreshHandlerRef.current?.();
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      clearTileError("log");
+    } catch (error: unknown) {
+      if (focusedProjectIdRef.current !== projectId) {
+        return;
+      }
+      setTileError("log", error instanceof Error ? error.message : "Failed to refresh log");
+    }
+  }, [clearTileError, setTileError]);
+
+  const refreshAllFocusedTiles = useCallback(async () => {
+    await Promise.all([
+      refreshPhaseStepper(),
+      refreshActiveSlice(),
+      refreshLog(),
+      refreshQueue(),
+      refreshHistory(),
+    ]);
+  }, [refreshActiveSlice, refreshHistory, refreshLog, refreshPhaseStepper, refreshQueue]);
 
   const refreshPanels = useCallback(async (projectId: string) => {
     setPanelError(null);
@@ -236,13 +381,23 @@ export function App() {
     };
   }, [catalogReady, refreshPanels, selectedIds, syncActiveSummary]);
 
+  useAutoRefresh({
+    enabled: catalogReady && focusedProjectId !== null,
+    intervalMs: AUTO_REFRESH_INTERVAL_MS,
+    onRefresh: refreshAllFocusedTiles,
+    resetKey: focusedProjectId,
+  });
+
   useEffect(() => {
     if (!focusedProjectId) {
       setQueue([]);
       setActive(null);
       setHistory([]);
+      setTileErrors(EMPTY_TILE_ERRORS);
       return;
     }
+
+    setTileErrors(EMPTY_TILE_ERRORS);
 
     let cancelled = false;
     const projectId = focusedProjectId;
@@ -535,9 +690,21 @@ export function App() {
           <RunOutcomePanel project={focusedProject} lastOutcome={focusedLastOutcome} />
         }
         phaseStepper={
-          <PhaseStepper project={focusedProject} currentPhase={focusedDisplayPhase} />
+          <PhaseStepper
+            project={focusedProject}
+            currentPhase={focusedDisplayPhase}
+            onRefresh={() => void refreshPhaseStepper()}
+            refreshError={tileErrors.phaseStepper}
+          />
         }
-        active={<ActivePanel project={focusedProject} active={active} />}
+        active={
+          <ActivePanel
+            project={focusedProject}
+            active={active}
+            onRefresh={() => void refreshActiveSlice()}
+            refreshError={tileErrors.active}
+          />
+        }
         log={
           <LogPanel
             project={focusedProject}
@@ -546,6 +713,11 @@ export function App() {
             registerPhaseLogHandler={(handler) => {
               logPhaseLogHandlerRef.current = handler;
             }}
+            registerRefreshHandler={(handler) => {
+              logRefreshHandlerRef.current = handler;
+            }}
+            onRefresh={() => void refreshLog()}
+            refreshError={tileErrors.log}
           />
         }
         queue={
@@ -553,9 +725,18 @@ export function App() {
             project={focusedProject}
             queue={queue}
             onSkipToggle={(issue, skipped) => void handleSkipToggle(issue, skipped)}
+            onRefresh={() => void refreshQueue()}
+            refreshError={tileErrors.queue}
           />
         }
-        history={<HistoryPanel project={focusedProject} history={history} />}
+        history={
+          <HistoryPanel
+            project={focusedProject}
+            history={history}
+            onRefresh={() => void refreshHistory()}
+            refreshError={tileErrors.history}
+          />
+        }
       />
     </div>
   );

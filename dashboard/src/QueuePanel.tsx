@@ -1,3 +1,4 @@
+import { PanelHeader } from "./PanelHeader.js";
 import { exclusionReason } from "./queueReason.js";
 import type { Project, QueueIssue } from "./types.js";
 
@@ -5,13 +6,21 @@ export type QueuePanelProps = {
   project: Project | null;
   queue: QueueIssue[];
   onSkipToggle: (issue: number, skipped: boolean) => void;
+  onRefresh?: () => void;
+  refreshError?: string | null;
 };
 
-export function QueuePanel({ project, queue, onSkipToggle }: QueuePanelProps) {
+export function QueuePanel({
+  project,
+  queue,
+  onSkipToggle,
+  onRefresh,
+  refreshError = null,
+}: QueuePanelProps) {
   if (!project) {
     return (
       <div className="panel-placeholder">
-        <h2>Queue</h2>
+        <PanelHeader title="Queue" onRefresh={onRefresh} refreshDisabled />
         <p>Select a project to view the issue queue.</p>
       </div>
     );
@@ -19,7 +28,7 @@ export function QueuePanel({ project, queue, onSkipToggle }: QueuePanelProps) {
 
   return (
     <div className="queue-panel">
-      <h2>Queue</h2>
+      <PanelHeader title="Queue" onRefresh={onRefresh} error={refreshError} />
       {queue.length === 0 ? (
         <p className="queue-empty">No open issues with the AFK label.</p>
       ) : (
