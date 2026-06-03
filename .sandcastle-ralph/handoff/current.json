@@ -1,16 +1,14 @@
 {
   "project": "HaDuve/SandcastleRalphAuto",
-  "issue": 100,
-  "branch": "issue-100",
-  "pr": 112,
-  "phase": "merge",
-  "acceptanceState": "blocked",
-  "verdict": "n/a",
-  "blockers": [
-    "Required check failing: ci"
-  ],
+  "issue": 105,
+  "branch": "issue-105",
+  "pr": 115,
+  "phase": "review-pr",
+  "acceptanceState": "done",
+  "verdict": "approve",
+  "blockers": [],
   "mergeReady": false,
-  "nextSkill": "/babysit",
-  "startedAt": "2026-06-02T13:59:07.000Z",
-  "endedAt": "2026-06-02T14:00:20.000Z"
+  "nextSkill": "/review-tdd",
+  "startedAt": "2026-06-03T03:28:00.000Z",
+  "endedAt": "2026-06-03T10:26:00.000Z"
 }
