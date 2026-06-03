@@ -32,7 +32,7 @@ Separately, slices sometimes reach **`MERGED`** on GitHub before the linear pipe
 - Nits can ride in `blockers[]` with `verdict: "approve"` without stopping the host.
 - Merged-before-done slices auto-recover instead of dying at `merge` with no open PR.
 - Forced `/next` after exhaustion trades quality visibility for pipeline throughput; operators must watch recovery warnings.
-- Implementation touches `advance.ts`, `reviewPrRoute.ts`, `reconcileBlockedHandoff.ts`, new merged-tail prompt + orchestration, handoff schema (warning field TBD in code), and dashboard outcome display.
+- Implementation touches `advance.ts`, `reviewPrRoute.ts`, `reconcileBlockedHandoff.ts`, merged-tail prompt + orchestration, handoff fields `recoveryWarning` / `mergedTailAttempts`, and dashboard run outcome display.
 
 ## Related
 

@@ -45,6 +45,15 @@ describe("writeRunOutcome / readRunOutcome", () => {
     });
   });
 
+  it("round-trips queue-empty with merged-tail recovery warning", async () => {
+    await expectRoundTrip(await stateRoot(), {
+      outcome: "queue-empty",
+      stoppedAt,
+      recoveryWarning:
+        "Merged-tail recovery exhausted for issue #101 (PR #113); advanced queue with warning",
+    });
+  });
+
   it("round-trips blocked with reason, phase, and logRef", async () => {
     await expectRoundTrip(await stateRoot(), {
       outcome: "blocked",

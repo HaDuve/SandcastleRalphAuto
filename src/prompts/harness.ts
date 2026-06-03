@@ -51,6 +51,19 @@ function renderInlineHandoff(): string {
   ].join("\n");
 }
 
+function renderReviewTddAfKGuidance(phase: RunnablePhase): string {
+  if (phase !== "review-tdd") {
+    return "";
+  }
+  return [
+    "## Review-tdd AFK rules",
+    "",
+    "- Land fixes on `handoff.branch` with commit + push. If the slice PR is already **MERGED** (merged-tail recovery), push to `main` when allowed; if `main` is protected, open a **follow-up PR** via normal commits on the issue branch — do not leave fixes only in a local worktree.",
+    "- Finish with `acceptanceState: \"done\"`, `verdict: \"approve\"`, cleared `blockers`, and `nextSkill: \"/merge\"` when in-scope review work is complete.",
+    "",
+  ].join("\n");
+}
+
 function renderReviewPrAfKGuidance(phase: RunnablePhase): string {
   if (phase !== "review-pr") {
     return "";
@@ -92,6 +105,7 @@ export function renderHarness(phase: RunnablePhase): string {
     renderBranchPin(phase),
     "",
     renderReviewPrAfKGuidance(phase),
+    renderReviewTddAfKGuidance(phase),
     renderHandoffContract(phase),
     "",
     renderOutputs(),

@@ -19,6 +19,7 @@ import {
 } from "../src/handoff/reconcileBlockedHandoff.js";
 import { readHostHandoff, writeHostHandoff } from "../src/handoff/hostStore.js";
 import { readHandoff } from "../src/handoff/io.js";
+import { buildMergedTailExhaustionWarning } from "../src/handoff/mergedTailRoute.js";
 import type { Handoff } from "../src/handoff/schema.js";
 import type { GitRunner } from "../src/handoff/worktreeNoDiff.js";
 
@@ -852,5 +853,59 @@ describe("reconcileBlockedHandoff", () => {
     });
     const host = await readHostHandoff({ stateRoot, projectId });
     expect(host.mergedTailAttempts).toBe(1);
+  });
+
+  it("returns force-next with recovery warning when merged-tail attempts are exhausted", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-merged-tail-exhaust-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const handoff = {
+      project: projectId,
+      issue: 101,
+      branch: "issue-101",
+      pr: 113,
+      phase: "review-pr",
+      acceptanceState: "blocked",
+      blockers: [],
+      mergeReady: false,
+      nextSkill: "/review-tdd",
+      mergedTailAttempts: 1,
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    } satisfies Handoff;
+    await writeHostHandoff({ stateRoot, projectId, handoff });
+
+    const active: ActiveState = {
+      issue: 101,
+      phase: "review-tdd",
+      branch: "issue-101",
+      pr: 113,
+      status: "blocked",
+      reason: "Handoff has blockers: fix still missing",
+      resumeSkill: "/review-tdd",
+      startedAt: "2026-06-01T00:00:00.000Z",
+    };
+    await writeActive(projectId, active, stateRoot);
+
+    const warning = buildMergedTailExhaustionWarning(101, 113);
+    const resumed = await tryReconcileMergedTailBlockedHandoff({
+      project: { remote: projectId },
+      projectPath: join(rootDir, "repo"),
+      branch: "issue-101",
+      stateRoot,
+      projectId,
+      active,
+      gh: async (args) => {
+        if (args[0] === "pr" && args[1] === "view" && args.includes("state")) {
+          return JSON.stringify({ state: "MERGED" });
+        }
+        return "";
+      },
+    });
+
+    expect(resumed).toEqual({ issue: 101, pr: 113, warning });
+    const host = await readHostHandoff({ stateRoot, projectId });
+    expect(host.recoveryWarning).toBe(warning);
+    expect(host.mergedTailAttempts).toBe(2);
   });
 });

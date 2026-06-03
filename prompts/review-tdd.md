@@ -22,6 +22,11 @@ The host checked out `handoff.branch` before this run. It is always `issue-<hand
 Do not create or switch to `feat/<slug>-<n>` or other branch names.
 
 
+## Review-tdd AFK rules
+
+- Land fixes on `handoff.branch` with commit + push. If the slice PR is already **MERGED** (merged-tail recovery), push to `main` when allowed; if `main` is protected, open a **follow-up PR** via normal commits on the issue branch — do not leave fixes only in a local worktree.
+- Finish with `acceptanceState: "done"`, `verdict: "approve"`, cleared `blockers`, and `nextSkill: "/merge"` when in-scope review work is complete.
+
 ## Handoff contract (`current.json`)
 
 Required JSON (host validates with Zod after this phase):
