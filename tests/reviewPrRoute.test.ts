@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   formatReviewFindingsNote,
+  isReviewPrProceduralOnlyBlockedHandoff,
   isReviewPrRequestChangesToReviewTdd,
+  isReviewPrRoutedToReviewTdd,
+  normalizeReviewPrProceduralDoneHandoff,
 } from "../src/handoff/reviewPrRoute.js";
 import { type Handoff } from "../src/handoff/index.js";
 
@@ -34,12 +37,17 @@ describe("isReviewPrRequestChangesToReviewTdd", () => {
     expect(isReviewPrRequestChangesToReviewTdd(reviewPrHandoff())).toBe(true);
   });
 
-  it("rejects approve verdict with open blockers", () => {
+  it("matches approve verdict with nits in blockers (ADR 0011)", () => {
+    expect(
+      isReviewPrRoutedToReviewTdd(
+        reviewPrHandoff({ verdict: "approve", blockers: ["nit: rename helper"] }),
+      ),
+    ).toBe(true);
     expect(
       isReviewPrRequestChangesToReviewTdd(
-        reviewPrHandoff({ verdict: "approve" }),
+        reviewPrHandoff({ verdict: "approve", blockers: ["nit: rename helper"] }),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("rejects wrong nextSkill", () => {
@@ -48,6 +56,32 @@ describe("isReviewPrRequestChangesToReviewTdd", () => {
         reviewPrHandoff({ nextSkill: "/merge" }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("review-pr procedural blocked", () => {
+  it("matches procedural-only blocked handoff at review-pr", () => {
+    expect(
+      isReviewPrProceduralOnlyBlockedHandoff({
+        ...reviewPrHandoff(),
+        acceptanceState: "blocked",
+        blockers: ["Different maintainer must approve PR #113 (GitHub disallows self-approval)"],
+      }),
+    ).toBe(true);
+  });
+
+  it("normalizes procedural blocked handoff to done and strips procedural blockers", () => {
+    const fixed = normalizeReviewPrProceduralDoneHandoff({
+      ...reviewPrHandoff({ verdict: "approve" }),
+      acceptanceState: "blocked",
+      blockers: [
+        "Different maintainer must approve",
+        "nit: wire server-log SSE",
+      ],
+    });
+    expect(fixed.acceptanceState).toBe("done");
+    expect(fixed.blockers).toEqual(["nit: wire server-log SSE"]);
+    expect(fixed.nextSkill).toBe("/review-tdd");
   });
 });
 

@@ -30,6 +30,7 @@ If `git log origin/main..HEAD --oneline` is empty **and** `git diff origin/main.
 - Do **not** mark the handoff `blocked`.
 - Write the handoff as `acceptanceState: "done"`, `blockers: []`, `pr` omitted, and set `nextSkill: "/next"` so the host advances the queue.
 
+
 ## Handoff contract (`current.json`)
 
 Required JSON (host validates with Zod after this phase):

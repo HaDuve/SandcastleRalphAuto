@@ -76,6 +76,7 @@ export function App() {
   const [panelError, setPanelError] = useState<string | null>(null);
   const focusedProjectIdRef = useRef(focusedProjectId);
   const logPhaseLogHandlerRef = useRef<((chunk: string) => void) | null>(null);
+  const logServerLogHandlerRef = useRef<((chunk: string) => void) | null>(null);
   const logRefreshHandlerRef = useRef<LogRefreshHandler>(null);
   const [tileErrors, setTileErrors] = useState<TileErrors>(EMPTY_TILE_ERRORS);
   const [tileRefreshing, setTileRefreshingState] = useState<TileRefreshing>(EMPTY_TILE_REFRESHING);
@@ -424,6 +425,9 @@ export function App() {
           if (event.type === "phase-log" && event.chunk) {
             logPhaseLogHandlerRef.current?.(event.chunk);
           }
+          if (event.type === "server-log" && event.chunk) {
+            logServerLogHandlerRef.current?.(event.chunk);
+          }
         }),
       );
     }
@@ -766,6 +770,9 @@ export function App() {
             logIssueFallback={focusedLogIssueNumber}
             registerPhaseLogHandler={(handler) => {
               logPhaseLogHandlerRef.current = handler;
+            }}
+            registerServerLogHandler={(handler) => {
+              logServerLogHandlerRef.current = handler;
             }}
             registerRefreshHandler={(handler) => {
               logRefreshHandlerRef.current = handler;

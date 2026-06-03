@@ -72,7 +72,15 @@ export function RunOutcomePanel({ project, lastOutcome, workerStatus }: RunOutco
       <h2>Run outcome</h2>
       <div className={bannerClass} role="status">
         <p className="run-outcome-banner-summary">
-          <strong>{formatOutcomeLabel(lastOutcome.outcome)}</strong>
+          <strong>
+            {formatOutcomeLabel(lastOutcome.outcome, lastOutcome.recoveryWarning)}
+          </strong>
+          {lastOutcome.recoveryWarning ? (
+            <>
+              {" — "}
+              <span className="run-outcome-banner-reason">{lastOutcome.recoveryWarning}</span>
+            </>
+          ) : null}
           {lastOutcome.reason ? (
             <>
               {" — "}

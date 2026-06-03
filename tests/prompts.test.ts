@@ -72,6 +72,18 @@ describe("renderHarness", () => {
     expect(outputsSection).toContain("<promise>PHASE_COMPLETE</promise>");
   });
 
+  it("documents review-pr AFK approval and procedural rules (ADR 0011)", () => {
+    const harness = renderHarness("review-pr");
+    expect(harness).toMatch(/PR approved.*verdict/i);
+    expect(harness).toMatch(/Do not.*acceptanceState: "blocked".*procedural/i);
+  });
+
+  it("documents review-tdd merged-tail fix landing (ADR 0011)", () => {
+    const harness = renderHarness("review-tdd");
+    expect(harness).toMatch(/already \*\*MERGED\*\*/i);
+    expect(harness).toMatch(/follow-up PR/i);
+  });
+
   it("pins every phase to handoff.branch (issue-<n>)", () => {
     const harness = renderHarness("review-pr");
 

@@ -43,6 +43,9 @@ export async function runOutcomeFromLoopResult(
     return {
       outcome: "queue-empty",
       stoppedAt: input.stoppedAt,
+      ...(result.recoveryWarning !== undefined
+        ? { recoveryWarning: result.recoveryWarning }
+        : {}),
     };
   }
 

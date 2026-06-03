@@ -54,6 +54,10 @@ export const HandoffSchema = z.preprocess(
     nextSkill: z.string(),
     startedAt: z.string(),
     endedAt: z.string(),
+    /** Set when merged-tail recovery is skipped after exhaustion (ADR 0011). */
+    recoveryWarning: z.string().min(1).optional(),
+    /** Host/agent merged-tail recovery attempt counter (ADR 0011). */
+    mergedTailAttempts: z.number().int().nonnegative().optional(),
   }),
 );
 

@@ -13,14 +13,19 @@ import {
   normalizeCreatePrNoDiffHandoff,
 } from "../handoff/createPrNoDiffRoute.js";
 import {
-  isReviewPrRequestChangesToReviewTdd,
+  isReviewPrProceduralOnlyBlockedHandoff,
+  isReviewPrRoutedToReviewTdd,
+  normalizeReviewPrProceduralDoneHandoff,
 } from "../handoff/reviewPrRoute.js";
 import {
   isReviewTddProceduralOnlyBlockedHandoff,
   normalizeReviewTddProceduralDoneHandoff,
 } from "../handoff/reviewTddRoute.js";
 
-export { isReviewPrRequestChangesToReviewTdd } from "../handoff/reviewPrRoute.js";
+export {
+  isReviewPrRequestChangesToReviewTdd,
+  isReviewPrRoutedToReviewTdd,
+} from "../handoff/reviewPrRoute.js";
 
 export type AdvanceSliceInput = {
   issue: number;
@@ -86,13 +91,14 @@ function advanceFailureReason(
     if (phase === "review-tdd" && isReviewTddProceduralOnlyBlockedHandoff(handoff)) {
       return null;
     }
+    if (phase === "review-pr" && isReviewPrProceduralOnlyBlockedHandoff(handoff)) {
+      return null;
+    }
     return `Handoff acceptanceState is ${handoff.acceptanceState}, expected done`;
   }
   if (
     handoff.blockers.length > 0 &&
-    !(
-      phase === "review-pr" && isReviewPrRequestChangesToReviewTdd(handoff)
-    )
+    !(phase === "review-pr" && isReviewPrRoutedToReviewTdd(handoff))
   ) {
     return `Handoff has blockers: ${handoff.blockers.join("; ")}`;
   }
@@ -123,6 +129,13 @@ export function advanceSlice(input: AdvanceSliceInput): AdvanceSliceOutcome {
     completionSignal === PHASE_COMPLETE_SIGNAL
   ) {
     handoff = normalizeReviewTddProceduralDoneHandoff(handoff);
+  }
+  if (
+    input.phase === "review-pr" &&
+    isReviewPrProceduralOnlyBlockedHandoff(handoff) &&
+    completionSignal === PHASE_COMPLETE_SIGNAL
+  ) {
+    handoff = normalizeReviewPrProceduralDoneHandoff(handoff);
   }
   const failure = advanceFailureReason(
     input.phase,

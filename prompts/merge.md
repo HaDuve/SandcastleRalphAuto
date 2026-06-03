@@ -21,6 +21,7 @@ __SANDCASTLE_RALPH_INLINE_HANDOFF_JSON__
 The host checked out `handoff.branch` before this run. It is always `issue-<handoff.issue>` — stay on that branch for all git work in this phase.
 Do not create or switch to `feat/<slug>-<n>` or other branch names.
 
+
 ## Handoff contract (`current.json`)
 
 Required JSON (host validates with Zod after this phase):

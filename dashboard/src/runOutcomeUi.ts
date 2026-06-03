@@ -1,6 +1,12 @@
 import type { RunOutcome } from "./types.js";
 
-export function formatOutcomeLabel(outcome: RunOutcome["outcome"]): string {
+export function formatOutcomeLabel(
+  outcome: RunOutcome["outcome"],
+  recoveryWarning?: string,
+): string {
+  if (outcome === "queue-empty" && recoveryWarning !== undefined) {
+    return "Queue empty (recovery warning)";
+  }
   switch (outcome) {
     case "queue-empty":
       return "Queue empty";

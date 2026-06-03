@@ -22,7 +22,10 @@ import {
 } from "../handoff/index.js";
 import { resolvePhaseLogPath } from "../phaseLogs/index.js";
 import { type RunnablePhase } from "../prompts/phases.js";
-import { INLINE_HANDOFF_JSON_PLACEHOLDER } from "../prompts/harness.js";
+import {
+  INLINE_HANDOFF_JSON_PLACEHOLDER,
+  renderMergedTailReviewSection,
+} from "../prompts/harness.js";
 import {
   DEFAULT_CURSOR_TRANSIENT_BASE_DELAY_MS,
   DEFAULT_CURSOR_TRANSIENT_JITTER_RATIO,
@@ -75,6 +78,8 @@ export type RunPhaseOptions = {
   seedHandoff?: Handoff;
   /** Live agent stream events (text/toolCall) forwarded from Sandcastle file logging. */
   onAgentStreamEvent?: (event: AgentStreamEvent) => void;
+  /** Merged-tail recovery: review landed commit on main (ADR 0011). */
+  mergedTailReview?: boolean;
   /** Retries for transient Cursor `resource_exhausted` failures (exponential backoff). */
   cursorTransientMaxAttempts?: number;
   cursorTransientBaseDelayMs?: number;
@@ -211,10 +216,17 @@ async function runSandboxWithTransientRetry(
 async function writeInlineHandoffPromptFile(input: {
   basePromptFile: string;
   handoff: Handoff;
+  mergedTailReview?: boolean;
 }): Promise<string> {
-  const content = await readFile(input.basePromptFile, "utf8");
+  let content = await readFile(input.basePromptFile, "utf8");
   const renderedHandoff = JSON.stringify(input.handoff, null, 2);
-  const next = content.replace(INLINE_HANDOFF_JSON_PLACEHOLDER, renderedHandoff);
+  let next = content.replace(INLINE_HANDOFF_JSON_PLACEHOLDER, renderedHandoff);
+  if (input.mergedTailReview === true) {
+    next = next.replace(
+      "<!-- /sandcastle-ralph:harness -->",
+      `${renderMergedTailReviewSection()}\n<!-- /sandcastle-ralph:harness -->`,
+    );
+  }
   const dir = await mkdtemp(join(tmpdir(), "sandcastle-ralph-prompt-"));
   const out = join(dir, "prompt.md");
   await writeFile(out, next, "utf8");
@@ -274,6 +286,7 @@ export async function runPhase(
         ? await writeInlineHandoffPromptFile({
             basePromptFile: promptFile,
             handoff: seed,
+            mergedTailReview: options.mergedTailReview,
           })
         : promptFile;
 
