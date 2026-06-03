@@ -3,14 +3,15 @@
   "issue": 101,
   "branch": "issue-101",
   "pr": 113,
-  "phase": "merge",
-  "acceptanceState": "blocked",
+  "phase": "review-pr",
+  "acceptanceState": "done",
   "verdict": "request-changes",
   "blockers": [
-    "PR review blocker: Live server tail is not wired (server log SSE events are not plumbed through subscribeProjectEvents/App.tsx to LogPanel's registerServerLogHandler). No post-review fix commits found; merge stopped."
+    "All channel: live server-log SSE chunks append at document tail (below phase sections) instead of under === Server ===; breaks server-first ordering during streaming — fix in LogPanel server handler + test (issue-101 / review-tdd)."
   ],
   "mergeReady": false,
   "nextSkill": "/review-tdd",
-  "startedAt": "2026-06-02T14:23:10.000Z",
-  "endedAt": "2026-06-02T14:26:10.000Z"
+  "startedAt": "2026-06-02T15:06:04.000Z",
+  "endedAt": "2026-06-03T03:16:00.000Z",
+  "mergedTailAttempts": 1
 }
