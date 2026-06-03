@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { appendLogChunk, lastLines, scrollLogBodyToTail } from "../../dashboard/src/logLines.js";
+import {
+  appendLogChunk,
+  appendServerLogChunkInAllView,
+  lastLines,
+  scrollLogBodyToTail,
+} from "../../dashboard/src/logLines.js";
 
 describe("logLines", () => {
   it("returns the last N non-empty trailing lines", () => {
@@ -9,6 +14,14 @@ describe("logLines", () => {
 
   it("appends SSE chunks to existing log text", () => {
     expect(appendLogChunk("seed\n", "live")).toBe("seed\nlive");
+  });
+
+  it("inserts server SSE before the first phase section in All view", () => {
+    const combined =
+      "=== Server ===\nserver seed\n\n=== tdd ===\ntdd seed\n\n=== review-pr ===\nreview seed\n";
+    expect(appendServerLogChunkInAllView(combined, "live-server\n")).toBe(
+      "=== Server ===\nserver seed\nlive-server\n\n=== tdd ===\ntdd seed\n\n=== review-pr ===\nreview seed\n",
+    );
   });
 
   it("sets scrollTop to scrollHeight for tail anchoring", () => {

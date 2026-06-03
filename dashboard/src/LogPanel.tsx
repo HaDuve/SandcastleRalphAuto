@@ -7,7 +7,13 @@ import {
   type MutableRefObject,
 } from "react";
 import { fetchProjectLog } from "./api.js";
-import { appendLogChunk, lastLines, scrollLogBodyToTail } from "./logLines.js";
+import {
+  appendLogChunk,
+  appendServerLogChunkInAllView,
+  lastLines,
+  LOG_SERVER_SECTION_HEADER,
+  scrollLogBodyToTail,
+} from "./logLines.js";
 import { PanelHeader } from "./PanelHeader.js";
 import type { Project } from "./types.js";
 
@@ -34,7 +40,7 @@ export type LogPanelProps = {
 
 function combineAllLogs(options: { serverLog: string; phases: string[]; phaseLogs: string[] }): string {
   const blocks: string[] = [];
-  blocks.push("=== Server ===\n");
+  blocks.push(LOG_SERVER_SECTION_HEADER);
   blocks.push(options.serverLog);
   if (!options.serverLog.endsWith("\n")) {
     blocks.push("\n");
@@ -68,6 +74,7 @@ export function LogPanel({
   const livePhaseRef = useRef<string | null>(null);
   const channelRef = useRef<LogChannel>("all");
   const lastFetchedLogRef = useRef("");
+  const serverSseTailRef = useRef("");
   const expandedBodyRef = useRef<HTMLPreElement>(null);
   const previewBodyRef = useRef<HTMLPreElement>(null);
   const phaseFetchGenerationRef = useRef(0);
@@ -121,6 +128,7 @@ export function LogPanel({
           channelRef.current = "all";
           livePhaseRef.current = null;
           lastFetchedLogRef.current = "";
+          serverSseTailRef.current = "";
           return null;
         }
         setHasActiveLog(true);
@@ -140,8 +148,13 @@ export function LogPanel({
             meta.phases.map((phase) => fetchLogWithFallback({ projectId: project.id, phase })),
           );
           const phaseLogs = phaseResults.map((result) => result?.log ?? "");
+          const serverBase = server?.log ?? "";
+          const serverLog =
+            options.preserveSseTail && serverSseTailRef.current
+              ? serverBase + serverSseTailRef.current
+              : serverBase;
           fetchedLog = combineAllLogs({
-            serverLog: server?.log ?? "",
+            serverLog,
             phases: meta.phases,
             phaseLogs,
           });
@@ -167,6 +180,7 @@ export function LogPanel({
         }
 
         lastFetchedLogRef.current = fetchedLog;
+        serverSseTailRef.current = "";
         setLogText(fetchedLog);
         return meta;
       } catch {
@@ -221,6 +235,7 @@ export function LogPanel({
       livePhaseRef.current = null;
       channelRef.current = "all";
       lastFetchedLogRef.current = "";
+      serverSseTailRef.current = "";
       return;
     }
 
@@ -271,7 +286,12 @@ export function LogPanel({
       if ((selected !== "server" && selected !== "all") || !chunk) {
         return;
       }
-      setLogText((current) => appendLogChunk(current, chunk));
+      serverSseTailRef.current += chunk;
+      setLogText((current) =>
+        selected === "all"
+          ? appendServerLogChunkInAllView(current, chunk)
+          : appendLogChunk(current, chunk),
+      );
     };
 
     registerServerLogHandler(onChunk);
@@ -328,6 +348,7 @@ export function LogPanel({
           return;
         }
         lastFetchedLogRef.current = fetchedLog;
+        serverSseTailRef.current = "";
         setLogText(fetchedLog);
       } catch {
         // Keep the previous log visible when a phase fetch fails.

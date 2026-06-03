@@ -232,6 +232,48 @@ describe("LogPanel", () => {
     expect(logFetchCount).toBeGreaterThanOrEqual(2);
   });
 
+  it("appends server-log chunks under the Server section while viewing All", async () => {
+    let serverHandler: ((chunk: string) => void) | null = null;
+    vi.stubGlobal(
+      "fetch",
+      stubAllAndServerLogFetch({
+        livePhaseLog: "review output\n",
+        phaseLogs: { tdd: "tdd output\n", "review-pr": "review output\n" },
+        serverLog: "server seed\n",
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(
+      <LogPanel
+        project={portfolio}
+        activePhase="review-pr"
+        registerServerLogHandler={(handler) => {
+          serverHandler = handler;
+        }}
+      />,
+    );
+
+    await screen.findByTestId("log-preview");
+    await user.click(screen.getByRole("button", { name: /expand/i }));
+
+    const expanded = await screen.findByTestId("log-expanded");
+    await waitFor(() => {
+      expect(expanded).toHaveTextContent("server seed");
+    });
+
+    serverHandler!("live-server\n");
+
+    await waitFor(() => {
+      const text = screen.getByTestId("log-expanded").textContent ?? "";
+      const serverTailIdx = text.indexOf("live-server");
+      const tddHeaderIdx = text.indexOf("=== tdd ===");
+      expect(serverTailIdx).toBeGreaterThan(-1);
+      expect(tddHeaderIdx).toBeGreaterThan(-1);
+      expect(serverTailIdx).toBeLessThan(tddHeaderIdx);
+    });
+  });
+
   it("appends phase-log chunks from the shared events subscription", async () => {
     let tailHandler: ((chunk: string) => void) | null = null;
     vi.stubGlobal(
