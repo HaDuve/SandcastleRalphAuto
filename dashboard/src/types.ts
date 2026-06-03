@@ -35,6 +35,7 @@ export type Project = {
 
 export type QueueIssue = {
   number: number;
+  title?: string;
   labels: string[];
   skipped: boolean;
   eligible: boolean;
@@ -68,6 +69,7 @@ export type HistoryPhase = {
 export type HistoryEntry = {
   pr: number;
   issue: number;
+  title?: string;
   branch: string;
   startedAt: string;
   endedAt: string;

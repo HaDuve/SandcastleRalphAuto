@@ -1,3 +1,4 @@
+import { type HistoryEntry } from "../handoff/history.js";
 import { type GhRunner } from "../merge/index.js";
 import { type ActiveState } from "../state/index.js";
 import { fetchGhIssueMeta } from "./issueMeta.js";
@@ -52,6 +53,29 @@ export async function enrichActiveState(
   }
   const meta = await fetchGhIssueMeta(gh, remote, active.issue);
   return meta ? { ...active, title: meta.title } : active;
+}
+
+export async function enrichHistoryEntries(
+  entries: HistoryEntry[],
+  remote: string,
+  gh: GhRunner,
+): Promise<HistoryEntry[]> {
+  const uniqueIssues = [...new Set(entries.map((entry) => entry.issue))];
+  const titles = new Map<number, string>();
+
+  await Promise.all(
+    uniqueIssues.map(async (issue) => {
+      const meta = await fetchGhIssueMeta(gh, remote, issue);
+      if (meta) {
+        titles.set(issue, meta.title);
+      }
+    }),
+  );
+
+  return entries.map((entry) => {
+    const title = titles.get(entry.issue);
+    return title ? { ...entry, title } : entry;
+  });
 }
 
 export function workerStatusFor(

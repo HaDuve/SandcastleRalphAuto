@@ -17,14 +17,27 @@ const portfolio: Project = {
 };
 
 const sampleQueue: QueueIssue[] = [
-  { number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true },
+  {
+    number: 10,
+    title: "Add dashboard links",
+    labels: ["ready-for-agent"],
+    skipped: false,
+    eligible: true,
+  },
   {
     number: 12,
+    title: "Blocked feature",
     labels: ["ready-for-agent", "needs-info"],
     skipped: false,
     eligible: false,
   },
-  { number: 15, labels: ["ready-for-agent"], skipped: true, eligible: false },
+  {
+    number: 15,
+    title: "Skipped by operator",
+    labels: ["ready-for-agent"],
+    skipped: true,
+    eligible: false,
+  },
 ];
 
 describe("QueuePanel", () => {
@@ -34,14 +47,53 @@ describe("QueuePanel", () => {
     expect(screen.getByText(/select a project/i)).toBeInTheDocument();
   });
 
-  it("renders eligible and excluded issues with exclusion reasons", () => {
+  it("links the Queue header to the repo GitHub issues page", () => {
     render(
       <QueuePanel project={portfolio} queue={sampleQueue} onSkipToggle={() => {}} />,
     );
 
-    expect(screen.getByText(/#10/)).toBeInTheDocument();
+    const headerLink = screen.getByRole("link", { name: /issues on github/i });
+    expect(headerLink).toHaveAttribute(
+      "href",
+      "https://github.com/HaDuve/Portfolio/issues",
+    );
+    expect(headerLink).toHaveAttribute("target", "_blank");
+  });
+
+  it("renders GitHub issue links with titles and status markers", () => {
+    render(
+      <QueuePanel project={portfolio} queue={sampleQueue} onSkipToggle={() => {}} />,
+    );
+
+    const eligibleLink = screen.getByRole("link", { name: "Add dashboard links" });
+    expect(eligibleLink).toHaveAttribute(
+      "href",
+      "https://github.com/HaDuve/Portfolio/issues/10",
+    );
+    expect(eligibleLink).toHaveAttribute("target", "_blank");
+    expect(eligibleLink.closest("li")?.textContent ?? "").not.toMatch(/❌/);
+
+    const blockedLink = screen.getByRole("link", { name: "Blocked feature" });
+    expect(blockedLink).toHaveAttribute(
+      "href",
+      "https://github.com/HaDuve/Portfolio/issues/12",
+    );
+    expect(blockedLink.closest("li")?.querySelector(".queue-item-marker")).toHaveTextContent(
+      "❌",
+    );
     expect(screen.getByText(/Blocked: needs-info/i)).toBeInTheDocument();
-    expect(screen.getByText(/skipped by operator/i)).toBeInTheDocument();
+
+    const skippedLink = screen.getByRole("link", { name: "Skipped by operator" });
+    expect(skippedLink).toHaveAttribute(
+      "href",
+      "https://github.com/HaDuve/Portfolio/issues/15",
+    );
+    expect(skippedLink.closest("li")?.querySelector(".queue-item-marker")).toHaveTextContent(
+      "❌",
+    );
+    expect(skippedLink.closest("li")?.querySelector(".queue-item-reason")).toHaveTextContent(
+      "Skipped by operator",
+    );
   });
 
   it("calls onSkipToggle when the skip checkbox changes", async () => {
@@ -51,7 +103,15 @@ describe("QueuePanel", () => {
     render(
       <QueuePanel
         project={portfolio}
-        queue={[sampleQueue[0]!]}
+        queue={[
+          {
+            number: 10,
+            title: "Add dashboard links",
+            labels: ["ready-for-agent"],
+            skipped: false,
+            eligible: true,
+          },
+        ]}
         onSkipToggle={onSkipToggle}
       />,
     );
