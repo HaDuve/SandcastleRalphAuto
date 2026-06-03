@@ -14,7 +14,12 @@ export function isProceduralMergeBlockerText(text: string): boolean {
     /self[- ]?approv/.test(lower) ||
     /no external reviewer approval/.test(lower) ||
     /merge gate requires/.test(lower) ||
-    /clean approve verdict/.test(lower)
+    /clean approve verdict/.test(lower) ||
+    /different maintainer/.test(lower) ||
+    /must approve pr/.test(lower) ||
+    /disallows self[- ]?approv/.test(lower) ||
+    /github won'?t allow/.test(lower) ||
+    /comment[- ]only/.test(lower)
   );
 }
 

@@ -140,20 +140,20 @@ describe("advanceSlice", () => {
     }
   });
 
-  it("blocks when review-pr approves but blockers remain", () => {
+  it("advances review-pr to review-tdd when approve lists nits in blockers (ADR 0011)", () => {
     const outcome = advanceSlice({
       ...base,
       phase: "review-pr",
       result: phaseResult("review-pr", "/review-tdd", {
         pr: 99,
         verdict: "approve",
-        blockers: ["should not bypass"],
+        blockers: ["nit: wire server-log handler"],
       }),
     });
 
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) {
-      expect(outcome.reason).toMatch(/blockers/);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.active.phase).toBe("review-tdd");
     }
   });
 

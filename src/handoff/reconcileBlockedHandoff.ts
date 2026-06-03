@@ -17,9 +17,21 @@ import {
   isMergeDeferredToBabysit,
 } from "./mergeBabysitRoute.js";
 import {
+  applyMergedTailExhaustionHandoff,
+  buildMergedTailExhaustionWarning,
+  incrementMergedTailAttempt,
+  isMergedTailExhausted,
+  shouldEnterMergedTailRecovery,
+  type MergedTailForceNextResume,
+  type MergedTailRecoveryResume,
+} from "./mergedTailRoute.js";
+import {
   formatReviewFindingsNote,
+  isReviewPrAcceptanceBlockedStallReason,
   isReviewPrBlockersStallReason,
-  isReviewPrRequestChangesToReviewTdd,
+  isReviewPrProceduralOnlyBlockedHandoff,
+  isReviewPrRoutedToReviewTdd,
+  normalizeReviewPrProceduralDoneHandoff,
 } from "./reviewPrRoute.js";
 import {
   isReviewTddAcceptanceBlockedStallReason,
@@ -274,6 +286,70 @@ export async function tryReconcileReviewTddProceduralBlockedHandoff(input: {
 }
 
 /**
+ * When review-pr marked `acceptanceState: blocked` only for procedural merge reasons,
+ * normalize and resume at `review-tdd` on Start (ADR 0011).
+ */
+export async function tryReconcileReviewPrProceduralBlockedHandoff(input: {
+  stateRoot: string;
+  projectId: string;
+  projectPath: string;
+  branch: string;
+  active: ActiveState;
+}): Promise<ActiveState | null> {
+  if (
+    input.active.status !== "blocked" ||
+    !isReviewPrAcceptanceBlockedStallReason(
+      input.active.reason,
+      input.active.phase,
+    )
+  ) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff | undefined;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isReviewPrProceduralOnlyBlockedHandoff(handoff)) {
+    return null;
+  }
+
+  const fixed = normalizeReviewPrProceduralDoneHandoff(handoff);
+  await writeHandoff(fixed, worktreePath);
+  await writeHostHandoff({
+    stateRoot: input.stateRoot,
+    projectId: input.projectId,
+    handoff: fixed,
+  });
+
+  return {
+    issue: input.active.issue,
+    branch: input.active.branch,
+    pr: fixed.pr ?? input.active.pr,
+    phase: "review-tdd",
+    status: "active",
+    startedAt: input.active.startedAt,
+  };
+}
+
+/**
  * When review-pr populated `blockers` with findings but routed to `/review-tdd`,
  * unblock the slice on Start so the linear pipeline can continue.
  */
@@ -312,7 +388,7 @@ export async function tryReconcileReviewPrBlockedHandoff(input: {
     }
   }
 
-  if (!isReviewPrRequestChangesToReviewTdd(handoff)) {
+  if (!isReviewPrRoutedToReviewTdd(handoff)) {
     return null;
   }
 
@@ -444,6 +520,134 @@ export async function tryReconcileMergeDeferredReviewLoopHandoff(input: {
     phase: "review-pr",
     status: "active",
     startedAt: input.active.startedAt,
+  };
+}
+
+async function fetchPrState(
+  remote: string,
+  pr: number,
+  gh: GhRunner,
+): Promise<string | null> {
+  try {
+    const raw = await gh([
+      "pr",
+      "view",
+      String(pr),
+      "--repo",
+      remote,
+      "--json",
+      "state",
+    ]);
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { state?: unknown }).state === "string"
+    ) {
+      return (parsed as { state: string }).state;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * PR already MERGED but pipeline has not finished review-tdd approve — merged-tail recovery (ADR 0011).
+ */
+export async function tryReconcileMergedTailBlockedHandoff(input: {
+  project: Pick<Project, "remote">;
+  stateRoot: string;
+  projectId: string;
+  projectPath: string;
+  branch: string;
+  active: ActiveState;
+  gh: GhRunner;
+}): Promise<MergedTailRecoveryResume | MergedTailForceNextResume | null> {
+  if (input.active.status !== "blocked" || input.active.pr === undefined) {
+    return null;
+  }
+
+  const worktreePath = join(
+    input.projectPath,
+    ".sandcastle",
+    "worktrees",
+    input.branch,
+  );
+
+  let handoff: Handoff;
+  try {
+    handoff = await readHandoff(worktreePath);
+  } catch {
+    try {
+      handoff = await readHostHandoff({
+        stateRoot: input.stateRoot,
+        projectId: input.projectId,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  const prState = await fetchPrState(
+    input.project.remote,
+    input.active.pr,
+    input.gh,
+  );
+  if (prState === null) {
+    return null;
+  }
+
+  if (
+    !shouldEnterMergedTailRecovery({
+      active: input.active,
+      prState,
+      handoff,
+    })
+  ) {
+    return null;
+  }
+
+  const withAttempt = incrementMergedTailAttempt(handoff);
+
+  if (isMergedTailExhausted(withAttempt)) {
+    const warning = buildMergedTailExhaustionWarning(
+      input.active.issue,
+      input.active.pr,
+    );
+    const exhausted = applyMergedTailExhaustionHandoff(withAttempt, warning);
+    await writeHandoff(exhausted, worktreePath);
+    await writeHostHandoff({
+      stateRoot: input.stateRoot,
+      projectId: input.projectId,
+      handoff: exhausted,
+    });
+    return {
+      issue: input.active.issue,
+      pr: input.active.pr,
+      warning,
+    };
+  }
+
+  const recoveryHandoff: Handoff = {
+    ...withAttempt,
+    phase: "review-pr",
+    acceptanceState: "in-progress",
+    nextSkill: "/review-tdd",
+    endedAt: new Date().toISOString(),
+  };
+  await writeHandoff(recoveryHandoff, worktreePath);
+  await writeHostHandoff({
+    stateRoot: input.stateRoot,
+    projectId: input.projectId,
+    handoff: recoveryHandoff,
+  });
+
+  return {
+    issue: input.active.issue,
+    pr: input.active.pr,
+    fromPhase: "review-pr",
+    mergedTailReview: true,
   };
 }
 

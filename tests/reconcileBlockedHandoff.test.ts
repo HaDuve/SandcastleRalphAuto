@@ -9,7 +9,9 @@ import {
   tryReconcileMergeDeferredReviewLoopHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
+  tryReconcileMergedTailBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewPrProceduralBlockedHandoff,
   tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
@@ -749,5 +751,106 @@ describe("reconcileBlockedHandoff", () => {
       status: "active",
       startedAt: active.startedAt,
     });
+  });
+
+  it("resumes at review-tdd when review-pr blocked only for procedural reasons", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-review-pr-proc-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const handoff = {
+      project: projectId,
+      issue: 101,
+      branch: "issue-101",
+      pr: 113,
+      phase: "review-pr",
+      acceptanceState: "blocked",
+      blockers: ["Different maintainer must approve PR #113"],
+      mergeReady: false,
+      nextSkill: "/review-tdd",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    } satisfies Handoff;
+    await writeHostHandoff({ stateRoot, projectId, handoff });
+
+    const active: ActiveState = {
+      issue: 101,
+      phase: "review-pr",
+      branch: "issue-101",
+      pr: 113,
+      status: "blocked",
+      reason: "Handoff acceptanceState is blocked, expected done",
+      resumeSkill: "/review-pr",
+      startedAt: "2026-06-01T00:00:00.000Z",
+    };
+    await writeActive(projectId, active, stateRoot);
+
+    const reconciled = await tryReconcileReviewPrProceduralBlockedHandoff({
+      projectPath: join(rootDir, "repo"),
+      branch: "issue-101",
+      stateRoot,
+      projectId,
+      active,
+    });
+
+    expect(reconciled?.phase).toBe("review-tdd");
+    const host = await readHostHandoff({ stateRoot, projectId });
+    expect(host.acceptanceState).toBe("done");
+    expect(host.blockers).toEqual([]);
+  });
+
+  it("starts merged-tail recovery when PR is merged and pipeline incomplete", async () => {
+    rootDir = await mkdtemp(join(tmpdir(), "reconcile-merged-tail-"));
+    const stateRoot = join(rootDir, "state");
+    const projectId = "HaDuve/SandcastleRalphAuto";
+    const handoff = {
+      project: projectId,
+      issue: 101,
+      branch: "issue-101",
+      pr: 113,
+      phase: "review-pr",
+      acceptanceState: "blocked",
+      blockers: ["Different maintainer must approve"],
+      mergeReady: false,
+      nextSkill: "/review-tdd",
+      startedAt: "2026-06-01T00:00:00.000Z",
+      endedAt: "2026-06-01T01:00:00.000Z",
+    } satisfies Handoff;
+    await writeHostHandoff({ stateRoot, projectId, handoff });
+
+    const active: ActiveState = {
+      issue: 101,
+      phase: "review-pr",
+      branch: "issue-101",
+      pr: 113,
+      status: "blocked",
+      reason: "Handoff acceptanceState is blocked, expected done",
+      resumeSkill: "/review-pr",
+      startedAt: "2026-06-01T00:00:00.000Z",
+    };
+    await writeActive(projectId, active, stateRoot);
+
+    const resumed = await tryReconcileMergedTailBlockedHandoff({
+      project: { remote: projectId },
+      projectPath: join(rootDir, "repo"),
+      branch: "issue-101",
+      stateRoot,
+      projectId,
+      active,
+      gh: async (args) => {
+        if (args[0] === "pr" && args[1] === "view" && args.includes("state")) {
+          return JSON.stringify({ state: "MERGED" });
+        }
+        return "";
+      },
+    });
+
+    expect(resumed).toMatchObject({
+      issue: 101,
+      pr: 113,
+      fromPhase: "review-pr",
+      mergedTailReview: true,
+    });
+    const host = await readHostHandoff({ stateRoot, projectId });
+    expect(host.mergedTailAttempts).toBe(1);
   });
 });

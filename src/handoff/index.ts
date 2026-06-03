@@ -19,10 +19,27 @@ export {
   writeHandoff,
 } from "./io.js";
 export {
-  isReviewPrBlockersStallReason,
-  isReviewPrRequestChangesToReviewTdd,
   formatReviewFindingsNote,
+  isReviewPrAcceptanceBlockedStallReason,
+  isReviewPrBlockersStallReason,
+  isReviewPrProceduralOnlyBlockedHandoff,
+  isReviewPrRequestChangesToReviewTdd,
+  isReviewPrRoutedToReviewTdd,
+  normalizeReviewPrProceduralDoneHandoff,
 } from "./reviewPrRoute.js";
+export {
+  DEFAULT_MERGED_TAIL_MAX_ATTEMPTS,
+  applyMergedTailExhaustionHandoff,
+  buildMergedTailExhaustionWarning,
+  incrementMergedTailAttempt,
+  isMergedTailEligiblePhase,
+  isMergedTailExhausted,
+  isPipelineCompleteForMergedPr,
+  shouldEnterMergedTailRecovery,
+  type MergedTailEligiblePhase,
+  type MergedTailForceNextResume,
+  type MergedTailRecoveryResume,
+} from "./mergedTailRoute.js";
 export {
   isProceduralMergeBlockerText,
   isReviewTddAcceptanceBlockedStallReason,
@@ -54,7 +71,9 @@ export {
   tryReconcileMergeDeferredReviewLoopHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
+  tryReconcileMergedTailBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewPrProceduralBlockedHandoff,
   tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,

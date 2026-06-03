@@ -21,6 +21,7 @@ __SANDCASTLE_RALPH_INLINE_HANDOFF_JSON__
 The host checked out `handoff.branch` before this run. It is always `issue-<handoff.issue>` — stay on that branch for all git work in this phase.
 Do not create or switch to `feat/<slug>-<n>` or other branch names.
 
+
 ## Handoff contract (`current.json`)
 
 Required JSON (host validates with Zod after this phase):
@@ -31,7 +32,6 @@ Required JSON (host validates with Zod after this phase):
 - `pr` — optional PR number (set once a PR exists)
 - `phase` — must be `"review-tdd"` for this run (allowed values: "tdd", "create-pr", "review-pr", "review-tdd", "babysit", "merge", "next")
 - `acceptanceState` — one of: "in-progress" | "done" | "blocked". When this phase **finishes successfully**, use `"done"` — **not** `"complete"`, `"finished"`, or other words.
-- **Do not** use `acceptanceState: "blocked"` for procedural merge constraints (author cannot self-approve, branch protection, missing external Approve). Those are handled by **`/merge`** and the merge gate (and **`/babysit`** if CI/conflicts). Finish with `"done"`, `nextSkill: "/merge"`, and `mergeReady: false` when in-scope review **code** work is complete.
 - `verdict` — optional: `"approve"` | `"request-changes"` | `"n/a"`
 - `blockers` — string array (empty when unblocked)
 - `mergeReady` — boolean

@@ -51,6 +51,31 @@ function renderInlineHandoff(): string {
   ].join("\n");
 }
 
+function renderReviewPrAfKGuidance(phase: RunnablePhase): string {
+  if (phase !== "review-pr") {
+    return "";
+  }
+  return [
+    "## Review-pr AFK rules",
+    "",
+    "- **PR approved** for this pipeline means handoff `verdict: \"approve\"` only — not a GitHub `APPROVE` review.",
+    "- If `gh pr review --approve` is disallowed (self-approval), post a **comment** review and set handoff `verdict` from the code bar.",
+    "- **Do not** use `acceptanceState: \"blocked\"` for procedural constraints (self-approval, maintainer must approve, branch protection). Use `\"done\"` and route to `/review-tdd`.",
+    "- You may put suggestions and nits in `blockers[]` while `verdict: \"approve\"`; the host advances to `/review-tdd`.",
+    "",
+  ].join("\n");
+}
+
+export function renderMergedTailReviewSection(): string {
+  return [
+    "## Merged-tail recovery",
+    "",
+    "The slice PR is already **MERGED** on `main`. Review the **landed commit on `main`** (use `git log` / `git show` on `main`, and the linked issue acceptance criteria), not an open PR diff.",
+    "Post findings as a GitHub **comment** review when approve is disallowed. Then write handoff for `/review-tdd` to implement in-scope blockers, suggestions, and nits.",
+    "",
+  ].join("\n");
+}
+
 export function renderHarness(phase: RunnablePhase): string {
   return [
     "# Headless harness (SandcastleRalphAuto)",
@@ -66,6 +91,7 @@ export function renderHarness(phase: RunnablePhase): string {
     "",
     renderBranchPin(phase),
     "",
+    renderReviewPrAfKGuidance(phase),
     renderHandoffContract(phase),
     "",
     renderOutputs(),

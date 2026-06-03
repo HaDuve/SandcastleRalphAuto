@@ -21,6 +21,13 @@ __SANDCASTLE_RALPH_INLINE_HANDOFF_JSON__
 The host checked out `handoff.branch` before this run. It is always `issue-<handoff.issue>` — stay on that branch for all git work in this phase.
 Do not create or switch to `feat/<slug>-<n>` or other branch names.
 
+## Review-pr AFK rules
+
+- **PR approved** for this pipeline means handoff `verdict: "approve"` only — not a GitHub `APPROVE` review.
+- If `gh pr review --approve` is disallowed (self-approval), post a **comment** review and set handoff `verdict` from the code bar.
+- **Do not** use `acceptanceState: "blocked"` for procedural constraints (self-approval, maintainer must approve, branch protection). Use `"done"` and route to `/review-tdd`.
+- You may put suggestions and nits in `blockers[]` while `verdict: "approve"`; the host advances to `/review-tdd`.
+
 ## Handoff contract (`current.json`)
 
 Required JSON (host validates with Zod after this phase):

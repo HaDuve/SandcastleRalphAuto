@@ -72,6 +72,12 @@ describe("renderHarness", () => {
     expect(outputsSection).toContain("<promise>PHASE_COMPLETE</promise>");
   });
 
+  it("documents review-pr AFK approval and procedural rules (ADR 0011)", () => {
+    const harness = renderHarness("review-pr");
+    expect(harness).toMatch(/PR approved.*verdict/i);
+    expect(harness).toMatch(/Do not.*acceptanceState: "blocked".*procedural/i);
+  });
+
   it("pins every phase to handoff.branch (issue-<n>)", () => {
     const harness = renderHarness("review-pr");
 

@@ -10,7 +10,9 @@ import {
   tryReconcileMergeDeferredReviewLoopHandoff,
   tryReconcileMergeGateBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
+  tryReconcileMergedTailBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewPrProceduralBlockedHandoff,
   tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
@@ -104,7 +106,7 @@ export type LoopProjectInput = {
 };
 
 export type LoopProjectResult =
-  | { status: "queue-empty"; slicesCompleted: number }
+  | { status: "queue-empty"; slicesCompleted: number; recoveryWarning?: string }
   | { status: "blocked" | "awaiting-human"; reason: string };
 
 export type BootstrapFirstIssueResult =
@@ -789,6 +791,10 @@ type LoopStartReady = {
   mergeGateOnly?: { pr: number };
   /** create-pr had no diff; advance queue without merge gate. */
   createPrNoDiffReady?: { issue: number; branch: string };
+  /** Merged-tail exhausted — run `/next` with warning (ADR 0011). */
+  mergedTailForceNext?: { issue: number; pr: number; warning: string };
+  /** Resume merged-tail recovery at review-pr. */
+  mergedTailReview?: boolean;
 };
 
 type LoopStart = LoopStartReady | LoopProjectResult;
@@ -830,6 +836,43 @@ async function resolveLoopStart(
       };
     }
 
+    const mergedTailResume = await tryReconcileMergedTailBlockedHandoff({
+      project,
+      projectPath,
+      branch: branchForIssue(active.issue),
+      stateRoot,
+      projectId: project.remote,
+      active,
+      gh: deps.gh ?? resolved.gh,
+    });
+    if (mergedTailResume !== null) {
+      if ("warning" in mergedTailResume) {
+        return {
+          kind: "ready",
+          issue: mergedTailResume.issue,
+          mergedTailForceNext: mergedTailResume,
+        };
+      }
+      await writeActive(
+        project.remote,
+        {
+          issue: mergedTailResume.issue,
+          phase: "review-pr",
+          branch: branchForIssue(mergedTailResume.issue),
+          pr: mergedTailResume.pr,
+          status: "active",
+          startedAt: active.startedAt,
+        },
+        stateRoot,
+      );
+      return {
+        kind: "ready",
+        issue: mergedTailResume.issue,
+        fromPhase: "review-pr",
+        mergedTailReview: true,
+      };
+    }
+
     const reconciled =
       (await tryReconcileSchemaBlockedHandoff({
         projectPath,
@@ -839,6 +882,13 @@ async function resolveLoopStart(
         active,
       })) ??
       (await tryReconcileReviewPrBlockedHandoff({
+        projectPath,
+        branch: branchForIssue(active.issue),
+        stateRoot,
+        projectId: project.remote,
+        active,
+      })) ??
+      (await tryReconcileReviewPrProceduralBlockedHandoff({
         projectPath,
         branch: branchForIssue(active.issue),
         stateRoot,
@@ -1020,6 +1070,12 @@ export async function loopProject(
     let createPrNoDiffReady = isLoopStartReady(loopStart)
       ? loopStart.createPrNoDiffReady
       : undefined;
+    let mergedTailForceNext = isLoopStartReady(loopStart)
+      ? loopStart.mergedTailForceNext
+      : undefined;
+    let mergedTailReview = isLoopStartReady(loopStart)
+      ? loopStart.mergedTailReview
+      : undefined;
 
     for (;;) {
       if (deps.control) {
@@ -1027,6 +1083,34 @@ export async function loopProject(
         if (deps.control.signal.aborted) {
           throw new DOMException("Aborted", "AbortError");
         }
+      }
+
+      if (mergedTailForceNext !== undefined) {
+        const force = mergedTailForceNext;
+        mergedTailForceNext = undefined;
+        slicesCompleted += 1;
+        const nextResult = await invokeRunNext(
+          project,
+          stateRoot,
+          runNextFn,
+          deps.gh ?? resolved.gh,
+          { pr: force.pr },
+        );
+        if (nextResult.status === "blocked") {
+          return nextBlocked(nextResult);
+        }
+        if (nextResult.status === QUEUE_EMPTY) {
+          await releaseOnce();
+          return {
+            status: "queue-empty",
+            slicesCompleted,
+            recoveryWarning: force.warning,
+          };
+        }
+        currentIssue = nextResult.issue;
+        fromPhase = "create-pr";
+        mergedTailReview = undefined;
+        continue;
       }
 
       if (createPrNoDiffReady !== undefined) {
@@ -1076,10 +1160,18 @@ export async function loopProject(
                   project,
                   gh: deps.gh ?? resolved.gh,
                 },
+                ...(mergedTailReview
+                  ? {
+                      runPhaseOptions: {
+                        mergedTailReview: true,
+                      },
+                    }
+                  : {}),
               },
               { runPhase: sliceRunner.runPhase },
             );
       mergeGateOnly = undefined;
+      mergedTailReview = undefined;
 
       if (slice.status === "blocked" || slice.status === "awaiting-human") {
         return {
@@ -1216,7 +1308,13 @@ export async function loopProject(
       }
       if (nextResult.status === QUEUE_EMPTY) {
         await releaseOnce();
-        return { status: "queue-empty", slicesCompleted };
+        return {
+          status: "queue-empty",
+          slicesCompleted,
+          ...(slice.status === "ready-for-next" && slice.recoveryWarning
+            ? { recoveryWarning: slice.recoveryWarning }
+            : {}),
+        };
       }
 
       currentIssue = nextResult.issue;

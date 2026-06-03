@@ -48,6 +48,7 @@ export const RunOutcomeSchema = z
     phase: PhaseSchema.optional(),
     stoppedAt: z.string(),
     logRef: z.string().min(1).optional(),
+    recoveryWarning: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
     if (

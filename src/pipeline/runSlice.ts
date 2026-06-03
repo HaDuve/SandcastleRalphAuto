@@ -29,11 +29,15 @@ import {
   normalizeCreatePrNoDiffHandoff,
   tryReconcileCreatePrNoDiffBlockedHandoff,
   tryReconcileMissingPhaseCompleteBlockedHandoff,
+  tryReconcileMergedTailBlockedHandoff,
   tryReconcileReviewPrBlockedHandoff,
+  tryReconcileReviewPrProceduralBlockedHandoff,
   tryReconcileReviewTddProceduralBlockedHandoff,
   tryReconcileSchemaBlockedHandoff,
   tryReconcileTransientCursorBlockedHandoff,
+  isReviewPrProceduralOnlyBlockedHandoff,
   isReviewTddProceduralOnlyBlockedHandoff,
+  normalizeReviewPrProceduralDoneHandoff,
   normalizeReviewTddProceduralDoneHandoff,
   writeHandoff,
   writeHostHandoff,
@@ -160,6 +164,28 @@ async function runPhaseWithCompletionRetry(
   return last ?? (await deps.runPhase(options));
 }
 
+async function persistReviewPrProceduralHandoffIfNeeded(
+  phase: RunnablePhase,
+  result: RunPhaseResult,
+  projectPath: string,
+  stateRoot: string,
+  projectId: string,
+): Promise<RunPhaseResult> {
+  if (phase !== "review-pr" || !isReviewPrProceduralOnlyBlockedHandoff(result.handoff)) {
+    return result;
+  }
+  const worktreePath = join(
+    projectPath,
+    ".sandcastle",
+    "worktrees",
+    result.branch,
+  );
+  const handoff = normalizeReviewPrProceduralDoneHandoff(result.handoff);
+  await writeHandoff(handoff, worktreePath);
+  await writeHostHandoff({ stateRoot, projectId, handoff });
+  return { ...result, handoff };
+}
+
 async function persistReviewTddProceduralHandoffIfNeeded(
   phase: RunnablePhase,
   result: RunPhaseResult,
@@ -218,9 +244,8 @@ export type RunLinearSliceOptions = {
   fromPhase?: RunnablePhase;
   /** Injected for tests; verifies no-diff before normalizing create-pr handoffs. */
   git?: GitRunner;
-  runPhaseOptions?: Omit<
-    RunPhaseOptions,
-    "phase" | "branch" | "projectPath"
+  runPhaseOptions?: Partial<
+    Omit<RunPhaseOptions, "phase" | "branch" | "projectPath">
   >;
   /** Total attempts to recover missing PHASE_COMPLETE before blocking. */
   completionSignalMaxAttempts?: number;
@@ -252,6 +277,8 @@ export type RunLinearSliceSuccess = {
   phasesCompleted: CanonicalPhase[];
   /** True when `/babysit` already ran after merge-agent defer (ADR 0006 cap). */
   mergeTailBabysitAttempted?: boolean;
+  /** Set when merged-tail recovery exhausted and queue advanced anyway (ADR 0011). */
+  recoveryWarning?: string;
 };
 
 export type RunLinearSliceBlocked = {
@@ -494,6 +521,54 @@ export async function runLinearSlice(
       };
     }
 
+    if (options.preMergeBabysit !== undefined) {
+      const mergedTailResume = await tryReconcileMergedTailBlockedHandoff({
+        project: options.preMergeBabysit.project,
+        projectPath,
+        branch,
+        stateRoot,
+        projectId,
+        active: existing,
+        gh: options.preMergeBabysit.gh,
+      });
+      if (mergedTailResume !== null) {
+        if ("warning" in mergedTailResume) {
+          await clearActive(projectId, stateRoot);
+          return {
+            status: "ready-for-next",
+            issue: mergedTailResume.issue,
+            branch,
+            pr: mergedTailResume.pr,
+            phasesCompleted,
+            recoveryWarning: mergedTailResume.warning,
+          };
+        }
+        await writeActive(
+          projectId,
+          {
+            issue,
+            phase: "review-pr",
+            branch,
+            pr: mergedTailResume.pr,
+            status: "active",
+            startedAt: existing.startedAt ?? new Date().toISOString(),
+          },
+          stateRoot,
+        );
+        return runLinearSlice(
+          {
+            ...options,
+            fromPhase: "review-pr",
+            runPhaseOptions: {
+              ...(options.runPhaseOptions ?? {}),
+              mergedTailReview: true,
+            },
+          },
+          deps,
+        );
+      }
+    }
+
     const reconciled =
       (await tryReconcileSchemaBlockedHandoff({
         projectPath,
@@ -503,6 +578,13 @@ export async function runLinearSlice(
         active: existing,
       })) ??
       (await tryReconcileReviewPrBlockedHandoff({
+        projectPath,
+        branch,
+        stateRoot,
+        projectId,
+        active: existing,
+      })) ??
+      (await tryReconcileReviewPrProceduralBlockedHandoff({
         projectPath,
         branch,
         stateRoot,
@@ -640,9 +722,16 @@ export async function runLinearSlice(
       projectId,
       options.git,
     );
-    const phaseResultAfterReviewTdd = await persistReviewTddProceduralHandoffIfNeeded(
+    const phaseResultAfterReviewPr = await persistReviewPrProceduralHandoffIfNeeded(
       phase,
       phaseResult,
+      projectPath,
+      stateRoot,
+      projectId,
+    );
+    const phaseResultAfterReviewTdd = await persistReviewTddProceduralHandoffIfNeeded(
+      phase,
+      phaseResultAfterReviewPr,
       projectPath,
       stateRoot,
       projectId,
@@ -790,6 +879,41 @@ export async function runLinearSlice(
         { ...outcome.active, startedAt: sliceStartedAt },
         stateRoot,
       );
+      if (options.preMergeBabysit !== undefined && pr !== undefined) {
+        const mergedTailResume = await tryReconcileMergedTailBlockedHandoff({
+          project: options.preMergeBabysit.project,
+          projectPath,
+          branch,
+          stateRoot,
+          projectId,
+          active: outcome.active,
+          gh: options.preMergeBabysit.gh,
+        });
+        if (mergedTailResume !== null) {
+          if ("warning" in mergedTailResume) {
+            await clearActive(projectId, stateRoot);
+            return {
+              status: "ready-for-next",
+              issue: mergedTailResume.issue,
+              branch,
+              pr: mergedTailResume.pr,
+              phasesCompleted,
+              recoveryWarning: mergedTailResume.warning,
+            };
+          }
+          return runLinearSlice(
+            {
+              ...options,
+              fromPhase: "review-pr",
+              runPhaseOptions: {
+                ...(options.runPhaseOptions ?? {}),
+                mergedTailReview: true,
+              },
+            },
+            deps,
+          );
+        }
+      }
       return {
         status: "blocked",
         active: outcome.active,

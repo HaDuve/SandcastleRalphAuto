@@ -3,3 +3,5 @@
 state/
 .cursor/debug-*.log
 !.sandcastle-ralph/handoff/
+!.sandcastle/worktrees/
+!.sandcastle/worktrees/**

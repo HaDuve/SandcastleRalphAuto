@@ -4,6 +4,8 @@ export type RunOutcome = {
   phase?: string;
   stoppedAt: string;
   logRef?: string;
+  /** Merged-tail recovery skipped after exhaustion (ADR 0011). */
+  recoveryWarning?: string;
 };
 
 export type ProjectActiveSummary = {

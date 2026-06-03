@@ -86,7 +86,10 @@ export function buildFocusedStatus(
   if (running && startedAt) {
     phaseElapsed = formatPhaseDuration(startedAt, now);
   } else if (!running && lastOutcome) {
-    outcome = formatOutcomeLabel(lastOutcome.outcome);
+    outcome = formatOutcomeLabel(
+      lastOutcome.outcome,
+      lastOutcome.recoveryWarning,
+    );
     reason = lastOutcome.reason ?? null;
     stoppedAt = formatTimestampLocal(lastOutcome.stoppedAt) ?? null;
     sinceStop = formatSinceStop(lastOutcome.stoppedAt, now);
