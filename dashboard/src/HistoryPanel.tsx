@@ -1,4 +1,5 @@
 import { PanelHeader } from "./PanelHeader.js";
+import { githubIssueUrl, githubPrUrl } from "./linkTargets.js";
 import { formatPhaseDuration } from "./phaseDuration.js";
 import { formatTimestampRangeLocal } from "./timeFormat.js";
 import type { HistoryEntry, Project } from "./types.js";
@@ -10,6 +11,10 @@ export type HistoryPanelProps = {
   refreshing?: boolean;
   refreshError?: string | null;
 };
+
+function historyIssueLinkText(entry: HistoryEntry): string {
+  return entry.title ?? `#${entry.issue}`;
+}
 
 export function HistoryPanel({
   project,
@@ -35,14 +40,24 @@ export function HistoryPanel({
       ) : (
         <ul className="history-list">
           {history.map((entry) => {
-            const prUrl = `https://github.com/${project.remote}/pull/${entry.pr}`;
+            const prUrl = githubPrUrl(project.remote, entry.pr);
+            const issueLinkText = historyIssueLinkText(entry);
             return (
               <li key={`${entry.pr}-${entry.endedAt}`} className="history-item">
                 <div className="history-item-header">
                   <a href={prUrl} target="_blank" rel="noreferrer">
                     #{entry.pr}
                   </a>
-                  <span className="history-item-issue">issue #{entry.issue}</span>
+                  <span className="history-item-issue">
+                    <span className="history-item-marker">✅ </span>
+                    <a
+                      href={githubIssueUrl(project.remote, entry.issue)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {issueLinkText}
+                    </a>
+                  </span>
                 </div>
                 <ul className="history-phases">
                   {entry.phases.map((phase) => (

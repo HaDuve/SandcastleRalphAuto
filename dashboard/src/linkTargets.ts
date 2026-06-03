@@ -2,6 +2,10 @@ export function githubRepoUrl(remote: string): string {
   return `https://github.com/${remote}`;
 }
 
+export function githubIssuesUrl(remote: string): string {
+  return `${githubRepoUrl(remote)}/issues`;
+}
+
 export function githubIssueUrl(remote: string, issueNumber: number): string {
   return `${githubRepoUrl(remote)}/issues/${issueNumber}`;
 }

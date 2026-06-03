@@ -37,9 +37,16 @@ function stubProjectsFetch(projects: typeof portfolio[]) {
       return new Response(
         JSON.stringify({
           queue: [
-            { number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true },
+            {
+              number: 10,
+              title: "Eligible queue issue",
+              labels: ["ready-for-agent"],
+              skipped: false,
+              eligible: true,
+            },
             {
               number: 12,
+              title: "Blocked queue issue",
               labels: ["ready-for-agent", "needs-info"],
               skipped: false,
               eligible: false,
@@ -81,6 +88,7 @@ function stubProjectsFetch(projects: typeof portfolio[]) {
             {
               pr: 99,
               issue: 9,
+              title: "Merged history issue",
               branch: "issue-9",
               startedAt: "2026-06-01T00:00:00.000Z",
               endedAt: "2026-06-01T01:00:00.000Z",
@@ -412,7 +420,9 @@ describe("App", () => {
       "href",
       "https://github.com/HaDuve/Portfolio/pull/99",
     );
-    expect(screen.getByText(/issue #9/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Merged history issue" }),
+    ).toHaveAttribute("href", "https://github.com/HaDuve/Portfolio/issues/9");
     expect(screen.getByText(/1h/i)).toBeInTheDocument();
   });
 
@@ -426,7 +436,9 @@ describe("App", () => {
 
     const queue = await screen.findByRole("region", { name: /queue/i });
     const stepper = await screen.findByRole("region", { name: /phase stepper/i });
-    expect(within(queue).getByText(/#10/)).toBeInTheDocument();
+    expect(
+      within(queue).getByRole("link", { name: "Eligible queue issue" }),
+    ).toBeInTheDocument();
     expect(within(queue).getByText(/Blocked: needs-info/i)).toBeInTheDocument();
     expect(within(stepper).getByRole("link", { name: /#11/i })).toBeInTheDocument();
     expect(within(stepper).getByText(/issue-11/i)).toBeInTheDocument();
@@ -570,7 +582,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("checkbox", { name: /portfolio/i }));
-    await screen.findByText(/#10/);
+    await screen.findByRole("link", { name: "Eligible queue issue" });
 
     const queueCallsBefore = fetchMock.mock.calls.filter((call) =>
       String(call[0]).endsWith("/queue"),
@@ -840,7 +852,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     const queue = await screen.findByRole("region", { name: /queue/i });
     const stepper = await screen.findByRole("region", { name: /phase stepper/i });
-    expect(within(queue).getByText(/#10/)).toBeInTheDocument();
+    expect(within(queue).getByRole("link", { name: "#10" })).toBeInTheDocument();
     expect(within(stepper).getByRole("link", { name: /#11/i })).toBeInTheDocument();
 
     const controlCalls = fetchMock.mock.calls.filter(([url, init]) => {

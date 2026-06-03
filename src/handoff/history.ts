@@ -6,6 +6,7 @@ import { resolveHostHandoffHistoryDir } from "./hostStore.js";
 export type HistoryEntry = {
   pr: number;
   issue: number;
+  title?: string;
   branch: string;
   startedAt: string;
   endedAt: string;

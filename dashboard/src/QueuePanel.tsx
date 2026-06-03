@@ -1,5 +1,7 @@
 import { PanelHeader } from "./PanelHeader.js";
+import { githubIssueUrl, githubIssuesUrl } from "./linkTargets.js";
 import { exclusionReason } from "./queueReason.js";
+import { queueIssueNeedsStatusMarker } from "./queueStatusMarker.js";
 import type { Project, QueueIssue } from "./types.js";
 
 export type QueuePanelProps = {
@@ -10,6 +12,10 @@ export type QueuePanelProps = {
   refreshing?: boolean;
   refreshError?: string | null;
 };
+
+function queueIssueLinkText(issue: QueueIssue): string {
+  return issue.title ?? `#${issue.number}`;
+}
 
 export function QueuePanel({
   project,
@@ -28,15 +34,29 @@ export function QueuePanel({
     );
   }
 
+  const issuesUrl = githubIssuesUrl(project.remote);
+
   return (
     <div className="queue-panel">
-      <PanelHeader title="Queue" onRefresh={onRefresh} refreshing={refreshing} error={refreshError} />
+      <PanelHeader
+        title="Queue"
+        onRefresh={onRefresh}
+        refreshing={refreshing}
+        error={refreshError}
+        actions={
+          <a href={issuesUrl} target="_blank" rel="noreferrer" className="panel-header-link">
+            Issues on GitHub
+          </a>
+        }
+      />
       {queue.length === 0 ? (
         <p className="queue-empty">No open issues with the AFK label.</p>
       ) : (
         <ul className="queue-list">
           {queue.map((issue) => {
             const reason = exclusionReason(issue, project);
+            const marked = queueIssueNeedsStatusMarker(issue, project);
+            const linkText = queueIssueLinkText(issue);
             return (
               <li
                 key={issue.number}
@@ -51,7 +71,14 @@ export function QueuePanel({
                       onSkipToggle(issue.number, event.target.checked)
                     }
                   />
-                  <span>#{issue.number}</span>
+                  {marked ? <span className="queue-item-marker">❌ </span> : null}
+                  <a
+                    href={githubIssueUrl(project.remote, issue.number)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {linkText}
+                  </a>
                 </label>
                 {reason ? <span className="queue-item-reason">{reason}</span> : null}
               </li>

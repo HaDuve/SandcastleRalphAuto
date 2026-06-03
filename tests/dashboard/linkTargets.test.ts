@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cursorWorkspaceLink,
   githubIssueUrl,
+  githubIssuesUrl,
   githubPrUrl,
   githubRepoUrl,
   truncateRemote,
@@ -18,6 +19,14 @@ describe("linkTargets", () => {
     it("builds the issue URL", () => {
       expect(githubIssueUrl("HaDuve/Portfolio", 42)).toBe(
         "https://github.com/HaDuve/Portfolio/issues/42",
+      );
+    });
+  });
+
+  describe("githubIssuesUrl", () => {
+    it("builds the repo issues list URL", () => {
+      expect(githubIssuesUrl("HaDuve/Portfolio")).toBe(
+        "https://github.com/HaDuve/Portfolio/issues",
       );
     });
   });

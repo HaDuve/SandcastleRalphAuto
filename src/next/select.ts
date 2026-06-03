@@ -2,6 +2,7 @@ import { type Project } from "../registry/index.js";
 
 export type GhIssue = {
   number: number;
+  title?: string;
   state: "OPEN" | "CLOSED";
   labels: { name: string }[];
 };

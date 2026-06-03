@@ -149,6 +149,16 @@ body {
   gap: 0.5rem;
 }
 
+.panel-header-link {
+  color: #7eb8ff;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.panel-header-link:hover {
+  text-decoration: underline;
+}
+
 .panel-error {
   margin: 0;
   color: #ff8a8a;

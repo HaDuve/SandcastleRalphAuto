@@ -487,8 +487,20 @@ describe("dashboard server", () => {
     const started = await startServer(rootDir, {
       stateRoot,
       fetchQueue: async () => [
-        { number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true },
-        { number: 12, labels: ["ready-for-agent", "needs-info"], skipped: false, eligible: false },
+        {
+          number: 10,
+          title: "Eligible issue",
+          labels: ["ready-for-agent"],
+          skipped: false,
+          eligible: true,
+        },
+        {
+          number: 12,
+          title: "Blocked issue",
+          labels: ["ready-for-agent", "needs-info"],
+          skipped: false,
+          eligible: false,
+        },
       ],
     });
     server = started.server;
@@ -498,8 +510,20 @@ describe("dashboard server", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       queue: [
-        { number: 10, labels: ["ready-for-agent"], skipped: false, eligible: true },
-        { number: 12, labels: ["ready-for-agent", "needs-info"], skipped: false, eligible: false },
+        {
+          number: 10,
+          title: "Eligible issue",
+          labels: ["ready-for-agent"],
+          skipped: false,
+          eligible: true,
+        },
+        {
+          number: 12,
+          title: "Blocked issue",
+          labels: ["ready-for-agent", "needs-info"],
+          skipped: false,
+          eligible: false,
+        },
       ],
     });
     void project;
@@ -540,7 +564,11 @@ describe("dashboard server", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { history: Array<{ pr: number; issue: number }> };
     expect(body.history).toHaveLength(1);
-    expect(body.history[0]).toMatchObject({ pr: 99, issue: 9 });
+    expect(body.history[0]).toMatchObject({
+      pr: 99,
+      issue: 9,
+      title: "Test issue title",
+    });
   });
 
   it("records operator skip for an issue", async () => {

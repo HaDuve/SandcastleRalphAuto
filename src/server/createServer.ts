@@ -15,6 +15,7 @@ import { readActive, readRunOutcome, readSkips, writeSkips } from "../state/inde
 import {
   enrichActiveState,
   enrichActiveSummary,
+  enrichHistoryEntries,
   workerStatusFor,
 } from "./projectSnapshot.js";
 import { createEventBus, type EventBus } from "./eventBus.js";
@@ -347,10 +348,15 @@ export function createDashboardServer(options: DashboardServerOptions): Server {
         }
 
         if (req.method === "GET" && projectRoute.action === "history") {
-          const history = await listHistoryFn({
-            stateRoot,
-            projectId: project.remote,
-          });
+          const gh = await resolveGh();
+          const history = await enrichHistoryEntries(
+            await listHistoryFn({
+              stateRoot,
+              projectId: project.remote,
+            }),
+            project.remote,
+            gh,
+          );
           sendJson(res, 200, { history });
           return;
         }
